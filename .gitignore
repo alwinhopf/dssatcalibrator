@@ -1,0 +1,20 @@
+# run scratch + outputs (regenerated)
+results/          # data tables + DSSAT spawn scratch (results/_workdir)
+figures/          # all generated PNGs
+runs/             # legacy workdir name
+_smoke/           # local smoke-test scratch (used opportunistically by tests)
+_diag*/
+*.egg-info/
+
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+
+# os
+.DS_Store
+Thumbs.db
+/_smoke
+/results
+/figures

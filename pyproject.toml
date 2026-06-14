@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dssatcalibrator"
+version = "0.0.1"
+description = "Monte-Carlo and Bayesian calibration framework for DSSAT-CSM (concept implementation)."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "scipy>=1.10",
+    "matplotlib>=3.7",
+    "PyYAML>=6.0",
+    "pymoo>=0.6",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+include = ["dssatcalibrator*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: end-to-end tests that invoke the DSSAT binary (deselect with -m 'not slow')",
+]
+filterwarnings = ["ignore::RuntimeWarning"]

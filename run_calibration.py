@@ -22,12 +22,20 @@ def main():
     ap.add_argument("--n", type=int, default=None, help="number of samples (overrides config)")
     ap.add_argument("--experiments", nargs="*", default=None, help="subset of experiments")
     ap.add_argument("--engine", default=None, help="sample engine: lhs|sobol|montecarlo|grid")
-    ap.add_argument("--bayesian-engine", default=None, help="bayesian engine: glue|smc_pf")
+    ap.add_argument("--preset", default=None, help="pipeline preset: A|B|C|D (overrides config)")
+    ap.add_argument("--bayesian-engine", default=None, help="estimator: glue|smc_pf|mcmc|none")
+    ap.add_argument("--optimizer", default=None, help="optimizer engine: nelder_mead|diffevo")
+    ap.add_argument("--sensitivity", default=None,
+                    help="turn on screening: morris|sobol (auto-keeps influential params)")
+    ap.add_argument("--select", default=None, help="stepwise selection: bic|aicc")
+    ap.add_argument("--surrogate", default=None, help="emulator acceleration: gp|rf")
     ap.add_argument("--n-particles", type=int, default=None,
                     help="SMC particle count (smc_pf only; overrides config)")
     ap.add_argument("--outdir", default=None, help="output directory for the report")
     ap.add_argument("--validate", action="store_true", help="run leave-one-environment-out validation")
     ap.add_argument("--no-progress", action="store_true")
+    ap.add_argument("--combine", nargs="+", default=None,
+                    help="list of result directories to combine (loads design.csv from each)")
     args = ap.parse_args()
 
     cfg = load_config(args.config)
@@ -35,8 +43,22 @@ def main():
         cfg["method"].setdefault("sample", {})["n"] = args.n
     if args.engine:
         cfg["method"].setdefault("sample", {})["engine"] = args.engine
+    if args.preset:
+        cfg["method"]["preset"] = args.preset
     if args.bayesian_engine:
         cfg["method"].setdefault("bayesian", {})["engine"] = args.bayesian_engine
+    if args.optimizer:
+        cfg["method"].setdefault("optimizer", {})["engine"] = args.optimizer
+        cfg["method"].setdefault("bayesian", {})["engine"] = "none"
+    if args.sensitivity:
+        cfg["method"].setdefault("sensitivity", {}).update(
+            {"engine": args.sensitivity, "active": True, "auto_activate": True})
+    if args.select:
+        cfg["method"].setdefault("select", {}).update(
+            {"engine": f"stepwise_{args.select}", "active": True})
+    if args.surrogate:
+        cfg["method"].setdefault("surrogate", {}).update(
+            {"engine": args.surrogate, "active": True})
     if args.n_particles is not None:
         cfg["method"].setdefault("bayesian", {})["n_particles"] = args.n_particles
     if args.experiments:
@@ -54,13 +76,18 @@ def main():
         print(df.round(2).to_string(index=False))
         return
 
-    bayes = cfg["method"].get("bayesian", {}).get("engine", "glue")
-    if bayes == "smc_pf":
-        size = f"smc_pf, n_particles={cfg['method'].get('bayesian', {}).get('n_particles', 200)}"
+    if args.combine:
+        print(f"Combining {len(args.combine)} runs: {args.combine}")
+        result = orchestrator.combine_runs(cfg, args.combine)
     else:
-        size = f"glue, n={cfg['method']['sample']['n']}"
-    print(f"Calibrating '{cfg['calibrator']['name']}' (preset {cfg['method'].get('preset')}; {size})")
-    result = orchestrator.calibrate(cfg, progress=not args.no_progress)
+        bayes = cfg["method"].get("bayesian", {}).get("engine", "glue")
+        if bayes == "smc_pf":
+            size = f"smc_pf, n_particles={cfg['method'].get('bayesian', {}).get('n_particles', 200)}"
+        else:
+            size = f"glue, n={cfg['method']['sample']['n']}"
+        print(f"Calibrating '{cfg['calibrator']['name']}' (preset {cfg['method'].get('preset')}; {size})")
+        result = orchestrator.calibrate(cfg, progress=not args.no_progress)
+
     best_spawns = orchestrator.spawn_results_for(cfg, result.best_theta, result.experiments)
     paths = viz.make_report(result, outdir, best_spawns=best_spawns, figdir=figdir)
 

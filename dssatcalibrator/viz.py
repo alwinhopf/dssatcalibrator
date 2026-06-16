@@ -146,6 +146,42 @@ def plot_obs_vs_sim(result, path):
     plt.close(fig)
 
 
+def plot_obs_vs_sim_by_category(result, path):
+    resid = result.best.residuals
+    if resid.empty:
+        return
+    user_vars = sorted(resid["user_var"].unique())
+    n_vars = len(user_vars)
+    if n_vars == 0:
+        return
+    rows, cols = _grid(n_vars)
+    fig, axes = plt.subplots(rows, cols, figsize=(4.0 * cols, 4.0 * rows), squeeze=False)
+    cmap = plt.get_cmap("tab10")
+    for i, uv in enumerate(user_vars):
+        ax = axes[i // cols][i % cols]
+        g = resid[resid["user_var"] == uv]
+        ax.scatter(g["obs"], g["sim"], s=30, alpha=0.8, color=cmap(i % 10), edgecolors="none")
+        min_val = min(g["obs"].min(), g["sim"].min())
+        max_val = max(g["obs"].max(), g["sim"].max())
+        span = max_val - min_val
+        if span == 0:
+            span = 1.0
+        lim = [min_val - 0.05 * span, max_val + 0.05 * span]
+        ax.plot(lim, lim, ls="--", color="#888780", lw=1)
+        ax.set_xlim(lim)
+        ax.set_ylim(lim)
+        ax.set_xlabel("observed")
+        ax.set_ylabel("simulated (best fit)")
+        ax.set_title(uv, fontsize=11, fontweight="bold")
+    for j in range(n_vars, rows * cols):
+        axes[j // cols][j % cols].axis("off")
+    fig.suptitle("Observed vs Simulated by Category", y=1.02, fontsize=13, fontweight="bold")
+    fig.tight_layout()
+    fig.savefig(path, dpi=140, bbox_inches="tight")
+    plt.close(fig)
+
+
+
 def plot_timeseries(result, best_spawns, path):
     cfg = result.cfg
     ts_map = cfg.get("engine", {}).get("timeseries_outputs", {})
@@ -207,6 +243,42 @@ def plot_fit_bars(result, path):
     plt.close(fig)
 
 
+def plot_sensitivity(result, path):
+    """Tornado bar of parameter influence from the screening stage (if it ran)."""
+    ranking = (result.extras or {}).get("sensitivity")
+    if ranking is None or ranking.empty:
+        return
+    metric = "mu_star" if "mu_star" in ranking.columns else "ST"
+    r = ranking.sort_values(metric, ascending=True)   # smallest at bottom
+    fig, ax = plt.subplots(figsize=(6.5, max(3, 0.4 * len(r) + 1)))
+    ax.barh(r["parameter"], r[metric], color=_ACCENT)
+    label = "mu*  (mean |elementary effect|)" if metric == "mu_star" else "ST  (total Sobol index)"
+    ax.set_xlabel(label)
+    ax.set_title("Parameter influence (higher = matters more)")
+    fig.tight_layout()
+    fig.savefig(path, dpi=140, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_mcmc_trace(result, path):
+    """MCMC only: log-posterior trace per walker (visual mixing/convergence check)."""
+    chain = (result.extras or {}).get("mcmc_chain")
+    if chain is None or chain.empty:
+        return
+    fig, ax = plt.subplots(figsize=(8, 4))
+    for _w, g in chain.groupby("walker"):
+        ax.plot(g["step"], g["logpost"], lw=0.7, alpha=0.6)
+    ax.set_xlabel("step"); ax.set_ylabel("log-posterior")
+    acc = (result.extras or {}).get("acceptance")
+    title = "MCMC log-posterior traces (walkers should overlap once mixed)"
+    if acc is not None:
+        title += f"  —  acceptance {acc:.2f}"
+    ax.set_title(title)
+    fig.tight_layout()
+    fig.savefig(path, dpi=140, bbox_inches="tight")
+    plt.close(fig)
+
+
 def summary_fit_table(result) -> pd.DataFrame:
     pv = result.best.per_var
     if not pv:
@@ -242,10 +314,23 @@ def make_report(result, outdir, best_spawns=None, figdir=None) -> dict:
     if not result.best.per_exp_var.empty:
         result.best.per_exp_var.round(3).to_csv(outdir / "fit_by_experiment.csv", index=False)
 
+    # Extra data tables for the optional stages, when they ran.
+    sens = (result.extras or {}).get("sensitivity")
+    if sens is not None and not sens.empty:
+        sens.round(4).to_csv(outdir / "sensitivity_ranking.csv", index=False)
+        paths["sensitivity_ranking"] = outdir / "sensitivity_ranking.csv"
+    chain = (result.extras or {}).get("mcmc_chain")
+    if chain is not None and not chain.empty:
+        chain.round(4).to_csv(outdir / "mcmc_chain.csv", index=False)
+        paths["mcmc_chain"] = outdir / "mcmc_chain.csv"
+
     plot_param_posteriors(result, figdir / "fig_param_posteriors.png")
     plot_score_funnel(result, figdir / "fig_score_funnel.png")
     plot_ess_trajectory(result, figdir / "fig_ess_trajectory.png")
+    plot_mcmc_trace(result, figdir / "fig_mcmc_trace.png")
+    plot_sensitivity(result, figdir / "fig_sensitivity.png")
     plot_obs_vs_sim(result, figdir / "fig_obs_vs_sim.png")
+    plot_obs_vs_sim_by_category(result, figdir / "fig_obs_vs_sim_by_category.png")
     plot_fit_bars(result, figdir / "fig_fit_bars.png")
     if best_spawns:
         plot_timeseries(result, best_spawns, figdir / "fig_timeseries.png")
@@ -254,8 +339,9 @@ def make_report(result, outdir, best_spawns=None, figdir=None) -> dict:
         _plot_pareto(result.nsga2, figdir / "fig_pareto.png")
         result.nsga2.front().round(4).to_csv(outdir / "pareto_front.csv", index=False)
 
-    for key in ("param_posteriors", "score_funnel", "ess_trajectory", "obs_vs_sim",
-                "fit_bars", "timeseries", "pareto"):
+    for key in ("param_posteriors", "score_funnel", "ess_trajectory", "mcmc_trace",
+                "sensitivity", "obs_vs_sim", "obs_vs_sim_by_category", "fit_bars",
+                "timeseries", "pareto"):
         p = figdir / f"fig_{key}.png"
         if p.exists():
             paths[key] = p

@@ -34,7 +34,7 @@ calibrator:
   num_cores: 0
   
   # Whether to cache spawns with identical parameter settings to avoid redundant DSSAT executions.
-  cache_spawns: true
+  cache_spawns: false
   
   # Whether to keep the temporary DSSAT workspace folders after execution (false = cleanup to save disk space).
   keep_run_dirs: false
@@ -81,39 +81,69 @@ engine:
     canopy_height: "CHTA" # Canopy height at maturity (m)
 
 # --- Calibration algorithm and sampling settings ---
+# A `preset` wires up the whole pipeline. The OPTIONAL helper stages (sensitivity,
+# select, surrogate) stay OFF until you set `active: true` on them — so a bare preset
+# just runs its main estimator. See WALKTHROUGH.md §5-§6 for a plain-language guide.
 method:
-  # Workflow preset: 'A' = SMC Particle Filter, 'C' = GLUE (Generalized Likelihood Uncertainty Estimation).
+  # Workflow preset (picks the main estimator):
+  #   A = morris -> lhs -> smc_pf   (particle filter; posterior + uncertainty)   [recommended]
+  #   B = morris -> diffevo         (optimiser; single best-fit point)
+  #   C = lhs -> glue               (GLUE; quick, fully parallel)                [default]
+  #   D = morris -> sobol -> mcmc   (full MCMC posterior; heaviest)
   preset: "A"
-  
+
   # Initial sampler settings:
-  #   engine: sampler type ('lhs' = Latin Hypercube, 'sobol' = Sobol, 'montecarlo' = random, 'grid' = factorial).
+  #   engine: 'lhs' (Latin Hypercube) | 'sobol' | 'montecarlo' (random) | 'grid' (factorial).
   #   n: number of sample design points to generate.
   sample: { engine: "lhs", n: 250 }
-  
-  # Bayesian calibration settings:
-  #   engine: bayesian engine ('glue' or 'smc_pf').
+
+  # OPTIONAL — Sensitivity screening: rank which parameters matter, then (optionally)
+  # calibrate only those. engine: 'morris' (cheap, no extra deps) | 'sobol' (needs SALib).
+  #   active: true to run it.  auto_activate: true to freeze the un-influential params.
+  sensitivity: { engine: "morris", active: false, trajectories: 12, auto_activate: false }
+
+  # OPTIONAL — AgMIP stepwise selection: estimate obligatory params, then add candidate
+  # params one at a time, keeping each only if it lowers BIC (overfit guard).
+  #   engine: 'stepwise_bic' | 'stepwise_aicc'.  active: true to run it.
+  select: { engine: "stepwise_bic", active: false }
+
+  # OPTIONAL — Surrogate acceleration: train a fast GP/RF emulator on a small design
+  # and validate the best candidates on the real model. engine: 'gp' | 'rf' (needs scikit-learn).
+  surrogate: { engine: "gp", active: false, n_train: 64, top_k: 10 }
+
+  # Bayesian engine settings (used when preset/bayesian.engine is glue | smc_pf | mcmc):
   #   n_particles: particle count for SMC-PF.
-  #   ess_frac: effective sample size fraction threshold. Resampling triggers when ESS drops below (ess_frac * N).
-  #   move_kernel: MCMC mutation kernel ('adaptive' scales proposal SD to ensemble spread, 'fixed' uses constant scale).
-  #   kernel_floor: minimum proposal SD (fraction of parameter range) to combat particle impoverishment.
-  #   behavioural_quantile: quantile defining 'behavioural' fits (e.g. 0.1 = top 10% best scores are kept).
+  #   ess_frac: resampling triggers when effective sample size drops below (ess_frac * N).
+  #   move_kernel: SMC mutation kernel ('adaptive' scales to ensemble spread, 'fixed' constant).
+  #   kernel_floor: minimum proposal SD (fraction of range) — fights particle impoverishment.
+  #   behavioural_quantile: top fraction of fits kept as 'behavioural' (0.1 = best 10%).
+  #   (MCMC adds: n_walkers, n_steps, burn_in, thin, proposal_scale.)
   bayesian: { engine: "smc_pf", n_particles: 250, ess_frac: 0.5,
               move_kernel: adaptive, kernel_floor: 0.01, behavioural_quantile: 0.1 }
-              
+
+  # Optimiser settings (used when preset B / optimizer.engine set): 'nelder_mead' | 'diffevo'.
+  optimizer: { engine: "none", restarts: 4, popsize: 15 }
+
   # Cross-validation strategy. 'loeo' = Leave-One-Environment-Out, 'year' = Leave-One-Year-Out, 'none' = calibrate all.
   validation: { scheme: "loeo" }
-  
+
   # Multi-objective Pareto front optimization settings. 'nsga2' = NSGA-II, 'none' = single unified objective.
   multiobjective: { engine: "none" }
 
 # --- Objective/Loss function scoring setup ---
 objective:
-  # Normalization strategy for multi-variable weighting.
-  #   unified: uses weights defined below directly.
-  #   sigma: divides residuals by observation error (sigma).
-  #   count_scale: weights variables inversely to their number of observations.
+  # How the variables (LAI, biomass, yield, phenology) combine into one score:
+  #   unified     : sum of each variable's average normalised error (balanced; default).
+  #   count_scale : like unified but averaged, so point-rich series can't dominate.
+  #   sigma       : strict sigma-weighted chi-square (what the Bayesian engines use).
+  #   user        : raw normalised RMSE x the explicit `weights` below.
+  #   agmip_wls   : auto-set each variable's weight to 1/residual-variance (AgMIP default).
   weighting: "unified"
-  
+
+  # Down-weight dense daily time-series for serial correlation (so a long LAI series
+  # does not unfairly outweigh a single end-of-season yield). true | false.
+  obs_autocorr: false
+
   # Importance weight multiplier per variable.
   weights: { biomass: 1.0, grain_yield: 1.0, anthesis: 1.0, height: 0.5, LAI: 1.0 }
   
@@ -151,30 +181,30 @@ parameters:
     # pilot run (FL-SD min, SD-PM max) and to give the under-simulating growth
     # coefficients head-room. Sanity-check these against hemp literature before a
     # production run — wide uniform priors only widen the search, they don't bias it.
-    "CSDL":  { active: true,  role: obligatory, min: 12.0, max: 16.0, start: 12.80, prior: {dist: uniform} }
-    "PPSEN": { active: true,  role: obligatory, min: 0.20, max: 1.00, start: 0.90,  prior: {dist: uniform} }
-    "EM-FL": { active: true,  role: obligatory, min: 14.0, max: 40.0, start: 30.0,  prior: {dist: uniform} }
-    "FL-SD": { active: true,  role: obligatory, min: 2.0,  max: 25.0, start: 15.0,  prior: {dist: uniform} }
-    "SD-PM": { active: true,  role: obligatory, min: 8.0,  max: 70.0, start: 50.0,  prior: {dist: uniform} }
+    "CSDL":  { active: true,  role: obligatory, min: 11.5, max: 18.0, start: 12.8, prior: {dist: uniform} }
+    "PPSEN": { active: true,  role: obligatory, min: 0.1, max: 1.0, start: 0.9,  prior: {dist: uniform} }
+    "EM-FL": { active: true,  role: obligatory, min: 10.0, max: 60.0, start: 30.0,  prior: {dist: uniform} }
+    "FL-SD": { active: true,  role: obligatory, min: 1.0,  max: 30.0, start: 15.0,  prior: {dist: uniform} }
+    "SD-PM": { active: true,  role: obligatory, min: 5.0,  max: 90.0, start: 50.0,  prior: {dist: uniform} }
     # -- Growth (class G) -> active, candidate --------------------------------
-    "LFMAX": { active: true,  role: candidate,  min: 0.40, max: 1.80, start: 1.40,  prior: {dist: uniform} }
-    "SLAVR": { active: true,  role: candidate,  min: 60.0, max: 500.0, start: 250.0, prior: {dist: uniform} }
-    "SIZLF": { active: true,  role: candidate,  min: 60.0, max: 360.0, start: 250.0, prior: {dist: uniform} }
-    "WTPSD": { active: true,  role: candidate,  min: 0.02, max: 0.90, start: 0.035, prior: {dist: uniform} }
-    "SFDUR": { active: true,  role: candidate,  min: 13.0, max: 24.0, start: 20.0,  prior: {dist: uniform} }
-    "SDPDV": { active: true,  role: candidate,  min: 1.0,  max: 50.0, start: 1.0,   prior: {dist: uniform} }
+    "LFMAX": { active: true,  role: candidate,  min: 0.3, max: 2.5, start: 1.4,  prior: {dist: uniform} }
+    "SLAVR": { active: true,  role: candidate,  min: 50.0, max: 500.0, start: 250.0, prior: {dist: uniform} }
+    "SIZLF": { active: true,  role: candidate,  min: 50.0, max: 500.0, start: 250.0, prior: {dist: uniform} }
+    "WTPSD": { active: true,  role: candidate,  min: 0.01, max: 1.2, start: 0.035, prior: {dist: uniform} }
+    "SFDUR": { active: true,  role: candidate,  min: 10.0, max: 45.0, start: 20.0,  prior: {dist: uniform} }
+    "SDPDV": { active: true,  role: candidate,  min: 1.0,  max: 100.0, start: 1.0,   prior: {dist: uniform} }
     # -- Not used for calibration (class N) -> declared, dormant --------------
-    "FL-SH": { active: false, min: 0.1,  max: 12.0, start: 10.0 }
-    "FL-LF": { active: false, min: 6.0,  max: 45.0, start: 40.0 }
-    "XFRT":  { active: false, min: 0.10, max: 1.00, start: 0.60 }
-    "PODUR": { active: false, min: 5.0,  max: 30.0, start: 30.0 }
-    "THRSH": { active: false, min: 78.0, max: 86.0, start: 80.0 }
-    "SDPRO": { active: false, min: 0.15, max: 0.40, start: 0.256 }
-    "SDLIP": { active: false, min: 0.20, max: 0.47, start: 0.319 }
+    "FL-SH": { active: false, min: 1.0,  max: 25.0, start: 10.0 }
+    "FL-LF": { active: false, min: 5.0,  max: 100.0, start: 40.0 }
+    "XFRT":  { active: false, min: 0.05, max: 0.98, start: 0.6 }
+    "PODUR": { active: false, min: 3.0,  max: 60.0, start: 30.0 }
+    "THRSH": { active: false, min: 50.0, max: 95.0, start: 80.0 }
+    "SDPRO": { active: false, min: 0.1, max: 0.5, start: 0.256 }
+    "SDLIP": { active: false, min: 0.02, max: 0.55, start: 0.319 }
 
   genetic_ecotype:
-    "PL-EM": { active: true,  min: 2.5,  max: 6.0,  start: 4.0,  prior: {dist: uniform} }
-    "RHGHT": { active: true,  min: 0.8,  max: 2.5,  start: 1.5,  prior: {dist: uniform} }
+    "PL-EM": { active: true,  min: 1.0,  max: 8.0,  start: 4.0,  prior: {dist: uniform} }
+    "RHGHT": { active: true,  min: 0.4,  max: 3.0,  start: 1.5,  prior: {dist: uniform} }
 
   # -- Management (treatment-defined here -> dormant; available to vary) -------
   management:

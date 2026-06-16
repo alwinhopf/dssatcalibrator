@@ -1,9 +1,25 @@
 """SMC Particle Filter engine with Metropolis-Hastings mutation (preset A).
 
-Sequentially assimilates time-ordered observations (time-series, followed by
-end-of-season scalars/phenology), calculates particle weights based on the cumulative
-likelihood, and triggers systematic resampling and parameter mutation (MCMC) when the
-effective sample size (ESS) drops below the threshold.
+Plain-language summary
+----------------------
+Think of a *swarm of guesses* ("particles"), each a full set of parameter values.
+We feed the observations to the swarm one date at a time. After each date, guesses
+that match the data get more *weight*; guesses that miss get less. When too few
+guesses carry most of the weight (low "effective sample size", ESS), we **resample**
+(copy the good guesses, drop the bad) and **jiggle** each copy a little (a
+Metropolis-Hastings move) so the swarm keeps exploring instead of collapsing onto
+one point. After the last observation, the weighted swarm approximates the Bayesian
+posterior — our updated belief about the parameters.
+
+Technical notes
+---------------
+* Resampling uses the **systematic** scheme (lower variance than plain multinomial).
+* The initial swarm is drawn from the **prior** when any parameter declares a
+  non-uniform prior, otherwise from a space-filling LHS/Sobol design (which is a
+  uniform prior). The Metropolis-Hastings acceptance ratio includes the prior, so
+  ``prior: {dist: normal, sd: ...}`` in the config now genuinely shapes the result.
+* The mutation re-scores both candidate and parent over the *full* observation
+  history so the move targets the correct partial posterior after each resample.
 """
 
 from __future__ import annotations
@@ -14,10 +30,27 @@ import numpy as np
 import pandas as pd
 
 from .. import objective as obj
+from .. import priors
 from ..config import resolve_exe
 from ..runner import resolve_cores, run_many
 from ..samplers import sample
 from ..spaces import ParameterSpace
+
+
+def _systematic_resample(weights: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """Systematic resampling: pick ``N`` particle indices in proportion to weights.
+
+    One uniform random offset places ``N`` equally-spaced "pointers" along the
+    cumulative-weight line, so heavy particles are copied multiple times and light
+    ones are dropped. This has strictly lower Monte-Carlo variance than drawing
+    ``N`` independent multinomial samples, which is why it is the SMC standard.
+    """
+    n = len(weights)
+    positions = (rng.random() + np.arange(n)) / n
+    cumsum = np.cumsum(weights)
+    cumsum[-1] = 1.0  # guard against floating-point drift on the last bin
+    idx = np.searchsorted(cumsum, positions)
+    return np.clip(idx, 0, n - 1)
 
 
 @dataclass
@@ -55,9 +88,18 @@ def run_smc_pf(cfg: dict, progress: bool = True) -> SmcResult:
     # Dedicated RNG (do not pollute the global np.random state used elsewhere)
     rng = np.random.default_rng(seed)
 
-    # 2. Sample initial design
+    # 2. Sample the initial ensemble (the prior cloud).
+    #    * If any parameter declares a non-uniform prior, draw particles straight
+    #      from that prior — a proper Bayesian starting point.
+    #    * Otherwise keep the space-filling LHS/Sobol design (equivalent to a
+    #      uniform prior), which is reproducible and spreads particles evenly.
     sample_engine = method.get("sample", {}).get("engine", "lhs")
-    samples = sample(space, n=n_particles, engine=sample_engine, seed=seed, include_start=True)
+    if priors.has_informative_prior(space):
+        prior_draws = priors.sample_prior_design(space, n_particles, rng)
+        start_row = pd.DataFrame([space.start], columns=space.names)
+        samples = pd.concat([start_row, prior_draws], ignore_index=True)
+    else:
+        samples = sample(space, n=n_particles, engine=sample_engine, seed=seed, include_start=True)
     # Update n_particles if it got adjusted by sampler (some samplers round n)
     n_particles = len(samples)
 
@@ -223,8 +265,8 @@ def run_smc_pf(cfg: dict, progress: bool = True) -> SmcResult:
                 print(f"  move kernel ({move_kernel}) sd: "
                       + ", ".join(f"{k}={v:.3g}" for k, v in sd.items()), flush=True)
 
-            # Resample particle indices with replacement using weights
-            resampled_idx = rng.choice(n_particles, size=n_particles, p=weights)
+            # Resample particle indices in proportion to weights (systematic)
+            resampled_idx = _systematic_resample(weights, rng)
 
             # Generate mutated parameter sets
             mutated_thetas = []
@@ -285,8 +327,14 @@ def run_smc_pf(cfg: dict, progress: bool = True) -> SmcResult:
                         loglik_mutated += compute_loglik_contrib(mut_resids, steps[s_idx])
                         loglik_parent += compute_loglik_contrib(parent_particle["residuals"], steps[s_idx])
 
-                    # Metropolis-Hastings acceptance ratio
-                    alpha = np.exp(loglik_mutated - loglik_parent)
+                    # Metropolis-Hastings acceptance ratio. The proposal is a
+                    # symmetric Gaussian random walk, so it cancels and what remains
+                    # is the ratio of (likelihood x prior) between candidate and
+                    # parent. For uniform priors the prior terms are 0 and this
+                    # reduces to the pure likelihood ratio (the original behaviour).
+                    lp_mut = priors.log_prior_vec(space, mutated_thetas[i])
+                    lp_par = priors.log_prior_vec(space, parent_particle["theta"])
+                    alpha = np.exp((loglik_mutated + lp_mut) - (loglik_parent + lp_par))
                     if not np.isnan(alpha) and rng.uniform(0, 1) < alpha:
                         accepted = True
                         new_particles.append({

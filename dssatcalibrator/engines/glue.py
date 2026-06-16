@@ -29,9 +29,28 @@ class GlueResult:
     ess: float                    # effective sample size of the posterior weights
 
 
-def run_glue(design: pd.DataFrame, param_names: list[str], cfg: dict) -> GlueResult:
+def run_glue(design: pd.DataFrame, param_names: list[str], cfg: dict,
+             space=None) -> GlueResult:
+    """Turn an evaluated design into GLUE weights + a behavioural set.
+
+    ``space`` is optional: when given and any parameter declares a non-uniform
+    prior, each run's weight becomes ``likelihood x prior`` (proper Bayesian
+    importance weighting). With uniform priors (or ``space=None``) the prior is a
+    constant and the weights are pure likelihood — the original behaviour.
+    """
     d = design.copy().reset_index(drop=True)
     ll = d["loglik"].to_numpy(dtype=float)
+
+    # Fold the log-prior into the log-likelihood when an informative prior exists.
+    if space is not None:
+        from .. import priors
+        if priors.has_informative_prior(space):
+            lp = np.array([
+                priors.log_prior_vec(space, {n: float(d.loc[i, n]) for n in param_names})
+                for i in range(len(d))
+            ])
+            ll = ll + lp
+
     finite = np.isfinite(ll)
     w = np.zeros(len(d))
     if finite.any():

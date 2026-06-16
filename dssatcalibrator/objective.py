@@ -77,6 +77,12 @@ def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.Dat
                 continue
             sim, meas = r["sim"], r["meas"]
             if pd.isna(sim) or pd.isna(meas):
+                if not pd.isna(meas) and pd.isna(sim):
+                    # Penalise missing simulation for an observed variable by introducing a large residual
+                    penalty_sim = meas + 1000.0
+                    kind = "phenology" if base in ("ADAP", "EDAP", "MDAP") else "scalar"
+                    rows.append(dict(exp_id=exp, treatment=int(r["treatment"]), user_var=sc_inv[base],
+                                     dssat=base, kind=kind, date=pd.NaT, obs=float(meas), sim=float(penalty_sim)))
                 continue
             kind = "phenology" if base in ("ADAP", "EDAP", "MDAP") else "scalar"
             rows.append(dict(exp_id=exp, treatment=int(r["treatment"]), user_var=sc_inv[base],
@@ -114,6 +120,36 @@ def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.Dat
     wts = cfg.get("objective", {}).get("weights", {}) or {}
     df["weight"] = df["user_var"].map(lambda v: float(wts.get(v, 1.0)))
     df["resid"] = df["sim"] - df["obs"]
+    if cfg.get("objective", {}).get("obs_autocorr", False):
+        df = _downweight_autocorr(df)
+    return df
+
+
+def _downweight_autocorr(df: pd.DataFrame) -> pd.DataFrame:
+    """Down-weight dense time-series for serial correlation (``obs_autocorr: true``).
+
+    Consecutive daily LAI/biomass points are *not* independent measurements: if the
+    model is too high on day 50 it is almost certainly too high on day 51. Treating
+    every day as a fresh observation makes a long time-series dominate one-off
+    scalars like grain yield. For each ``(experiment, variable, treatment)`` series
+    we estimate a lag-1 autocorrelation ``rho`` and shrink every point's weight by
+    the AR(1) effective-sample-size factor ``(1 - rho) / (1 + rho)`` — so a strongly
+    correlated 100-point series counts for only a handful of *effective* points.
+    """
+    df = df.copy()
+    ts = df[df["kind"] == "timeseries"]
+    for (_exp, _uv, _trt), g in ts.groupby(["exp_id", "user_var", "treatment"]):
+        if len(g) < 3:
+            continue
+        x = g.sort_values("date")["obs"].to_numpy(dtype=float)
+        x = x - x.mean()
+        denom = float(np.sum(x * x))
+        if denom <= 0:
+            continue
+        rho = float(np.sum(x[:-1] * x[1:]) / denom)
+        rho = min(max(rho, 0.0), 0.99)          # only down-weight positive correlation
+        factor = (1.0 - rho) / (1.0 + rho)
+        df.loc[g.index, "weight"] = df.loc[g.index, "weight"] * factor
     return df
 
 
@@ -139,14 +175,30 @@ def score(results: dict, obs_table: pd.DataFrame, cfg: dict) -> ObjectiveResult:
     loglik = float(-0.5 * np.sum(((resid["resid"] / resid["sigma"]) ** 2) * resid["weight"]))
 
     if weighting == "sigma":
+        # Total sigma-weighted chi-square (NO per-variable averaging). The
+        # statistically 'correct' misfit; matches the Gaussian log-likelihood, and
+        # is what the Bayesian engines expect.
         sc = float(np.sum(((resid["resid"] / resid["sigma"]) ** 2) * resid["weight"]))
     elif weighting == "user":
+        # Raw normalised RMSE per variable x explicit weights. Full manual control,
+        # no automatic balancing of counts or scales.
         sc = 0.0
         for uv, g in resid.groupby("user_var"):
             ob = g["obs"].mean()
             nrmse = float(np.sqrt(np.mean(g["resid"] ** 2))) / (abs(ob) if ob else 1.0)
             sc += float(wts.get(uv, 1.0)) * nrmse
-    else:  # "count_scale" and "unified" share the same minimisation surface
+    elif weighting == "count_scale":
+        # Each variable contributes the AVERAGE normalised squared error of its own
+        # points (count-balanced: a 100-point series can't drown a 1-point yield),
+        # then we average ACROSS variables -> a clean 'mean per-variable misfit'.
+        per = [float(wts.get(uv, 1.0)) * float(np.mean((g["resid"] / g["sigma"]) ** 2))
+               for uv, g in resid.groupby("user_var")]
+        sc = float(np.mean(per)) if per else float("inf")
+    else:  # "unified" (default) and "agmip_wls"
+        # SUM of per-variable mean normalised squared errors x weights. Count- and
+        # scale-balanced like count_scale, but summed (so fitting more variables
+        # costs more). 'agmip_wls' uses this same surface after the driver has reset
+        # the per-variable weights to 1 / residual-variance (see pipeline).
         sc = 0.0
         for uv, g in resid.groupby("user_var"):
             mse = float(np.mean((g["resid"] / g["sigma"]) ** 2))

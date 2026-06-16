@@ -19,6 +19,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
+# Optional engines (lazy-imported only when used). The core — sampling, GLUE,
+# SMC-PF, MCMC, Nelder-Mead/diffevo optimisers, Morris screening — needs none of
+# these (only numpy/scipy/pymoo, already required).
+full = [
+    "SALib>=1.4",          # Sobol variance-based sensitivity
+    "scikit-learn>=1.2",   # GP / Random-Forest surrogate emulator
+]
 
 [tool.setuptools.packages.find]
 include = ["dssatcalibrator*"]

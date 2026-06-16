@@ -1,16 +1,38 @@
 """Pluggable calibration engines.
 
-Implemented now:
-    glue   — Monte-Carlo / GLUE over a sampled design (preset C, the v1 default)
-    smc_pf — sequential Monte-Carlo particle filter + Metropolis-Hastings move
-             (preset A); assimilates time-ordered observations, resamples on ESS
-    nsga2  — NSGA-II multi-objective Pareto front (per-variable trade-offs)
+Each engine is a self-contained module with a ``run_*`` function and extensive,
+plain-language docstrings. They share the framework's parallel evaluator
+(``orchestrator.evaluate_thetas``) so every engine uses all cores.
 
-Documented as future work in CONCEPT.md (not yet implemented):
-    mcmc, optimizers (nelder_mead/diffevo/agmip_stepwise), surrogate.
+Stages (the order they typically run in a pipeline — see ``method.preset``):
+
+    sensitivity  — morris / sobol / anova : which parameters matter?      (screen)
+    selection    — stepwise BIC/AICc (AgMIP)  : how many to calibrate?    (guard)
+    sampling     — lhs / sobol / montecarlo / grid  (in ``samplers.py``)  (map)
+    glue         — Monte-Carlo / GLUE pseudo-posterior                    (estimate)
+    smc_pf       — sequential Monte-Carlo particle filter + MH move       (estimate)
+    mcmc         — adaptive random-walk Metropolis posterior              (estimate)
+    optimizers   — nelder_mead / diffevo : single best-fit point          (estimate)
+    nsga2        — NSGA-II multi-objective Pareto front                   (estimate)
+    surrogate    — GP/RF emulator acceleration (wraps any of the above)   (accelerate)
+
+Optional dependencies (lazy-imported, only when that engine is used):
+    sobol sensitivity -> SALib;  surrogate -> scikit-learn.
+Everything else needs only NumPy/SciPy (already core dependencies).
 """
 
-from .glue import GlueResult, run_glue  # noqa: F401
+from .glue import GlueResult, posterior_summary, run_glue  # noqa: F401
+from .mcmc import McmcResult, run_mcmc  # noqa: F401
 from .nsga2 import Nsga2Result, run_nsga2  # noqa: F401
+from .optimizers import OptimizerResult, run_optimizer  # noqa: F401
+from .selection import SelectionResult, stepwise_select  # noqa: F401
+from .sensitivity import (  # noqa: F401
+    SensitivityResult,
+    anova_variance_share,
+    influential_params,
+    run_morris,
+    run_sensitivity,
+    run_sobol,
+)
 from .smc_pf import SmcResult, run_smc_pf  # noqa: F401
-
+from .surrogate import SurrogateResult, run_surrogate  # noqa: F401

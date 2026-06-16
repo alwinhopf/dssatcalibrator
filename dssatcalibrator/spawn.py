@@ -210,9 +210,12 @@ def spawn_and_run(
     ev = dssat_io.parse_evaluate(run_dir / "Evaluate.OUT")
 
     if not cfg["calibrator"].get("keep_run_dirs", False):
-        # keep the parsed outputs only; drop the bulky per-run artifacts
-        for f in run_dir.glob("*.OUT"):
-            if f.name not in ("PlantGro.OUT", "Evaluate.OUT", "Summary.OUT"):
-                f.unlink(missing_ok=True)
+        if not cfg["calibrator"].get("cache_spawns", True):
+            shutil.rmtree(run_dir, ignore_errors=True)
+        else:
+            # keep the parsed outputs only; drop the bulky per-run artifacts
+            for f in run_dir.glob("*.OUT"):
+                if f.name not in ("PlantGro.OUT", "Evaluate.OUT", "Summary.OUT"):
+                    f.unlink(missing_ok=True)
 
     return SpawnResult(status="success", run_dir=run_dir, theta=theta, plantgro=pg, evaluate=ev)

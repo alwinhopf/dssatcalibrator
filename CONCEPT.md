@@ -14,7 +14,47 @@ years and crops.
 
 This document started as the design brief and now records both the target
 architecture and the implementation choices in the current prototype. The Python
-package exists in `dssatcalibrator/`; see `README.md` for the runnable status.
+package exists in `dssatcalibrator/`; see `README.md` for the runnable status and
+**`WALKTHROUGH.md` for a step-by-step, plain-language guide** aimed at first-time
+users.
+
+---
+
+## 0. Implementation status (updated 2026-06-16)
+
+Earlier drafts of this document over-claimed ("all four presets implemented") while
+only GLUE + SMC-PF existed. The table below is the **honest, current** map of
+feature → module → how you switch it on. Everything marked *implemented* has fast
+offline tests under `tests/`.
+
+| Capability | Status | Module | Turn it on with |
+|---|---|---|---|
+| Sampling: LHS / Sobol / Monte-Carlo / grid | implemented | `samplers.py` | `method.sample.engine` |
+| Priors (uniform / normal / lognormal / triangular) | implemented | `priors.py` | per-parameter `prior:` block |
+| Objective + metrics (RMSE/nRMSE/MBE/d/EF/R²) | implemented | `objective.py` | always on |
+| Weighting: unified / sigma / count_scale / user | implemented | `objective.py` | `objective.weighting` |
+| Weighting: `agmip_wls` (iterative reweighted LS) | implemented | `orchestrator.py` | `objective.weighting: agmip_wls` |
+| `obs_autocorr` time-series down-weighting | implemented | `objective.py` | `objective.obs_autocorr: true` |
+| GLUE (preset C) | implemented | `engines/glue.py` | `method.bayesian.engine: glue` |
+| SMC particle filter + MH (preset A) | implemented | `engines/smc_pf.py` | `method.bayesian.engine: smc_pf` |
+| MCMC posterior (preset D) | implemented | `engines/mcmc.py` | `method.bayesian.engine: mcmc` |
+| Optimisers: Nelder-Mead, differential evolution (preset B) | implemented | `engines/optimizers.py` | `method.optimizer.engine` |
+| Sensitivity: Morris (NumPy), Sobol (SALib) | implemented | `engines/sensitivity.py` | `method.sensitivity.active: true` |
+| ANOVA factor variance-share | implemented (helper) | `engines/sensitivity.py` | `anova_variance_share()` |
+| AgMIP stepwise BIC/AICc selection | implemented | `engines/selection.py` | `method.select.active: true` |
+| Surrogate (GP / Random-Forest) acceleration | implemented | `engines/surrogate.py` | `method.surrogate.active: true` |
+| NSGA-II multi-objective Pareto | implemented | `engines/nsga2.py` | `method.multiobjective.engine: nsga2` |
+| Preset pipelines A/B/C/D + custom | implemented | `orchestrator.py` | `method.preset` |
+| Leave-one-environment-out validation | implemented | `orchestrator.py` | `--validate` |
+| Parallel execution (thread-pool over DSSAT subprocesses) | implemented | `runner.py` | `calibrator.num_cores` |
+| Serial warm-up → parallel schedule | hook present (no-op here) | `runner.py` | `run_many(..., warmup=k)` |
+| Discrete-factor sweep + `dssatutils` downloading | **future** (needs `dssatutils` wiring) | — | — |
+| R parity layer (wrap CroptimizR) | **future** (Python-only today) | — | — |
+| EnKF in-season state assimilation | **future / out of scope** | — | — |
+
+**Optional dependencies** (lazy-imported, only when that engine runs): Sobol needs
+`SALib`; the surrogate needs `scikit-learn`. Install both with
+`pip install -e .[full]`. Everything else uses only NumPy/SciPy/pymoo.
 
 ---
 
@@ -587,9 +627,12 @@ names, pins `dssatengine`/`dssatutils` to tags, ignores `runs/` + `results/` scr
 3. **Spawn orchestration:** `run_experiment.R`'s warm-up→parallel schedule +
    `DSSAT_CONFIG_FILE` config injection + `reuse_existing` resume + `project_name`
    namespacing.
-4. **Engine pipeline: implement all four (A–D) as user-selectable presets** via
-   `method.preset` (plus `custom` for hand-composed stages). **Default = A**
-   (`morris → lhs → smc_pf`); C is the v1 shipping default until SMC-PF is ported. See §14a.
+4. **Engine pipeline: all four (A–D) are implemented and user-selectable** via
+   `method.preset` (plus `custom` for hand-composed stages). The default if you set
+   nothing is **C** (`lhs → glue`, fully parallel, simplest); **A**
+   (`morris → lhs → smc_pf`) is the recommended choice when you want uncertainty.
+   A preset selects the *main estimator* automatically; the optional screening /
+   selection / surrogate stages each turn on with their own `active: true`. See §14a.
 5. **Weighting: implement all four modes as user-selectable** via `objective.weighting`.
    **Default = `unified`** (count+scale for optimizers/GLUE/report; σ for Bayesian engines;
    user `weights` always applied). See §14b.
@@ -605,8 +648,11 @@ The default for a user who sets nothing is **A**; every preset is built and sele
 | **C — Map → GLUE** | `lhs → glue` | Pseudo-posterior from one big batch | Low, fully parallel | Quick first answer; simplest to ship/debug; high-throughput |
 | **D — Full UQ** | `morris → sobol → mcmc(DREAM)` | Rigorous posterior + Sobol indices | Very high | Publication-grade UQ (usually needs a surrogate) |
 
-The default for a user who sets nothing is **A**; B is the `fast` preset, C the `quick`
-preset (and v1 shipping default before SMC-PF is ported), D the full-UQ preset.
+All four are built and selectable today. **C** (`lhs → glue`) is the zero-config
+default because it is the simplest and embarrassingly parallel; **A** is the
+recommended upgrade when you want a posterior with credible intervals; **B** is the
+`fast` best-fit preset; **D** is the full-UQ preset (pair it with the surrogate for
+expensive crops). Switching is one line: `method.preset`.
 
 ### 14b. Weighting modes (all implemented; `objective.weighting` selects)
 
@@ -705,6 +751,14 @@ the wrapper needs a version bump or our own `dssatengine`-backed wrapper).
   flagged in §4.
 
 ### 16.3 Additions worth implementing
+
+> **Status (2026-06-16):** items 1–7 below are now **implemented** — AgMIP stepwise
+> selection (`engines/selection.py`), `agmip_wls` weighting (`orchestrator.py`),
+> identifiability via the sensitivity ranking + posterior pair data, leave-one-
+> environment-out validation, surrogate acceleration (`engines/surrogate.py`),
+> SALib/scikit-learn/pymoo libraries, and the NSGA-II multi-objective front.
+> Item 8 (run-budget guidance) is documented in `WALKTHROUGH.md`. The discrete-
+> factor sweep and EnKF state-assimilation remain future work (see §0).
 
 1. **AgMIP calibration protocol as a first-class engine** (`method.select`). Its core idea
    beats pure sensitivity pruning: split params into **obligatory** (degree-day / nearly

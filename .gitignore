@@ -2,6 +2,7 @@
 results/          # data tables + DSSAT spawn scratch (results/_workdir)
 figures/          # all generated PNGs
 runs/             # legacy workdir name
+weather_cache/    # NASA POWER downloads (weather.py); regenerated, never committed
 _smoke/           # local smoke-test scratch (used opportunistically by tests)
 _diag*/
 *.egg-info/

@@ -20,7 +20,7 @@ users.
 
 ---
 
-## 0. Implementation status (updated 2026-06-16)
+## 0. Implementation status (updated 2026-06-18)
 
 Earlier drafts of this document over-claimed ("all four presets implemented") while
 only GLUE + SMC-PF existed. The table below is the **honest, current** map of
@@ -48,9 +48,23 @@ offline tests under `tests/`.
 | Leave-one-environment-out validation | implemented | `orchestrator.py` | `--validate` |
 | Parallel execution (thread-pool over DSSAT subprocesses) | implemented | `runner.py` | `calibrator.num_cores` |
 | Serial warm-up → parallel schedule | hook present (no-op here) | `runner.py` | `run_many(..., warmup=k)` |
-| Discrete-factor sweep + `dssatutils` downloading | **future** (needs `dssatutils` wiring) | — | — |
+| New-site weather/soil acquisition via `dssatutils` | implemented (optional extra; real experiments unchanged) | `weather.py`, `acquisition.py` | `weather.provider: dssatutils`, `soil.provider: dssatutils` |
 | R parity layer (wrap CroptimizR) | **future** (Python-only today) | — | — |
-| EnKF in-season state assimilation | **future / out of scope** | — | — |
+| Multi-source observation adapters (satellite/UAV/IoT/farm/field) | implemented | `sources/` | `observation_sources:` block |
+| Multi-source fusion (keep_all / inverse-variance / priority) | implemented | `fusion.py` | `fusion.conflict_resolution` |
+| In-season **recalibration** (coupled: re-estimate params as data arrives) | implemented | `engines/recalibration.py` | `assimilation.mode: recalibration` + `--assimilate` |
+| In-season **EnKF / forcing** state assimilation | **prototype — UNCOUPLED** (no DSSAT state re-injection; gated by `allow_uncoupled`) | `engines/enkf.py`, `engines/forcing.py` | `assimilation.mode: enkf\|forcing`, `allow_uncoupled: true` |
+| In-season LAI **forecast/nowcast** (ensemble band + anchor continuity) | implemented | `forecast.py` | `forecast.active: true` / `--forecast` |
+| Operational **nowcast** (as-of date, persist, warm-start, forecast) | implemented | `orchestrator.nowcast` | `--nowcast YYYY-MM-DD` |
+| **Weather driver** layer (file / NASA POWER / dssatutils) + gap-fill | implemented (file default; dssatutils is optional) | `weather.py` | `weather.provider` |
+| **Planting date** ingestion → FileX PDATE (input, not fit) | implemented | `spawn.py` + `observations.planting_dates` | `management_options.use_source_planting_date` |
+| Satellite **cloud masking** + LAI observation operator | implemented | `sources/satellite.py` | `max_cloud_fraction`, `obs_operator` |
+| New-crop **scaffolding** from an analog module (+ starter config) | implemented | `scaffold.py`, `scaffold_crop.py` | `python scaffold_crop.py …` |
+| **`.SPE` writer** for new-species adaptation (gated) | implemented | `writers.edit_species` | `group: genetic_species` + `gating.species: free` |
+| **Identifiability + structural-adequacy** diagnostics | implemented | `diagnostics.py` | `diagnostics.active: true` / `--diagnostics` |
+| **Parameter staging** (freeze groups/params) | implemented | `orchestrator._apply_staging` | `method.staging.freeze_groups` |
+| Cross-validation schemes (loeo / **year / site / random**) | implemented | `orchestrator.validate_cv` | `--validate --cv-scheme …` |
+| In-season yield/maturity **forecasting** (true NWP-driven look-ahead) | **future** (LAI nowcast done; needs a forecast-weather provider) | — | — |
 
 **Optional dependencies** (lazy-imported, only when that engine runs): Sobol needs
 `SALib`; the surrogate needs `scikit-learn`. Install both with
@@ -105,15 +119,17 @@ engine that sits beside `dssatengine` and `dssatutils` as a reusable package.
 
 **Reused, borrowed, or targeted for integration:**
 
-- **`dssatengine`** (`engine.py` / `engine.R`) — the workspace run/parse layer and
-  the target integration point for future gridded-style calibration runs. The current
-  prototype does **not** import it; `dssatcalibrator.spawn` writes `DSSBatch.v48`,
-  invokes `dscsm048`, and parses `PlantGro.OUT`, `Evaluate.OUT`, and `Summary.OUT`
-  through `dssatcalibrator.dssat_io`.
+- **`dssatengine`** (`engine.py` / `engine.R`) — the workspace run/parse layer.
+  `execution.backend: dssatengine` delegates `DSSBatch.V48` writing and DSSAT
+  spawning to the shared public API (`run_dssat`, `write_dssbatch`,
+  `normalize_treatment_list`). The calibrator still parses `PlantGro.OUT`,
+  `Evaluate.OUT`, and `Summary.OUT` through `dssatcalibrator.dssat_io`, because
+  the shared engine's summary-CSV contract does not cover daily calibration outputs.
 - **`dssatutils`** — the workspace weather/soil acquisition layer
-  (`process_weather_*`, `process_soils_*`). The current hemp prototype uses files
-  already present in the DSSAT install / experiment folder; direct `dssatutils`
-  acquisition is a planned extension for new sites that do not ship `.WTH`/`.SOL`.
+  (`process_weather_*`, `process_soils_*`). Real hemp experiments still use files
+  already present in the DSSAT install / experiment folder. New-site/synthesized
+  experiments can opt into `weather.provider: dssatutils` and
+  `soil.provider: dssatutils` when the optional `acquire` extra is installed.
 - **`DSSAT_Gridded_Run_Tutorial`** — donor of the **spawn-across-settings orchestration**,
   which is the calibrator's outer loop almost verbatim:
   - `run_experiment.R` / `config_loader.{R,py}` — **non-invasive config injection**: write
@@ -426,11 +442,12 @@ so the many θ-spawns never trigger cold-download races on the same site.
      PLDP in *PLANTING; SH2O/SNO3/SNH4/ICRES in *INITIAL CONDITIONS)
    - `soil` → `.SOL` (`modify_soil_sol` + layer multipliers)
    - `weather` → `.WTH` (`add_weather_noise` generalized to T/rain offsets)
-4. Write `DSSBatch.V48` and invoke `dscsm048`. The current prototype does this in
-   `spawn.py`; a future gridded-style runner can wrap `dssatengine._run_simulation`.
+4. Write `DSSBatch.V48` and invoke `dscsm048`. `execution.backend: native` uses
+   the local fallback; `execution.backend: dssatengine` delegates batch writing
+   and spawning to the shared engine executor.
 5. Parse outputs: `Summary.OUT` / `PlantGro.OUT` / `Evaluate.OUT` through
-   `dssat_io.py`; future integration can reuse the normalized `dssatengine` summary
-   parser where the output contract matches.
+   `dssat_io.py`; this remains calibration-specific until the shared engine grows
+   daily PlantGro and simulated-vs-measured Evaluate readers.
 
 θ-perturbed genotype/management/initial-condition edits are **in-process file writes inside
 a parallel worker** (the phenology-repo pattern) — far cheaper than launching a fresh
@@ -559,7 +576,7 @@ dssatcalibrator/
     spawn.{py,R}              # θ + cached base exp -> run dir (writers below, gating-aware)
     writers.{py,R}            # CUL/ECO/FileX/SOL/WTH editors (table-driven, crop-agnostic)
     orchestrate.{py,R}        # warm-up→parallel schedule, resume, dry-run, validate, namespacing
-    runner.{py,R}             # parallel map over spawns -> dscsm048 / future dssatengine wrapper
+    runner.{py,R}             # parallel map over spawns -> native / optional dssatengine backend
     parse.{py,R}              # summary.csv + PlantGro -> tidy sim table
     objective.{py,R}          # align sim vs obs; metrics() (RMSE/nRMSE/MBE/d/EF/R²) + likelihood
     engines/
@@ -596,7 +613,7 @@ names, pins `dssatengine`/`dssatutils` to tags, ignores `runs/` + `results/` scr
 
 | Need | Source | Mechanism |
 |---|---|---|
-| Spawn + run + parse outputs | current `spawn.py` / `dssat_io.py`; future `dssatengine` wrapper | `DSSBatch` subprocess, `parse_summary`, `parse_plantgro`, `parse_evaluate` |
+| Spawn + run + parse outputs | `spawn.py` / `dssat_io.py`, with optional `dssatengine` executor | `DSSBatch` subprocess, `dssatengine.run_dssat`, `parse_summary`, `parse_plantgro`, `parse_evaluate` |
 | Parallel pool | phenology `utils.R` | `run_parallel()` (Win socket / Unix fork) |
 | Edit CUL / ECO / SOL | phenology `utils.R` | `modify_cultivar_file`, `modify_ecotype_file`, `modify_soil_sol` |
 | Weather/soil for a site | `dssatutils` | `process_weather_*`, `process_soils_*` |
@@ -691,8 +708,11 @@ selectable via `method.preset` / `objective.weighting`.
 - **P3 — Optimizers, AgMIP & full UQ → presets B, D.** Nelder-Mead/diffevo/AgMIP stepwise
   with **BIC/AICc parameter selection** + **agmip_wls** weighting (B); MCMC/DREAM +
   **GP/RF surrogate** acceleration (D); optional **pymoo NSGA-II** multi-objective.
-- **P4 — Polish.** R parity layer (**wrap CroptimizR** rather than reimplement), optional
-  **EnKF state-assimilation** mode, reporting/plots, HPC hook, tag-pinned deps, docs.
+- **P4 — Polish.** R parity layer (**wrap CroptimizR** rather than reimplement),
+  reporting/plots, HPC hook, tag-pinned deps, docs.
+- **P5 — Multi-source in-season assimilation (partly landed; see §17).** Pluggable
+  observation adapters + fusion and a **coupled recalibration** mode are implemented;
+  EnKF/forcing remain **uncoupled prototypes** and in-season forecasting is still future.
 
 A natural v1 milestone: reproduce the phenology repo's wheat phenology result through the
 generalized engine (regression check), then extend the same run to also fit LAI + biomass
@@ -809,3 +829,136 @@ the wrapper needs a version bump or our own `dssatengine`-backed wrapper).
 - SALib: https://salib.readthedocs.io/ · GSA of a cropping-system model: https://www.sciencedirect.com/science/article/pii/S1364815223003183
 - GP emulators for expensive simulators: https://link.springer.com/chapter/10.1007/978-3-031-66085-6_15
 - DSSAT + remote sensing via MCMC (rice, 2025): https://www.mdpi.com/2223-7747/14/8/1206 · EnKF LAI assimilation: https://www.sciencedirect.com/science/article/abs/pii/S030438001300416X
+
+---
+
+## 17. Multi-Source In-Season Observation Assimilation Framework
+
+This extends the calibrator from "fit fixed coefficients to a finished season" toward
+"ingest whatever observations are streaming in during the season, from whatever sources,
+and update the model." It has three layers; **be precise about which are coupled to DSSAT
+and which are not**, because §16.2 flagged exactly this calibration-vs-assimilation trap.
+
+### 17.1 Source adapters (`sources/`) — implemented
+
+A pluggable `ObservationSource` base (`sources/base.py`) with a registry
+(`sources/registry.py`) and concrete adapters, each emitting the **extended schema**
+`exp_id | treatment | variable | kind | date | value | sigma | weight | source |
+quality_flag | spatial_res_m` and carrying a **source-specific error model**:
+
+| adapter | source_type | emits (DSSAT var) | error model |
+|---|---|---|---|
+| `sentinel2_lai`, `modis_lai` | satellite | `LAID` | base RMSE, LAI-saturation & cloud/QC inflation |
+| `uav_multispectral` | uav | `LAID`, `canopy_cover`, `canopy_height` | per-variable, flight-quality inflation |
+| `field_measurements` | field | FileA/FileT vars | relative/absolute per variable |
+| `farm_phenology`, `farm_management` | farm_software | `GSTD`/`ADAT`/`MDAT`, events | date-precision dependent |
+| `soil_moisture_iot`, `canopy_temperature` | iot | `SW`, `TMEAN` | sensor-type & calibration dependent |
+
+Activate them in the `observation_sources:` config block (`adapter:` selects the class).
+
+> **Scoring caveat (enforced by a warning).** A variable is only scored if it maps to an
+> `engine.timeseries_outputs`/`scalar_outputs` column *and* DSSAT outputs it. `SW`,
+> `TMEAN`, `canopy_cover`, `canopy_height` are **not** produced by the PlantGro/Evaluate
+> parse today, so those rows are ingested but ignored unless you add the output mapping
+> (and a parser for it). `orchestrator` logs the unmatched variables so this is never silent.
+
+### 17.2 Fusion (`fusion.py`) — implemented
+
+`ObservationFuser` gathers every active source for an experiment, applies each source's
+quality filter, and reconciles coincident `(exp_id, treatment, variable, date)` records by
+one of three strategies (`fusion.conflict_resolution`): **`keep_all`**, **`inverse_variance`**
+(Bayesian-optimal 1/σ² combine — the recommended default), or **`priority`** (highest-ranked
+source wins, per `fusion.source_priority`). The fused long table flows into the *exact same*
+objective/engines as ordinary calibration via `Observations.from_sources`.
+
+### 17.3 In-season assimilation modes (`assimilation.mode`)
+
+| mode | engine | coupled to DSSAT? | what it does |
+|---|---|---|---|
+| **`recalibration`** *(default)* | `engines/recalibration.py` | **Yes** | At each observation checkpoint, filter obs to that date and re-run the calibration pipeline; `warm_start` seeds each checkpoint with the previous best fit. This is parameter estimation through time — the genuinely working in-season path. |
+| `enkf` | `engines/enkf.py` | **No (prototype)** | Stochastic EnKF *update* math, but no DSSAT forecast step and no state re-injection — DSSAT-CSM has no clean state-restart hook. As wired, the ensemble is synthetic; output is illustrative. |
+| `forcing` | `engines/forcing.py` | **No (prototype)** | Direct state replacement on a dict that is never fed back to DSSAT. Illustrative. |
+
+`enkf`/`forcing` **refuse to run** unless `assimilation.allow_uncoupled: true` — so they
+cannot silently return meaningless numbers. `combined_mode()` runs a base calibration and
+then seeds the assimilation step with its result.
+
+**Driving it:** `python run_calibration.py config.yaml --assimilate`
+(or `--combined`, or `--assim-mode recalibration|enkf|forcing`). Recalibration writes
+`assimilation_trace.csv` (best θ per checkpoint) plus `assimilation.json`.
+
+### 17.4 Honest status & what's still missing
+
+- **Coupled EnKF/forcing** would require a DSSAT forecast→update→re-inject loop (e.g. via
+  `.WTH`/initial-condition forcing or a restart build). Until then they stay gated.
+- **In-season forecasting** (project yield/maturity forward with uncertainty from the
+  current best θ) is not implemented; the old `assimilation.forecast` config block was
+  removed to avoid a dead knob.
+- The fusion + recalibration spine is tested offline (`tests/test_assimilation.py`); the
+  full recalibration loop needs a DSSAT install (the slow E2E tier).
+
+---
+
+## 18. In-season forecasting & new-crop adaptation (implemented layer)
+
+Two further use cases drove the modules below. Everything here is **optional and off by
+default** (a bare config behaves exactly as before), and the pure logic is unit-tested in
+`tests/test_new_features.py`.
+
+### 18.1 In-season LAI nowcast (`forecast.py`, `orchestrator.nowcast`)
+
+Once calibrated, DSSAT already simulates the whole season, so a forward LAI estimate is the
+calibrated run read past the last observation. `forecast.py` turns that into a product:
+
+* **`ensemble_percentiles`** — propagate the behavioural parameter sets (`n_ensemble`) and
+  take daily P10/P50/P90, so the forecast carries parameter uncertainty that widens with lead
+  time (`lead_time_table` summarises this).
+* **`anchor_correction`** — shift the forward curve to start from the last observation and
+  decay the correction to zero over `decay_days`. A seam-free nowcast without injecting state
+  into DSSAT (which CSM does not support) — the pragmatic alternative to coupled EnKF.
+* **`orchestrator.nowcast(cfg, as_of_date)`** — the operational loop: filter obs ≤ date,
+  (re)calibrate, **persist** `nowcast_state.json`, **warm-start** the next call from it, and
+  forecast. CLI: `--nowcast YYYY-MM-DD [--forecast]`.
+
+### 18.2 Weather driver (`weather.py`)
+
+Current implementation: `provider: file` is a no-op, `provider: nasa_power`
+is the lightweight single-point fallback, and `provider: dssatutils` delegates
+whole-year acquisition to `dssatutils.process_weather_*` before applying the
+calibrator's in-season `fill_gap` / `horizon` layer. The matching new-site soil
+path lives in `acquisition.py` behind `soil.provider: dssatutils`.
+
+A pluggable provider layer (default `file` = use DSSAT's own `.WTH`, a no-op). `NasaPowerProvider`
+acquires daily weather from the keyless NASA POWER API and `write_wth` renders a `.WTH`;
+`fill_gap` extends the record to (and a `horizon` past) today by `persistence`/`climatology`.
+NASA POWER's ~1–2 week latency means even reaching "today" needs gap-fill — documented as a
+stand-in for a true forecast-weather provider (the remaining future work for genuine
+look-ahead forecasting).
+
+### 18.3 Multi-source refinements
+
+* **Cloud masking** — `sources/satellite.py` now *drops* scenes above `max_cloud_fraction`
+  (and `quality_filter` drops bad-QC rows) rather than only inflating σ.
+* **Observation operator** — an optional linear `obs_operator: {scale, offset}` corrects the
+  satellite "effective LAI" vs model-LAI bias so it does not leak into the coefficients.
+* **Planting date as input** — `observations.planting_dates()` reads farm-management sowing
+  dates; `spawn` writes them as the FileX `PDATE` (opt-in `management_options.use_source_planting_date`)
+  rather than calibrating an offset.
+
+### 18.4 New crop / cultivar / species (`scaffold.py`, `diagnostics.py`, staging, CV)
+
+* **New cultivar of an existing species** — the core competency; declare the `.CUL`
+  coefficients and calibrate against dates + yield + biomass across site-years.
+* **New species** — only via the **analog-template path**. `scaffold_crop.py` clones the most
+  similar module's `.CUL/.ECO/.SPE` under a new code and emits a starter `parameters:` block
+  (bounds from MINIMA/MAXIMA rows, normal priors, phenology/growth role split). The `.SPE`
+  writer (`writers.edit_species`) enables species-coefficient adaptation but stays **gated**
+  (`gating.species: free` + `group: genetic_species`). The framework supplies the calibration
+  engine and scaffolding — it does **not** choose the analog, build a new module, or detect
+  structural inadequacy for you.
+* **Sparse-data discipline** — `method.staging` freezes groups/params the data can't
+  constrain (e.g. seed/yield params mid-season); `diagnostics.identifiability` reports
+  posterior-vs-prior width and collinearity (what is actually pinned); `diagnostics.structural_adequacy`
+  flags variables the best fit still misses badly (wrong analog/observations, not a calibration
+  problem); and `validate_cv` adds `year`/`site`/`random` folds for an honest transfer test on
+  few site-years.

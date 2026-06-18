@@ -19,6 +19,14 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
+shared = [
+    "dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@v0.3.0",
+]
+acquire = [
+    "dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@v0.2.0",
+    "geopandas>=0.14",
+    "shapely>=2.0",
+]
 # Optional engines (lazy-imported only when used). The core — sampling, GLUE,
 # SMC-PF, MCMC, Nelder-Mead/diffevo optimisers, Morris screening — needs none of
 # these (only numpy/scipy/pymoo, already required).

@@ -347,7 +347,174 @@ or turn on the surrogate for the expensive engines.
 
 ---
 
-## 14. One-line recipes
+## 14. In-season calibration & multiple data sources
+
+Everything above fits a *finished* season. You can also calibrate **during** the season,
+and pull observations from **more than just field measurements** (satellite, drone, farm
+software, sensors).
+
+### 14a. Many sources, one fused dataset
+
+Instead of `source.observations: dssat`, declare an `observation_sources:` block — each
+entry is an adapter that reads one kind of data:
+
+```yaml
+observation_sources:
+  field_measurements: { active: true,  hemp_dir: "C:/DSSAT48/Hemp", crop_ext: "HM" }
+  sentinel2_lai:      { active: true,  data_path: "obs/sentinel2_lai.csv" }
+  uav_multispectral:  { active: false, data_path: "obs/uav.csv" }
+
+fusion:
+  conflict_resolution: "inverse_variance"   # combine overlapping obs by 1/σ² (recommended)
+  source_priority: ["field_measurements", "uav_multispectral", "sentinel2_lai"]
+```
+
+The framework fetches each active source, attaches a **source-specific error bar** (a cloudy
+Sentinel LAI pixel is trusted less than a hand measurement), and **fuses** overlapping
+observations. Then calibration proceeds exactly as before. Adapters available:
+`sentinel2_lai`, `modis_lai`, `uav_multispectral`, `field_measurements`, `farm_phenology`,
+`farm_management`, `soil_moisture_iot`, `canopy_temperature`.
+
+> **Heads-up:** a source can only help if its variable is one you score (in
+> `engine.timeseries_outputs`/`scalar_outputs`) *and* DSSAT outputs it. Soil-moisture (`SW`)
+> and canopy-temperature (`TMEAN`) are ingested but **not scored** out of the box — the tool
+> prints a warning listing any such ignored variables.
+
+### 14b. In-season calibration (recalibration)
+
+"What are this field's coefficients **given the data so far**?" — re-estimated at each new
+observation date:
+
+```yaml
+assimilation:
+  active: true
+  mode: "recalibration"      # the path that actually drives DSSAT
+  recalibration: { recal_sample_size: 100, warm_start: true, update_frequency: "on_observation" }
+```
+
+```bash
+python run_calibration.py config_hemp.yaml --assimilate     # writes assimilation_trace.csv
+python run_calibration.py config_hemp.yaml --combined        # full calibration, THEN in-season
+```
+
+You get `assimilation_trace.csv` — the best-fit parameters at each checkpoint — so you can
+watch the estimate sharpen as the season unfolds. `warm_start` makes each checkpoint refine
+the previous one instead of starting cold.
+
+> **About `enkf` / `forcing` modes:** these are **prototypes that are *not* coupled to
+> DSSAT** — they do the data-assimilation math but never feed the updated state back into a
+> running simulation, so their numbers are illustrative only. They refuse to run unless you
+> set `assimilation.allow_uncoupled: true`. For real in-season work use `recalibration`.
+
+---
+
+## 15. In-season nowcasting: weather, forecast & continuity
+
+Calibrating "to date" is half the job; the other half is **projecting the crop forward**
+(e.g. estimating LAI across a stretch of cloudy days when no satellite image is available).
+All of the following are **optional and off by default**.
+
+### 15a. The operational nowcast
+
+One command does the whole loop — (re)calibrate on everything observed up to a date, save
+the calibration, and forecast forward:
+
+```bash
+python run_calibration.py config_hemp.yaml --nowcast 2024-07-15 --forecast
+```
+
+It writes `nowcast_state.json` (the latest best parameters) and `forecast_LAID.csv` (the
+forward LAI). The saved state **warm-starts the next call**, so between satellite passes you
+reuse the calibration, and when a fresh cloud-free image lands you just re-run with a later
+date.
+
+### 15b. The forecast (with uncertainty and continuity)
+
+```yaml
+forecast:
+  active: true
+  variables: ["LAID"]
+  n_ensemble: 30          # propagate the best 30 parameter sets -> P10/P50/P90 band
+  anchor_continuity: true # start the forecast FROM the last observation...
+  decay_days: 21          # ...and relax back to the pure model over 3 weeks
+```
+
+- **Ensemble band** — running the behavioural parameter sets forward gives a P10/P50/P90
+  fan, so you see *how uncertain* the projection is (it widens with lead time).
+- **Anchor continuity** — the model's LAI on the last-observation day rarely equals the
+  observed value; `anchor_continuity` shifts the forward curve to start exactly at the
+  observation and fades that correction out over `decay_days`. This gives a seam-free
+  nowcast without needing to inject state into DSSAT.
+
+### 15c. Acquiring weather (and filling the gap to "today")
+
+By default the tool uses the `.WTH` files DSSAT already has (`provider: file`). To pull
+weather for a bare site, or to extend the record toward today for a forecast:
+
+```yaml
+weather:
+  provider: nasa_power      # keyless NASA POWER daily API (needs internet)
+  gap_fill: climatology     # none | persistence | climatology
+  horizon: 10               # extend this many days past the last record
+```
+
+> **Reality check:** NASA POWER is reanalysis with a ~1–2 week lag, so even reaching *today*
+> needs `gap_fill`. `climatology`/`persistence` are honest stand-ins, **not** a true weather
+> forecast — the forecast is only as good as the weather driving it.
+
+---
+
+## 16. Calibrating a new crop, cultivar, or species
+
+### 16a. A new cultivar of an existing crop — the easy case
+
+Point the config at your site-years (planting/flowering/maturity dates, yield, biomass),
+list the cultivar coefficients in `parameters`, and calibrate. With sparse data, **calibrate
+few coefficients**: screen first, freeze the rest.
+
+### 16b. A new species — scaffold from an analog
+
+DSSAT can't model a species it doesn't have; you adapt the **most similar existing module**
+(the carinata-from-canola pattern). `scaffold_crop.py` clones the analog genotype files and
+writes a starter parameter block:
+
+```bash
+python scaffold_crop.py --dssat-dir C:/DSSAT48 \
+    --analog-stem SBGRO048 --new-stem QUGRO048 --new-code QU \
+    --source-anchor IB0001 --out-dir templates/quinoa
+```
+
+You get `templates/quinoa/QUGRO048.CUL/.ECO/.SPE` and a `parameters_block.yaml` (bounds from
+the file's MINIMA/MAXIMA rows, normal priors, a phenology→`obligatory` / growth→`candidate`
+split). **Review every bound against literature** — the scaffold copies physiology, it does
+not invent it. Editing the species file (`.SPE`) stays **gated**: set `gating: { species:
+free }` and tag the parameters with `group: genetic_species` only when you truly mean to
+adapt species physiology.
+
+### 16c. Sparse-data discipline (the three guards)
+
+With only a few site-years you can fit the calibration data and still predict badly. Use:
+
+```yaml
+method:
+  sensitivity: { engine: morris, active: true, auto_activate: true }   # keep only what matters
+  select:      { engine: stepwise_bic, active: true }                  # add a param only if it earns it
+  staging:     { freeze_groups: ["genetic_ecotype"], freeze_params: ["XFRT", "WTPSD"] }  # freeze yield params
+  validation:  { scheme: site }                                        # honest transfer test
+diagnostics: { active: true }                                          # report what's identifiable
+```
+
+- **`staging`** freezes coefficients your data can't constrain (e.g. seed/yield params when
+  you only have mid-season LAI + phenology).
+- **`diagnostics`** writes `identifiability.csv` (posterior-vs-prior width; which coefficients
+  are actually pinned) and `structural_adequacy.csv` (a warning when *no* parameter set fits —
+  a sign the analog module is wrong, which calibration can't fix).
+- **Validation schemes** (`--validate --cv-scheme site|year|loeo|random`) report calibration
+  vs evaluation error; with few site-years prefer `site` or `year` folds.
+
+---
+
+## 17. One-line recipes
 
 ```bash
 # sanity check (fast)
@@ -364,6 +531,20 @@ python run_calibration.py config_hemp.yaml --optimizer diffevo
 
 # check you're not over-fitting
 python run_calibration.py config_hemp.yaml --validate
+
+# in-season: recalibrate as observations arrive (writes assimilation_trace.csv)
+python run_calibration.py config_hemp.yaml --assimilate
+
+# in-season nowcast: calibrate to a date, then forecast LAI forward
+python run_calibration.py config_hemp.yaml --nowcast 2024-07-15 --forecast
+
+# honest transfer test with site folds + identifiability/structural diagnostics
+python run_calibration.py config_hemp.yaml --validate --cv-scheme site
+python run_calibration.py config_hemp.yaml --diagnostics
+
+# scaffold a new crop from an analog DSSAT module
+python scaffold_crop.py --dssat-dir C:/DSSAT48 --analog-stem SBGRO048 \
+    --new-stem QUGRO048 --new-code QU --source-anchor IB0001 --out-dir templates/quinoa
 ```
 
 Happy calibrating. When in doubt: **screen, calibrate few parameters, and validate.**

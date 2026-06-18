@@ -12,11 +12,29 @@ NSGA-II engine and by leave-one-environment-out validation.
 from __future__ import annotations
 
 import gc
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
+
+
+def _warn_unmatched(obs, cfg: dict) -> None:
+    """Warn (once) if observations carry variables the objective can't score."""
+    try:
+        unmatched = obj.unmatched_variables(getattr(obs, "table", obs), cfg)
+    except Exception:
+        return
+    if unmatched:
+        logger.warning(
+            "Observations include variable(s) %s that are not mapped in "
+            "engine.timeseries_outputs / engine.scalar_outputs (and may not be a "
+            "DSSAT output). These rows will be IGNORED when scoring. Map them to a "
+            "DSSAT output column to use them.", unmatched,
+        )
 
 from . import objective as obj
 from .config import active_parameters, crop_for, resolve_exe
@@ -50,13 +68,29 @@ def _setup(cfg: dict):
     hemp_dir = Path(cfg["source"]["hemp_dir"])
     run_root = Path(cfg["calibrator"]["workdir"]) / cfg["calibrator"]["name"]
     run_root.mkdir(parents=True, exist_ok=True)
-    src = cfg.get("source", {}).get("observations", "dssat")
-    if src == "dssat":
-        obs = Observations.from_dssat(hemp_dir, cfg.get("experiments", []), crop_ext=crop["code"])
+    
+    src_block = cfg.get("source", {})
+    if "table" in src_block:
+        obs = Observations(src_block["table"])
+    elif cfg.get("observation_sources"):
+        obs = Observations.from_sources(cfg, cfg.get("experiments", []))
     else:
-        obs = Observations.from_csv(src)
+        src = src_block.get("observations", "dssat")
+        if src == "dssat":
+            obs = Observations.from_dssat(hemp_dir, cfg.get("experiments", []), crop_ext=crop["code"])
+        else:
+            obs = Observations.from_csv(src)
+            
     experiments = [e for e in cfg.get("experiments", []) if e in set(obs.experiments())]
     treatments = {e: parse_treatments(hemp_dir / f"{e}.{crop['filex_ext']}") for e in experiments}
+
+    # Optional: take planting dates from ingested farm-management rows and set them
+    # as a FileX PDATE override (an input, not a calibrated parameter). Opt-in via
+    # management.use_source_planting_date; resolved once and stashed on the cfg.
+    if (cfg.get("management_options", {}).get("use_source_planting_date")
+            and "_planting_dates" not in cfg):
+        cfg["_planting_dates"] = obs.planting_dates()
+
     return space, crop, exe, specs, run_root, obs, experiments, treatments
 
 
@@ -232,6 +266,34 @@ def _stage_on(block: dict | None) -> bool:
     return bool(block and block.get("active", False))
 
 
+def _apply_staging(cfg: dict) -> dict:
+    """Freeze whole parameter groups / named parameters (``method.staging``).
+
+    Supports the AgMIP-style staged workflow and sparse-data discipline: e.g.
+    by mid-season freeze the seed/yield group so only phenology+canopy params are
+    estimated. ``freeze_groups`` deactivates entire groups; ``freeze_params`` named
+    ones. Pure config — returns a copy with those parameters set ``active: false``.
+    """
+    st = (cfg.get("method", {}) or {}).get("staging", {}) or {}
+    fg = set(st.get("freeze_groups", []) or [])
+    fp = set(st.get("freeze_params", []) or [])
+    if not fg and not fp:
+        return cfg
+    from copy import deepcopy
+    out = deepcopy(cfg)
+    frozen = []
+    for group, params in (out.get("parameters") or {}).items():
+        if not isinstance(params, dict):
+            continue
+        for name, spec in params.items():
+            if isinstance(spec, dict) and spec.get("active", False) and (group in fg or name in fp):
+                spec["active"] = False
+                frozen.append(name)
+    if frozen:
+        logger.info("Staging: froze %d parameter(s): %s", len(frozen), frozen)
+    return out
+
+
 def _apply_active_subset(cfg: dict, keep: list[str]) -> dict:
     """Return a copy of ``cfg`` with only ``keep`` parameters left ``active: true``.
 
@@ -272,6 +334,7 @@ def calibrate(cfg: dict, *, progress=True) -> CalibrationResult:
     from .engines import (run_glue, run_mcmc, run_nsga2, run_optimizer,
                           run_sensitivity, run_smc_pf, run_surrogate, stepwise_select)
 
+    cfg = _apply_staging(cfg)
     method = _resolve_method(cfg)
     seed = int(cfg["calibrator"].get("seed", 42))
     n_workers = resolve_cores(cfg["calibrator"].get("num_cores", 0))
@@ -281,6 +344,7 @@ def calibrate(cfg: dict, *, progress=True) -> CalibrationResult:
     work_cfg = cfg
     setup = _setup(work_cfg)
     space = setup[0]
+    _warn_unmatched(setup[5], work_cfg)
 
     # --- 1. sensitivity screening (optional) --------------------------------------
     sens_block = method.get("sensitivity")
@@ -498,21 +562,67 @@ def combine_runs(cfg: dict, run_dirs: list[str | Path]) -> CalibrationResult:
     )
 
 
-def validate_loeo(cfg: dict, *, progress=False) -> pd.DataFrame:
-    """Leave-one-environment-out: calibrate on n-1 experiments, evaluate on the held-out one.
+def _year_key(exp: str) -> str:
+    # DSSAT experiment codes are SSII<YY><NN> (site/inst, 2-digit year, 2-digit
+    # number), so the year is the FIRST two of the trailing digits, e.g.
+    # "YUKU2101" -> "21".
+    digits = "".join(ch for ch in exp if ch.isdigit())
+    return digits[:2] if len(digits) >= 2 else exp
 
-    Returns a tidy table of calibration vs evaluation fit per held-out experiment.
+
+def _site_key(exp: str) -> str:
+    return "".join(ch for ch in exp if not ch.isdigit()) or exp
+
+
+def _make_folds(experiments: list[str], scheme: str, seed: int) -> list[tuple[str, list[str]]]:
+    """Return ``[(fold_label, held_experiments)]`` for a CV scheme.
+
+    ``loeo`` holds out one experiment at a time; ``year``/``site`` hold out a whole
+    year/site group (more honest for transfer); ``random`` holds out random k-folds
+    (``method.validation.k``, default 5).
+    """
+    exps = list(experiments)
+    if scheme in ("loeo", "none", "", None):
+        return [(e, [e]) for e in exps]
+    if scheme == "year":
+        groups: dict[str, list[str]] = {}
+        for e in exps:
+            groups.setdefault(_year_key(e), []).append(e)
+        return [(f"year_{k}", v) for k, v in groups.items()]
+    if scheme == "site":
+        groups = {}
+        for e in exps:
+            groups.setdefault(_site_key(e), []).append(e)
+        return [(f"site_{k}", v) for k, v in groups.items()]
+    if scheme == "random":
+        rng = np.random.default_rng(seed)
+        shuffled = list(exps)
+        rng.shuffle(shuffled)
+        k = min(len(shuffled), 5)
+        return [(f"fold_{i}", shuffled[i::k]) for i in range(k) if shuffled[i::k]]
+    raise ValueError(f"Unknown validation scheme '{scheme}'. "
+                     "Use loeo | year | site | random.")
+
+
+def validate_cv(cfg: dict, *, scheme: str | None = None, progress=False) -> pd.DataFrame:
+    """Generalised cross-validation: calibrate on train experiments, evaluate on held-out.
+
+    ``scheme`` (or ``method.validation.scheme``): loeo | year | site | random.
+    Returns a tidy table of calibration-vs-evaluation fit per fold, with a ``fold``
+    label and the held-out experiment. With only a few site-years, prefer ``year``
+    or ``site`` folds and read the gap between splits as your overfit signal.
     """
     space, crop, exe, specs, run_root, obs, experiments, treatments = _setup(cfg)
     n_workers = resolve_cores(cfg["calibrator"].get("num_cores", 0))
     method = cfg.get("method", {})
     n = int(method.get("sample", {}).get("n", 100))
     seed = int(cfg["calibrator"].get("seed", 42))
+    scheme = scheme or method.get("validation", {}).get("scheme", "loeo")
 
     rows = []
-    for held in experiments:
-        train = [e for e in experiments if e != held]
-        if not train:
+    for label, held in _make_folds(experiments, scheme, seed):
+        train = [e for e in experiments if e not in set(held)]
+        if not train or not held:
             continue
         cfg_train = {**cfg, "experiments": train}
         samples = sample(space, n=n, engine=method.get("sample", {}).get("engine", "lhs"),
@@ -522,12 +632,244 @@ def validate_loeo(cfg: dict, *, progress=False) -> pd.DataFrame:
         glue = run_glue(design, space.names, cfg_train, space=space)
         best_theta = glue.best_theta
         cal = obj_results[glue.best_sample_id]
-        # evaluate best on the held-out experiment
-        ev = _score_theta(best_theta, [held], cfg={**cfg, "experiments": [held]}, crop=crop,
+        ev = _score_theta(best_theta, held, cfg={**cfg, "experiments": held}, crop=crop,
                           specs=specs, run_root=run_root, treatments=treatments, exe=exe,
                           obs=obs, n_workers=n_workers)
         for uv, m in cal.per_var.items():
-            rows.append({"held_out": held, "split": "calibration", "variable": uv, **m})
+            rows.append({"fold": label, "held_out": ",".join(held), "split": "calibration",
+                         "variable": uv, **m})
         for uv, m in ev.per_var.items():
-            rows.append({"held_out": held, "split": "evaluation", "variable": uv, **m})
+            rows.append({"fold": label, "held_out": ",".join(held), "split": "evaluation",
+                         "variable": uv, **m})
     return pd.DataFrame(rows)
+
+
+def validate_loeo(cfg: dict, *, progress=False) -> pd.DataFrame:
+    """Leave-one-environment-out CV (back-compat wrapper over :func:`validate_cv`)."""
+    return validate_cv(cfg, scheme="loeo", progress=progress)
+
+
+def nowcast(cfg: dict, as_of_date, *, progress=True) -> dict:
+    """Operational in-season run: (re)calibrate on data up to ``as_of_date``, persist
+    the calibration, and forecast the target variable(s) forward.
+
+    Persists ``results/<name>/nowcast_state.json`` (the latest best theta) and
+    warm-starts the next call from it — so between cloud-free satellite passes you
+    reuse the stored calibration, and a new observation triggers a refresh. When
+    ``forecast.active`` is set, returns per-variable, per-experiment forecast tables
+    (LAI percentiles, optionally anchored to the last observation).
+    """
+    import json
+    from copy import deepcopy
+    from . import forecast as fc
+
+    name = cfg["calibrator"]["name"]
+    out_dir = Path(cfg["calibrator"].get("results_dir", "results")) / name
+    out_dir.mkdir(parents=True, exist_ok=True)
+    state_path = out_dir / "nowcast_state.json"
+
+    prev_theta = None
+    if state_path.exists():
+        try:
+            prev_theta = json.loads(state_path.read_text()).get("theta")
+        except Exception:
+            prev_theta = None
+
+    obs_all = _setup(cfg)[5].table
+    ts = pd.Timestamp(as_of_date)
+    filtered = obs_all[obs_all["date"].isna() | (obs_all["date"] <= ts)].copy()
+    if progress:
+        print(f"Nowcast as of {ts.date()}: {len(filtered)} observations in scope", flush=True)
+
+    work = deepcopy(cfg)
+    work["source"] = {**work.get("source", {}), "table": filtered}
+    if prev_theta:                                   # warm start from the last calibration
+        for _g, params in (work.get("parameters") or {}).items():
+            if not isinstance(params, dict):
+                continue
+            for nm, spec in params.items():
+                if isinstance(spec, dict) and nm in prev_theta:
+                    spec["start"] = float(prev_theta[nm])
+    recal_n = cfg.get("assimilation", {}).get("recalibration", {}).get("recal_sample_size")
+    if recal_n:
+        work.setdefault("method", {}).setdefault("sample", {})["n"] = int(recal_n)
+
+    result = calibrate(work, progress=progress)
+    state_path.write_text(json.dumps({"as_of": str(ts.date()), "theta": result.best_theta},
+                                     indent=2, default=str))
+
+    # last LAI observation per experiment, for the anchor-continuity correction
+    last_obs = {}
+    lai = filtered[(filtered["variable"] == "LAID") & filtered["date"].notna()]
+    for exp, g in lai.groupby("exp_id"):
+        r = g.sort_values("date").iloc[-1]
+        last_obs[exp] = (pd.Timestamp(r["date"]), float(r["value"]))
+
+    forecasts = {}
+    if cfg.get("forecast", {}).get("active", False):
+        for var in cfg.get("forecast", {}).get("variables", ["LAID"]):
+            forecasts[var] = fc.forecast_lai(work, result, last_obs=last_obs, variable=var)
+
+    return {"as_of": str(ts.date()), "best_theta": result.best_theta,
+            "result": result, "forecast": forecasts, "last_obs": last_obs}
+
+
+def assimilate(cfg: dict, *, progress=True) -> dict:
+    """Run in-season data assimilation according to configuration.
+    
+    Supported modes:
+    - "recalibration": Mid-season parameter re-estimation.
+    - "forcing": Direct state replacement.
+    - "enkf": Ensemble Kalman Filter.
+    """
+    from .engines import InSeasonRecalibrator, ForcingAssimilator, EnsembleKalmanFilter
+
+    assim_cfg = cfg.get("assimilation", {})
+    mode = assim_cfg.get("mode", "recalibration")
+
+    # Validate the mode FIRST (before the expensive _setup): enkf / forcing are
+    # uncoupled prototypes (state is never re-injected into a running DSSAT
+    # simulation), so refuse to run unless the user explicitly opts in.
+    if mode not in ("recalibration", "enkf", "forcing"):
+        raise ValueError(f"Unknown assimilation mode '{mode}'. "
+                         "Expected: recalibration | enkf | forcing.")
+    if mode in ("enkf", "forcing") and not assim_cfg.get("allow_uncoupled", False):
+        raise NotImplementedError(
+            f"Assimilation mode '{mode}' is an UNCOUPLED prototype: the updated state "
+            "is not fed back into a running DSSAT simulation, so its output is "
+            "illustrative only. Set assimilation.allow_uncoupled: true to run it "
+            "anyway, or use mode: recalibration (the coupled in-season path)."
+        )
+    if mode in ("enkf", "forcing"):
+        logger.warning("Running UNCOUPLED assimilation mode '%s' — output is "
+                       "illustrative only (not coupled to DSSAT state).", mode)
+
+    setup = _setup(cfg)
+    space, crop, exe, specs, run_root, obs, experiments, treatments = setup
+    _warn_unmatched(obs, cfg)
+
+    if progress:
+        print(f"Starting in-season data assimilation (mode: {mode})...", flush=True)
+
+    results = {}
+
+    if mode == "recalibration":
+        obs_df = obs.table
+        valid_dates = obs_df[obs_df["date"].notna()]["date"].dt.date.unique()
+        valid_dates = sorted(valid_dates)
+        
+        if not valid_dates:
+            logger.warning("No time-series observations found for recalibration.")
+            return {}
+            
+        freq = assim_cfg.get("recalibration", {}).get("update_frequency", "on_observation")
+        if freq == "weekly" and len(valid_dates) > 1:
+            resampled = pd.date_range(start=min(valid_dates), end=max(valid_dates), freq="W").date
+            valid_dates = [d for d in resampled if d in set(valid_dates)]
+        elif freq == "biweekly" and len(valid_dates) > 1:
+            resampled = pd.date_range(start=min(valid_dates), end=max(valid_dates), freq="2W").date
+            valid_dates = [d for d in resampled if d in set(valid_dates)]
+            
+        engine = InSeasonRecalibrator(cfg)
+        warm_start = assim_cfg.get("recalibration", {}).get("warm_start", True)
+        trace = []
+        prev_theta = None
+        for d in valid_dates:
+            if progress:
+                print(f"  Recalibrating at checkpoint date: {d}", flush=True)
+            best_theta = engine.recalibrate(obs_df, d,
+                                            warm_start_theta=prev_theta if warm_start else None)
+            trace.append({"date": d, "theta": best_theta})
+            prev_theta = best_theta
+
+        results = {
+            "mode": mode,
+            "trace": trace,
+            "final_theta": trace[-1]["theta"] if trace else None
+        }
+        
+    elif mode == "forcing":
+        engine = ForcingAssimilator(cfg)
+        obs_df = obs.table
+        dated_obs = obs_df[obs_df["date"].notna()].sort_values("date")
+        
+        state_history = []
+        current_state = {}
+        
+        for _, r in dated_obs.iterrows():
+            current_state = engine.apply(current_state, {
+                "variable": r["variable"],
+                "value": r["value"],
+                "confidence": r["weight"] if not pd.isna(r["weight"]) else 1.0
+            })
+            state_history.append({
+                "date": r["date"],
+                "variable": r["variable"],
+                "state": current_state.copy()
+            })
+            
+        results = {
+            "mode": mode,
+            "state_history": state_history,
+            "final_state": current_state
+        }
+        
+    elif mode == "enkf":
+        engine = EnsembleKalmanFilter(cfg)
+        obs_df = obs.table
+        n_ens = engine.n_ensemble
+        n_vars = len(engine.state_vars)
+        ensemble = np.random.default_rng(42).normal(loc=1.0, scale=0.2, size=(n_ens, n_vars))
+        
+        dated_obs = obs_df[obs_df["date"].notna()].sort_values("date")
+        filter_history = []
+        
+        for _, r in dated_obs.iterrows():
+            var = r["variable"]
+            if var in engine.state_vars:
+                obs_val = r["value"]
+                obs_sig = r["sigma"] if not pd.isna(r["sigma"]) else 0.1
+                
+                ensemble = engine.assimilate(ensemble, var, obs_val, obs_sig)
+                
+                filter_history.append({
+                    "date": r["date"],
+                    "variable": var,
+                    "mean_state": ensemble.mean(axis=0).tolist(),
+                    "std_state": ensemble.std(axis=0).tolist()
+                })
+                
+        results = {
+            "mode": mode,
+            "filter_history": filter_history,
+            "final_ensemble_mean": ensemble.mean(axis=0).tolist()
+        }
+        
+    return results
+
+
+def combined_mode(cfg: dict, *, progress=True) -> dict:
+    """Run combined mode: parameter calibration followed by in-season state assimilation."""
+    if progress:
+        print("=== Step 1: Base Parameter Calibration ===", flush=True)
+    cal_result = calibrate(cfg, progress=progress)
+    
+    if progress:
+        print("=== Step 2: In-Season State Assimilation ===", flush=True)
+    from copy import deepcopy
+    cfg_assim = deepcopy(cfg)
+
+    for group, params in cfg_assim.get("parameters", {}).items():
+        if not isinstance(params, dict):
+            continue
+        for name, spec in params.items():
+            if isinstance(spec, dict) and name in cal_result.best_theta:
+                spec["start"] = float(cal_result.best_theta[name])
+                
+    assim_results = assimilate(cfg_assim, progress=progress)
+    
+    return {
+        "calibration": cal_result,
+        "assimilation": assim_results
+    }
+

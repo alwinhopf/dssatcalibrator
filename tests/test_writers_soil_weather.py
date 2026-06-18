@@ -27,6 +27,26 @@ def test_parse_fields():
     assert f["wsta"] == "CNKU2101"
 
 
+def test_parse_fields_coordinates(tmp_path):
+    filex = tmp_path / "TEST.HMX"
+    filex.write_text(
+        "*FIELDS\n"
+        "@L ID_FIELD WSTA....  FLSA  FLOB  FLDT  FLDD  FLDS  FLST SLTX  SLDP  ID_SOIL    FLNAME\n"
+        " 1 FIELD001 WSTA0001   -99     0 IB000     0     0 00000 -99    180  SOIL0001   test\n"
+        "@L ...........XCRD ...........YCRD .....ELEV .............AREA .SLEN .FLWR .SLAS FLHST FHDUR\n"
+        " 1        -91.250        14.500      120               -99   -99   -99   -99   -99   -99\n"
+        "*TREATMENTS\n",
+        encoding="utf-8",
+    )
+    f = parse_fields(filex)
+    assert f["id_field"] == "FIELD001"
+    assert f["wsta"] == "WSTA0001"
+    assert f["id_soil"] == "SOIL0001"
+    assert f["lat"] == pytest.approx(14.5)
+    assert f["lon"] == pytest.approx(-91.25)
+    assert f["elev"] == pytest.approx(120)
+
+
 def _layer_values(sol_text: str, col: str):
     lines = sol_text.splitlines()
     hdr = next(i for i, ln in enumerate(lines)

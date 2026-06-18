@@ -160,6 +160,58 @@ class Observations:
     def from_csv(cls, path: str | Path) -> "Observations":
         return cls(read_csv(path))
 
+    @classmethod
+    def from_sources(cls, cfg: dict, experiments: list[str]) -> "Observations":
+        """Load, fuse, and return observations from all configured active sources."""
+        from datetime import date
+        from .sources import build_sources
+        from .fusion import ObservationFuser, SCHEMA_EXTENDED
+        from .config import crop_for
+
+        sources = build_sources(cfg)
+
+        if not sources:
+            hemp_dir = Path(cfg["source"]["hemp_dir"])
+            crop = crop_for(cfg, (cfg.get("crops") or [{}])[0].get("code", "HM"))
+            df = cls.from_dssat(hemp_dir, experiments, crop_ext=crop["code"]).table
+            for col in SCHEMA_EXTENDED:
+                if col not in df.columns:
+                    if col == "source":
+                        df[col] = "field_measurements"
+                    elif col == "quality_flag":
+                        df[col] = 0
+                    else:
+                        df[col] = np.nan
+            return cls(df[SCHEMA_EXTENDED])
+
+        fuser = ObservationFuser(sources, cfg)
+        frames = []
+        for exp in experiments:
+            df = fuser.collect(exp, (date(1970, 1, 1), date(2099, 12, 31)))
+            if not df.empty:
+                frames.append(df)
+
+        table = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=SCHEMA_EXTENDED)
+        return cls(table)
+
+
+    def planting_dates(self) -> dict:
+        """Return ``{exp_id: date}`` from any ingested planting-date rows.
+
+        Farm-management software reports the planting date — an *input* to set in
+        the FileX, not a target to fit. Rows whose ``variable`` names a planting
+        date contribute their ``date`` (the recorded sowing date).
+        """
+        if self.table.empty or "variable" not in self.table:
+            return {}
+        keys = {"planting_date", "pdate", "planting", "sowing_date", "sowing"}
+        m = self.table[self.table["variable"].astype(str).str.lower().isin(keys)]
+        out = {}
+        for _, r in m.iterrows():
+            if pd.notna(r.get("date")):
+                out[r["exp_id"]] = pd.Timestamp(r["date"])
+        return out
+
     def coverage(self) -> pd.DataFrame:
         """Per-experiment × variable count of observations (for sanity checks)."""
         if self.table.empty:

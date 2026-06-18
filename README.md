@@ -17,6 +17,10 @@
 - **Priors that count**: declare `uniform` / `normal` / `lognormal` / `triangular` priors per parameter; the Bayesian engines use them.
 - **Honest objective**: RMSE/nRMSE/MBE/Willmott-d/EF/R² metrics, four weighting modes (`unified`, `sigma`, `count_scale`, `user`), `agmip_wls` reweighting, and optional `obs_autocorr` down-weighting of dense time-series.
 - **Validation**: leave-one-environment-out cross-validation.
+- **Multi-source & in-season**: pluggable observation adapters (satellite, UAV, IoT, farm software, field) fused by inverse-variance/priority, plus an **in-season recalibration** mode that re-estimates parameters as data arrives (`--assimilate` / `--combined`). See [`WALKTHROUGH.md`](WALKTHROUGH.md) §14 and [`CONCEPT.md`](CONCEPT.md) §17. *(EnKF/forcing state-assimilation modes are uncoupled prototypes, gated behind `allow_uncoupled`.)*
+- **In-season LAI nowcast**: forecast LAI forward with an ensemble uncertainty band and last-observation anchoring (`--nowcast DATE --forecast`); optional NASA POWER weather driver with latency gap-fill. See [`WALKTHROUGH.md`](WALKTHROUGH.md) §15.
+- **New crop / cultivar / species**: scaffold from an analog DSSAT module (`scaffold_crop.py`) with a gated `.SPE` writer, parameter **staging** (freeze what the data can't constrain), **identifiability/structural-adequacy** diagnostics (`--diagnostics`), and `year`/`site`/`random` cross-validation (`--cv-scheme`). See [`WALKTHROUGH.md`](WALKTHROUGH.md) §16.
+- **Shared-stack plumbing**: optional `execution.backend: dssatengine` delegates DSSAT spawning and `DSSBatch.V48` writing to the shared engine; optional `weather.provider: dssatutils` / `soil.provider: dssatutils` acquire new-site inputs through the shared download layer. The calibration-specific writers, PlantGro/Evaluate parsers, objective, and engines stay local.
 - **Parallel by default**: every engine fans its DSSAT runs across all cores (`num_cores`).
 - **Visualization**: posterior distributions, observed-vs-simulated fits, sensitivity tornado, MCMC traces, ESS trajectory, Pareto front.
 
@@ -27,6 +31,8 @@ Requires Python 3.10+.
 ```bash
 pip install -e .          # core (numpy/scipy/pandas/matplotlib/pymoo) — enough for
                           # sampling, GLUE, SMC-PF, MCMC, optimisers, Morris screening
+pip install -e .[shared]  # + pinned dssatengine@v0.3.0 execution backend
+pip install -e .[acquire] # + pinned dssatutils@v0.2.0 weather/soil acquisition
 pip install -e .[full]    # + SALib (Sobol sensitivity) and scikit-learn (surrogate)
 pip install -e .[dev]     # + pytest
 ```

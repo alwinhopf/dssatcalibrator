@@ -36,3 +36,7 @@ from .sensitivity import (  # noqa: F401
 )
 from .smc_pf import SmcResult, run_smc_pf  # noqa: F401
 from .surrogate import SurrogateResult, run_surrogate  # noqa: F401
+from .recalibration import InSeasonRecalibrator  # noqa: F401
+from .forcing import ForcingAssimilator  # noqa: F401
+from .enkf import EnsembleKalmanFilter  # noqa: F401
+

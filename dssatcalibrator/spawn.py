@@ -23,9 +23,11 @@ from pathlib import Path
 import pandas as pd
 
 from . import dssat_io
+from .config import resolve_dssat_paths
 from .writers import edit_cultivar, edit_ecotype
 
 GENETIC_GROUPS = {"genetic_cultivar"}
+BATCH_FILE = "DSSBatch.V48"
 
 
 def theta_hash(theta: dict[str, float]) -> str:
@@ -54,9 +56,110 @@ def write_dssbatch(run_dir: Path, filex_name: str, treatments: list[int]) -> Pat
     header = ("$BATCH(CALIB)\n!\n@FILEX" + " " * 86 +
               "TRTNO     RP     SQ     OP     CO\n")
     rows = "".join(f"{filex_name:<93}{t:6d}      1      0      1      0\n" for t in treatments)
-    p = run_dir / "DSSBatch.v48"
-    p.write_text(header + rows)
+    p = run_dir / BATCH_FILE
+    p.write_text(header + rows, encoding="utf-8")
     return p
+
+
+def _execution_backend(cfg: dict) -> str:
+    backend = str(cfg.get("execution", {}).get("backend", "native")).lower()
+    if backend not in {"native", "dssatengine"}:
+        raise ValueError("execution.backend must be 'native' or 'dssatengine'.")
+    return backend
+
+
+def _dssatengine_api():
+    try:
+        from dssatengine import normalize_treatment_list, run_dssat, write_dssbatch as engine_write_dssbatch
+    except ImportError as exc:
+        raise ImportError(
+            "execution.backend: dssatengine requires 'dssatcalibrator[shared]' "
+            "or an installed dssatengine package."
+        ) from exc
+    return normalize_treatment_list, run_dssat, engine_write_dssbatch
+
+
+def _normalize_treatments(treatments: list[int], backend: str) -> list[int]:
+    if backend == "dssatengine":
+        normalize_treatment_list, _, _ = _dssatengine_api()
+        return normalize_treatment_list(1, 1, treatment_list=treatments)
+
+    seen = set()
+    out = []
+    for value in treatments:
+        trt = int(value)
+        if trt < 1:
+            raise ValueError("Treatment IDs must be positive integers.")
+        if trt not in seen:
+            seen.add(trt)
+            out.append(trt)
+    if not out:
+        raise ValueError("No valid treatments selected.")
+    return out
+
+
+def _write_batch(run_dir: Path, filex_name: str, treatments: list[int], backend: str) -> Path:
+    if backend == "dssatengine":
+        _, _, engine_write_dssbatch = _dssatengine_api()
+        batch = run_dir / BATCH_FILE
+        engine_write_dssbatch(filex_name, treatments, str(batch), run_mode="experiment")
+        return batch
+    return write_dssbatch(run_dir, filex_name, treatments)
+
+
+def _run_native_dssat(run_dir: Path, exe: Path, model: str, timeout: int) -> str:
+    try:
+        result = subprocess.run(
+            [str(exe), model, "B", BATCH_FILE],
+            cwd=str(run_dir),
+            timeout=timeout,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return "timeout"
+
+    output = "\n".join(part for part in (result.stdout, result.stderr) if part)
+    if output:
+        (run_dir / "dssat_B_stdout_stderr.log").write_text(output.rstrip() + "\n",
+                                                           encoding="utf-8")
+    if result.returncode != 0:
+        tail = " | ".join(output.splitlines()[-12:]) if output else "<no stdout/stderr captured>"
+        return f"DSSAT exited with status {result.returncode}. Tail: {tail}"
+    return ""
+
+
+def _run_backend_dssat(run_dir: Path, exe: Path, crop: dict,
+                       backend: str, timeout: int) -> str:
+    if backend == "native":
+        return _run_native_dssat(run_dir, exe, crop["model"], timeout)
+    try:
+        _, run_dssat, _ = _dssatengine_api()
+        run_dssat(str(run_dir), str(exe), "B", model=crop.get("model"), timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return "timeout"
+    except Exception as exc:
+        return str(exc)
+    return ""
+
+
+def _weather_window(cfg: dict) -> tuple[pd.Timestamp, pd.Timestamp]:
+    wcfg = cfg.get("weather", {}) or {}
+    start = wcfg.get("start") or wcfg.get("start_date")
+    end = wcfg.get("end") or wcfg.get("end_date")
+    if start is None and wcfg.get("start_year") is not None:
+        start = f"{int(wcfg['start_year'])}-01-01"
+    if end is None and wcfg.get("end_year") is not None:
+        end = f"{int(wcfg['end_year'])}-12-31"
+    if start is None or end is None:
+        raise ValueError(
+            "weather.provider acquisition requires weather.start/end "
+            "or weather.start_year/end_year."
+        )
+    return pd.Timestamp(start), pd.Timestamp(end)
 
 
 @dataclass
@@ -92,11 +195,10 @@ def spawn_and_run(
     timeout: int = 600,
 ) -> SpawnResult:
     """Materialize and run one spawn; return parsed PlantGro + Evaluate tables."""
-    from .config import crop_for  # local import to avoid cycle at module load
-
-    dssat_dir = Path(cfg["calibrator"]["dssat_dir"])
+    backend = _execution_backend(cfg)
+    dssat_paths = resolve_dssat_paths(cfg)
     hemp_dir = Path(cfg["source"]["hemp_dir"])
-    geno_dir = dssat_dir / "Genotype"
+    geno_dir = dssat_paths["genotype"]
     stem = crop["genotype_stem"]
     ext = crop["filex_ext"]          # FileX extension, e.g. "HMX"
     code = crop["code"]              # crop code for observed files, e.g. "HM" -> .HMA/.HMT
@@ -139,31 +241,98 @@ def spawn_and_run(
     if eco_updates:
         edit_ecotype(run_dir / f"{stem}.ECO", crop["ecotype"], eco_updates)
 
+    # species (.SPE) coefficients — gated: only written when gating.species == "free"
+    # (physiology-defining; for new-species adaptation from an analog template).
+    spe_updates = groups.get("genetic_species", {})
+    if spe_updates and str(cfg.get("gating", {}).get("species", "blocked")).lower() == "free":
+        from .writers import edit_species
+        spe_file = run_dir / f"{stem}.SPE"
+        if spe_file.exists():
+            updates = {}
+            for name, val in spe_updates.items():
+                spec = next((s for s in param_specs if s["name"] == name), None)
+                updates[(spec or {}).get("spe_key", name)] = val
+            edit_species(spe_file, updates)
 
     # edit management and initial conditions in FileX
     mgt_updates = groups.get("management", {})
     init_updates = groups.get("initial_conditions", {})
-    if mgt_updates or init_updates:
-        mgt_fields = {}
-        for name, val in mgt_updates.items():
-            spec = next((s for s in param_specs if s["name"] == name), None)
-            if spec and "dssat" in spec:
-                mgt_fields[spec["dssat"]] = val
-        
+    mgt_fields = {}
+    for name, val in mgt_updates.items():
+        spec = next((s for s in param_specs if s["name"] == name), None)
+        if spec and "dssat" in spec:
+            mgt_fields[spec["dssat"]] = val
+    # per-experiment planting date override (e.g. from farm-management software):
+    # set PDATE directly rather than calibrating it. cfg["_planting_dates"] maps
+    # exp_id -> a date; written as the DSSAT YYDDD code.
+    pdate = (cfg.get("_planting_dates") or {}).get(exp_id)
+    if pdate is not None:
+        ts = pd.Timestamp(pdate)
+        mgt_fields["PDATE"] = int(f"{ts.year % 100:02d}{ts.dayofyear:03d}")
+    if mgt_fields or init_updates:
         from .writers import edit_filex
         edit_filex(run_dir / filex_name, mgt_fields, init_updates)
 
-    # edit soil (.SOL) and/or weather (.WTH) — DSSAT reads the run dir first, so a
-    # local single-profile SOIL.SOL / station .WTH overrides the central copy.
     soil_updates = groups.get("soil", {})
     weather_updates = groups.get("weather", {})
-    if soil_updates or weather_updates:
+    soil_provider = str(cfg.get("soil", {}).get("provider", "file")).lower()
+    weather_provider = str(cfg.get("weather", {}).get("provider", "file")).lower()
+    needs_fields = (
+        soil_updates or weather_updates
+        or soil_provider not in ("", "file", "none")
+        or weather_provider not in ("", "file", "none")
+    )
+    fields = {}
+    if needs_fields:
         from .writers import parse_fields
         fields = parse_fields(run_dir / filex_name)
 
+    if soil_provider not in ("", "file", "none"):
+        try:
+            from .acquisition import acquire_soil_profile
+
+            site_id = fields.get("id_soil") or fields.get("id_field") or exp_id
+            lat = fields.get("lat", cfg.get("soil", {}).get("lat"))
+            lon = fields.get("lon", cfg.get("soil", {}).get("lon"))
+            acquire_soil_profile(
+                cfg,
+                site_id=str(site_id),
+                lat=lat,
+                lon=lon,
+                out_path=run_dir / "SOIL.SOL",
+            )
+        except Exception as exc:
+            return SpawnResult(status="error", run_dir=run_dir, theta=theta,
+                               message=f"soil acquisition failed: {exc}")
+
+    if weather_provider not in ("", "file", "none"):
+        try:
+            from .weather import acquire_wth
+
+            station = fields.get("wsta") or exp_id
+            lat = fields.get("lat", cfg.get("weather", {}).get("lat"))
+            lon = fields.get("lon", cfg.get("weather", {}).get("lon"))
+            start, end = _weather_window(cfg)
+            acquire_wth(
+                cfg,
+                station=str(station),
+                lat=lat,
+                lon=lon,
+                start=start,
+                end=end,
+                out_path=run_dir / f"{station}.WTH",
+            )
+        except Exception as exc:
+            return SpawnResult(status="error", run_dir=run_dir, theta=theta,
+                               message=f"weather acquisition failed: {exc}")
+
+    # edit soil (.SOL) and/or weather (.WTH) — DSSAT reads the run dir first, so a
+    # local single-profile SOIL.SOL / station .WTH overrides the central copy.
+    if soil_updates or weather_updates:
         if soil_updates and fields.get("id_soil"):
             from .writers import extract_soil_profile, edit_soil
-            src_sol = dssat_dir / "Soil" / "SOIL.SOL"
+            local_sol = run_dir / "SOIL.SOL"
+            src_sol = local_sol if local_sol.exists() else dssat_paths["soil"] / "SOIL.SOL"
             pid = fields["id_soil"]
             if src_sol.exists():
                 layer_mults, profile_sets = {}, {}
@@ -172,13 +341,15 @@ def spawn_and_run(
                     if not spec or "dssat" not in spec:
                         continue
                     (profile_sets if spec.get("op") == "set" else layer_mults)[spec["dssat"]] = val
-                (run_dir / "SOIL.SOL").write_text(extract_soil_profile(src_sol, pid))
-                edit_soil(run_dir / "SOIL.SOL", pid, layer_mults=layer_mults, profile_sets=profile_sets)
+                if src_sol != local_sol:
+                    local_sol.write_text(extract_soil_profile(src_sol, pid), encoding="utf-8")
+                edit_soil(local_sol, pid, layer_mults=layer_mults, profile_sets=profile_sets)
 
         if weather_updates and fields.get("wsta"):
             from .writers import edit_weather
             wsta = fields["wsta"]
-            src_wth = dssat_dir / "Weather" / f"{wsta}.WTH"
+            local_wth = run_dir / f"{wsta}.WTH"
+            src_wth = local_wth if local_wth.exists() else dssat_paths["weather"] / f"{wsta}.WTH"
             if src_wth.exists():
                 ops = {}
                 for name, val in weather_updates.items():
@@ -186,21 +357,22 @@ def spawn_and_run(
                     if not spec or "dssat" not in spec:
                         continue
                     ops[spec["dssat"]] = (spec.get("op", "mult"), val)
-                shutil.copy(src_wth, run_dir / f"{wsta}.WTH")
-                edit_weather(run_dir / f"{wsta}.WTH", ops)
+                if src_wth != local_wth:
+                    shutil.copy(src_wth, local_wth)
+                edit_weather(local_wth, ops)
 
     if treatments is None:
         treatments = parse_treatments(run_dir / filex_name)
-    write_dssbatch(run_dir, filex_name, treatments)
-
     try:
-        subprocess.run(
-            [str(exe), crop["model"], "B", "DSSBatch.v48"],
-            cwd=str(run_dir), timeout=timeout,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
-        )
-    except subprocess.TimeoutExpired:
-        return SpawnResult(status="error", run_dir=run_dir, theta=theta, message="timeout")
+        treatments = _normalize_treatments(treatments, backend)
+        _write_batch(run_dir, filex_name, treatments, backend)
+    except Exception as exc:
+        return SpawnResult(status="error", run_dir=run_dir, theta=theta,
+                           message=f"batch setup failed: {exc}")
+
+    run_error = _run_backend_dssat(run_dir, exe, crop, backend, timeout)
+    if run_error:
+        return SpawnResult(status="error", run_dir=run_dir, theta=theta, message=run_error)
 
     if not pg_path.exists() or pg_path.stat().st_size == 0:
         return SpawnResult(status="error", run_dir=run_dir, theta=theta,

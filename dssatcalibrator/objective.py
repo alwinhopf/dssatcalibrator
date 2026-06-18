@@ -27,6 +27,23 @@ def variable_maps(cfg: dict):
     return ts, sc, {v: k for k, v in ts.items()}, {v: k for k, v in sc.items()}
 
 
+def unmatched_variables(obs_table: pd.DataFrame, cfg: dict) -> list[str]:
+    """DSSAT variables present in the observations but NOT scorable.
+
+    A variable can only be scored if it appears in ``engine.timeseries_outputs``
+    or ``engine.scalar_outputs`` (and is produced by the spawn parser). Sources
+    such as the IoT/UAV adapters can ingest variables (``SW``, ``TMEAN``,
+    ``canopy_cover`` …) that no configured output maps to; those rows are silently
+    dropped when scoring. This returns them so the orchestrator can warn the user.
+    """
+    ts, sc, _, _ = variable_maps(cfg)
+    known = set(ts.values()) | set(sc.values())
+    if obs_table is None or getattr(obs_table, "empty", True) or "variable" not in obs_table:
+        return []
+    present = set(obs_table["variable"].dropna().unique())
+    return sorted(present - known)
+
+
 def metrics(obs, sim) -> dict:
     """RMSE / nRMSE% / MBE / Willmott d / modelling efficiency EF / R² + n."""
     obs = np.asarray(obs, float)
@@ -116,9 +133,47 @@ def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.Dat
     df = pd.DataFrame(rows)
     if df.empty:
         return df
-    df["sigma"] = [_sigma(uv, ov, cfg) for uv, ov in zip(df["user_var"], df["obs"])]
-    wts = cfg.get("objective", {}).get("weights", {}) or {}
-    df["weight"] = df["user_var"].map(lambda v: float(wts.get(v, 1.0)))
+
+    # Attempt to join original sigmas/weights from obs_table if they exist
+    if obs_table is not None and not obs_table.empty and "sigma" in obs_table.columns:
+        lookup = {}
+        for _, r in obs_table.iterrows():
+            if pd.isna(r["date"]):
+                key = (r["exp_id"], int(r["treatment"]), r["variable"])
+            else:
+                key = (r["exp_id"], int(r["treatment"]), r["variable"], pd.Timestamp(r["date"]).date())
+            lookup[key] = (r["sigma"], r["weight"])
+            
+        def get_obs_params(row):
+            var = row["dssat"]
+            if pd.isna(row["date"]):
+                key = (row["exp_id"], int(row["treatment"]), var)
+            else:
+                key = (row["exp_id"], int(row["treatment"]), var, pd.Timestamp(row["date"]).date())
+                
+            val = lookup.get(key)
+            if val is not None:
+                sig, wt = val
+                if pd.isna(sig):
+                    sig = _sigma(row["user_var"], row["obs"], cfg)
+                if pd.isna(wt):
+                    wts = cfg.get("objective", {}).get("weights", {}) or {}
+                    wt = float(wts.get(row["user_var"], 1.0))
+                return sig, wt
+            
+            sig = _sigma(row["user_var"], row["obs"], cfg)
+            wts = cfg.get("objective", {}).get("weights", {}) or {}
+            wt = float(wts.get(row["user_var"], 1.0))
+            return sig, wt
+            
+        params = [get_obs_params(r) for _, r in df.iterrows()]
+        df["sigma"] = [p[0] for p in params]
+        df["weight"] = [p[1] for p in params]
+    else:
+        df["sigma"] = [_sigma(uv, ov, cfg) for uv, ov in zip(df["user_var"], df["obs"])]
+        wts = cfg.get("objective", {}).get("weights", {}) or {}
+        df["weight"] = df["user_var"].map(lambda v: float(wts.get(v, 1.0)))
+
     df["resid"] = df["sim"] - df["obs"]
     if cfg.get("objective", {}).get("obs_autocorr", False):
         df = _downweight_autocorr(df)

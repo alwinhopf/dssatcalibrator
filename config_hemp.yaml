@@ -39,6 +39,16 @@ calibrator:
   # Whether to keep the temporary DSSAT workspace folders after execution (false = cleanup to save disk space).
   keep_run_dirs: false
 
+# DSSAT execution backend. `native` preserves the local fallback; `dssatengine`
+# delegates batch writing and model spawning to the shared workspace engine.
+execution:
+  backend: "native"            # native | dssatengine
+
+# Shared FileX/genotype template directory for synthesized/new-site experiments.
+# Empty = DSSAT_TEMPLATE_DIR env var, then ../DSSAT_Gridded_Run_Tutorial/dssat_templates.
+templates:
+  template_dir: ""
+
 # --- Source settings: where experimental layouts and observations are read ---
 source:
   # Directory containing .HMX experimental files, .HMA final season, and .HMT timeseries files.
@@ -232,3 +242,111 @@ parameters:
     tmax_offset:    { active: false, min: -2.0, max: 2.0, start: 0.0, dssat: TMAX, op: off,  unit: "degC" }
     tmin_offset:    { active: false, min: -2.0, max: 2.0, start: 0.0, dssat: TMIN, op: off,  unit: "degC" }
     rainfall_mult:  { active: false, min: 0.7, max: 1.3, start: 1.0, dssat: RAIN, op: mult, unit: "x" }
+
+# =============================================================================
+# MULTI-SOURCE IN-SEASON OBSERVATION ASSIMILATION (optional — all OFF here)
+# See WALKTHROUGH.md §15 and CONCEPT.md §17. When `observation_sources` has any
+# active adapter, the calibrator loads + fuses those instead of FileA/FileT.
+# Each row a source emits must map to a variable in engine.timeseries_outputs /
+# scalar_outputs above (and to a DSSAT output) or it is ignored when scoring —
+# e.g. soil_moisture_iot (SW) / canopy_temperature (TMEAN) are NOT scored unless
+# you add them there and DSSAT outputs them.
+# =============================================================================
+observation_sources:
+  # adapter names: sentinel2_lai | modis_lai | farm_phenology | farm_management |
+  #                field_measurements | soil_moisture_iot | canopy_temperature |
+  #                uav_multispectral
+  field_measurements:
+    active: false              # FileA/FileT under hemp_dir (the default obs path)
+    hemp_dir: "C:/DSSAT48/Hemp"
+    crop_ext: "HM"
+  sentinel2_lai:
+    active: false              # CSV: exp_id,treatment,date,value[,cloud_fraction,quality_flag]
+    data_path: "obs/sentinel2_lai.csv"
+    error_model: { base_rmse: 0.7, saturation_lai: 4.0 }
+  uav_multispectral:
+    active: false              # CSV: exp_id,treatment,date,variable,value[,flight_quality]
+    data_path: "obs/uav.csv"
+
+# How coincident observations from different sources are reconciled.
+fusion:
+  conflict_resolution: "inverse_variance"   # keep_all | inverse_variance | priority
+  source_priority: ["field_measurements", "uav_multispectral", "sentinel2_lai", "modis_lai"]
+
+# In-season assimilation. mode: recalibration is the COUPLED path (re-estimates
+# parameters from the data received so far). enkf/forcing are uncoupled prototypes
+# and refuse to run unless allow_uncoupled: true (their output is illustrative only).
+# Run with:  python run_calibration.py config_hemp.yaml --assimilate
+#       or:  python run_calibration.py config_hemp.yaml --combined
+assimilation:
+  active: false
+  mode: "recalibration"        # recalibration | enkf | forcing
+  allow_uncoupled: false
+  recalibration:
+    engine: "glue"             # estimator at each checkpoint
+    recal_sample_size: 100     # design size per checkpoint (kept small for speed)
+    warm_start: true           # seed each checkpoint with the previous best fit
+    update_frequency: "on_observation"   # on_observation | weekly | biweekly
+  enkf:                        # PROTOTYPE / uncoupled
+    n_ensemble: 50
+    inflation: 1.05
+    state_variables: ["LAID", "CWAD"]
+  forcing:                     # PROTOTYPE / uncoupled
+    min_confidence: 0.8
+    smoothing: true
+
+# =============================================================================
+# IN-SEASON FORECAST / NOWCAST + WEATHER DRIVER (optional — all OFF here)
+# See WALKTHROUGH.md §15 and CONCEPT.md §18.
+#   python run_calibration.py config_hemp.yaml --nowcast 2024-07-15 --forecast
+# =============================================================================
+forecast:
+  active: false
+  variables: ["LAID"]          # DSSAT outputs to project forward
+  n_ensemble: 30               # behavioural parameter sets to propagate (0 => best fit only)
+  anchor_continuity: true      # start the forecast from the last observation...
+  decay_days: 21               # ...and relax back to the pure model over this many days
+
+# Weather acquisition. Default 'file' uses the .WTH DSSAT already resolves (no-op).
+weather:
+  provider: "file"             # file | nasa_power | dssatutils
+  dssatutils_provider: "nasapower"  # when provider=dssatutils; maps to process_weather_*
+  # start_year: 2021           # required when provider != file
+  # end_year: 2022
+  gap_fill: "none"             # none | persistence | climatology (extend record to 'today')
+  horizon: 0                   # extra days to extend past the last record (for look-ahead)
+  cache_dir: "weather_cache"
+
+# Soil acquisition for synthesized/new-site experiments. Real hemp experiments
+# use the installed DSSAT soil files by default.
+soil:
+  provider: "file"             # file | dssatutils
+  source: "ssurgo"             # ssurgo | soilgrids | soilgrids_online
+  cache_dir: "soil_cache"
+  # source_sol_file: "SoilGrids/US.SOL"  # required when source=soilgrids
+
+# Take planting date from ingested farm-management rows and set it as FileX PDATE
+# (an input, not a calibrated parameter).
+management_options:
+  use_source_planting_date: false
+
+# =============================================================================
+# NEW-CROP / SPARSE-DATA HELPERS (optional — see WALKTHROUGH.md §16)
+# =============================================================================
+# Parameter-file gating. Set species: free ONLY to adapt a new species from an
+# analog template (then tag params with group: genetic_species).
+gating:
+  cultivar: "free"             # free | gated | blocked
+  ecotype:  "gated"
+  species:  "blocked"
+
+# Identifiability + structural-adequacy diagnostics (writes identifiability.csv /
+# structural_adequacy.csv).  CLI: --diagnostics
+diagnostics:
+  active: false
+
+# Staging: freeze coefficients the data can't constrain (e.g. seed/yield params
+# when only mid-season LAI + phenology are available). Add under method:
+#   method:
+#     staging: { freeze_groups: ["genetic_ecotype"], freeze_params: ["XFRT", "WTPSD"] }
+#     validation: { scheme: "site" }   # loeo | year | site | random  (--cv-scheme)

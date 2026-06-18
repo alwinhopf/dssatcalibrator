@@ -213,35 +213,62 @@ def edit_filex(filex_path: str | Path, mgt_fields: dict[str, float], init_update
 
 
 def parse_fields(filex_path: str | Path) -> dict:
-    """Return {'wsta', 'id_soil', 'id_field'} from the FileX ``*FIELDS`` header row.
+    """Return field metadata from the FileX ``*FIELDS`` section.
 
     The FIELDS row mixes right-justified numeric fields with left-justified, often
     over-wide codes (``ID_SOIL`` values are 8 chars under a 7-char header), so we
     align by whitespace-tokenising the header and data rows together rather than
-    by fixed column bounds.
+    by fixed column bounds. Coordinates are returned when the optional XCRD/YCRD
+    header row is present and not filled with DSSAT's missing-value sentinel.
     """
+    def norm_token(token: str) -> str:
+        return token.lstrip("@").strip(".")
+
+    def as_float(value):
+        try:
+            val = float(value)
+        except (TypeError, ValueError):
+            return None
+        return None if val in (-99.0, -999.0) else val
+
     lines = Path(filex_path).read_text(errors="replace").splitlines()
     try:
         sec = next(i for i, ln in enumerate(lines) if ln.startswith("*FIELDS"))
     except StopIteration:
         return {}
-    header_idx = next((i for i in range(sec + 1, len(lines))
-                       if lines[i].lstrip().startswith("@L") and "ID_SOIL" in lines[i]), None)
-    if header_idx is None:
+
+    fields = {}
+    i = sec + 1
+    while i < len(lines) and not lines[i].startswith("*"):
+        if not lines[i].lstrip().startswith("@L"):
+            i += 1
+            continue
+        header = lines[i]
+        data = next((lines[j] for j in range(i + 1, len(lines))
+                     if not lines[j].lstrip().startswith("@")
+                     and not lines[j].startswith("*")
+                     and lines[j].strip()
+                     and lines[j].strip()[0].isdigit()), None)
+        if data is None:
+            i += 1
+            continue
+        htoks = [norm_token(t) for t in header.split()]
+        dtoks = data.split()
+        if len(dtoks) >= len(htoks):
+            fields.update(dict(zip(htoks, dtoks)))
+        i += 1
+
+    if not fields:
         return {}
-    htoks = lines[header_idx].split()
-    htoks[0] = htoks[0].lstrip("@")              # "@L" -> "L"
-    data = next((lines[i] for i in range(header_idx + 1, len(lines))
-                 if lines[i].strip() and lines[i].strip()[0].isdigit()), None)
-    if data is None:
-        return {}
-    dtoks = data.split()
-    if len(dtoks) < len(htoks):
-        return {}
-    m = dict(zip(htoks, dtoks))
-    wsta_key = next((k for k in htoks if k.startswith("WSTA")), None)
-    return {"wsta": m.get(wsta_key) if wsta_key else None,
-            "id_soil": m.get("ID_SOIL"), "id_field": m.get("ID_FIELD")}
+
+    return {
+        "wsta": fields.get("WSTA"),
+        "id_soil": fields.get("ID_SOIL"),
+        "id_field": fields.get("ID_FIELD"),
+        "lat": as_float(fields.get("YCRD")),
+        "lon": as_float(fields.get("XCRD")),
+        "elev": as_float(fields.get("ELEV")),
+    }
 
 
 def extract_soil_profile(sol_path: str | Path, profile_id: str) -> str:
@@ -426,6 +453,70 @@ def edit_ecotype(eco_path: str | Path, anchor_code: str, updates: dict[str, floa
     eco_path.write_text("\n".join(lines) + "\n")
 
 
+_NUM_RE = re.compile(r"-?\d+\.?\d*(?:[eE][-+]?\d+)?")
+
+
+def edit_species(spe_path: str | Path, updates: dict[str, float]) -> None:
+    """Best-effort in-place edit of named scalar values in a CROPGRO/CERES ``.SPE``.
+
+    ``.SPE`` files are free-form (not column-tabular like ``.CUL``/``.ECO``), so this
+    is deliberately conservative: ``updates`` maps a **line key** (a substring that
+    uniquely identifies the target line, usually the trailing ``!`` label or the
+    leading label token) to a new value, and the **first numeric token** on the
+    matched line is replaced in place, preserving width where possible. Species
+    coefficients are physiology-defining, so this is gated (``gating.species:
+    free``) and intended for new-species adaptation from an analog template only.
+
+    Raises ``KeyError`` if a key matches zero or multiple active lines, so a typo
+    never silently edits the wrong constant.
+    """
+    spe_path = Path(spe_path)
+    lines = spe_path.read_text(errors="replace").splitlines()
+    for key, val in updates.items():
+        matches = [i for i, ln in enumerate(lines)
+                   if key in ln and ln.strip() and not ln.lstrip().startswith(("*", "@", "!"))
+                   and _NUM_RE.search(ln)]
+        if len(matches) != 1:
+            raise KeyError(f"Species key '{key}' matched {len(matches)} lines in "
+                           f"{spe_path.name} (need exactly 1); refine the key.")
+        i = matches[0]
+        ln = lines[i]
+        m = _NUM_RE.search(ln)
+        width = m.end() - m.start()
+        new = _fmt(float(val), width) if width > 0 else f"{float(val):.3f}"
+        lines[i] = ln[:m.start()] + new.strip().rjust(width) + ln[m.end():]
+    spe_path.write_text("\n".join(lines) + "\n")
+
+
+def read_cul_calibration_bounds(cul_path: str | Path) -> dict[str, dict[str, float]]:
+    """Read DSSAT ``.CUL`` MINIMA/MAXIMA calibration rows into per-coefficient bounds.
+
+    DSSAT cultivar files carry special rows (``VAR#`` ``999991`` = minima, ``999992``
+    = maxima) used by GLUE. Returns ``{coeff: {"min": x, "max": y}}`` for the
+    coefficients present in both rows. Empty if the file has no such rows.
+    """
+    cul_path = Path(cul_path)
+    lines = cul_path.read_text(errors="replace").splitlines()
+    fmap = cultivar_field_map(cul_path)
+    rows = {}
+    for ln in lines:
+        code = ln[:6].strip()
+        if code in ("999991", "999992"):
+            vals = {}
+            for name, (lo, hi) in fmap.items():
+                v = _parse(ln[lo:hi]) if len(ln) >= hi else None
+                if v is not None:
+                    vals[name] = v
+            rows["min" if code == "999991" else "max"] = vals
+    if "min" not in rows or "max" not in rows:
+        return {}
+    out = {}
+    for name in fmap:
+        if name in rows["min"] and name in rows["max"]:
+            out[name] = {"min": rows["min"][name], "max": rows["max"][name]}
+    return out
+
+
 def read_ecotype_values(eco_path: str | Path, anchor_code: str) -> dict[str, float]:
     """Read the current coefficient values for an ecotype row (for verification)."""
     eco_path = Path(eco_path)
@@ -441,6 +532,5 @@ def read_ecotype_values(eco_path: str | Path, anchor_code: str) -> dict[str, flo
         if val is not None:
             out[name] = val
     return out
-
 
 

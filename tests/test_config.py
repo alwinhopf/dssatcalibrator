@@ -37,3 +37,17 @@ def test_resolve_exe():
     cfg = cfgmod.load_config(HEMP_CFG)
     exe = cfgmod.resolve_exe(cfg)
     assert "with_HM_code" in str(exe)
+
+
+def test_shared_stack_defaults_and_template_env(monkeypatch, tmp_path):
+    assert cfgmod.DEFAULTS["execution"]["backend"] == "native"
+    assert cfgmod.DEFAULTS["soil"]["provider"] == "file"
+
+    monkeypatch.setenv("DSSAT_TEMPLATE_DIR", str(tmp_path))
+    assert cfgmod.resolve_template_dir({}) == tmp_path
+
+    cfg = cfgmod.load_config(HEMP_CFG)
+    paths = cfgmod.resolve_dssat_paths(cfg)
+    assert paths["genotype"].name == "Genotype"
+    assert paths["weather"].name == "Weather"
+    assert paths["soil"].name == "Soil"

@@ -13,7 +13,9 @@
   - **B** `morris → diffevo` — screen, then a global **optimiser** for a single best-fit point.
   - **C** `lhs → glue` *(default)* — **GLUE** pseudo-posterior from one big parallel batch; simplest.
   - **D** `morris → sobol → mcmc` — full **MCMC** posterior (pair with the surrogate for expensive crops).
-- **Engines**: sampling (LHS / Sobol / Monte-Carlo / grid), GLUE, SMC-PF, MCMC, Nelder-Mead & differential-evolution optimisers, NSGA-II multi-objective, Morris/Sobol sensitivity screening, AgMIP stepwise BIC/AICc selection, and GP/RF surrogate acceleration.
+- **Engines**: sampling (LHS / Sobol / Monte-Carlo / grid), GLUE, SMC-PF, MCMC, **DREAM (DE-MC)** and **ES-MDA** ensemble posteriors, Nelder-Mead / differential-evolution / **CMA-ES** optimisers, **Bayesian optimisation** (GP + Expected Improvement), NSGA-II multi-objective, Morris/Sobol sensitivity screening, AgMIP stepwise BIC/AICc selection, and GP/RF surrogate acceleration.
+
+  Pick the estimator with `method.bayesian.engine` (`glue` | `smc_pf` | `mcmc` | `dream` | `es_mda` | `bayesopt`) or `method.optimizer.engine` (`nelder_mead` | `diffevo` | `cmaes`). Each engine is one entry in the estimator registry, so adding another is a function + one registration. Rules of thumb: **CMA-ES** for the fastest single best-fit, **DREAM** for an honest posterior on correlated/multimodal coefficients, **ES-MDA** for many parameters with uncertainty in a few iterations, **Bayesian optimisation** when each DSSAT run is expensive.
 - **Priors that count**: declare `uniform` / `normal` / `lognormal` / `triangular` priors per parameter; the Bayesian engines use them.
 - **Honest objective**: RMSE/nRMSE/MBE/Willmott-d/EF/R² metrics, four weighting modes (`unified`, `sigma`, `count_scale`, `user`), `agmip_wls` reweighting, and optional `obs_autocorr` down-weighting of dense time-series.
 - **Validation**: leave-one-environment-out cross-validation.
@@ -79,3 +81,74 @@ python -m pytest -m "not slow"
 # Run all tests (including slow E2E tests that run DSSAT CSM)
 python -m pytest
 ```
+
+## R interface (full parity)
+
+`dssatcalibrator` ships as a **dual-language package**: every public function has an
+R twin with the same name, and both languages read the same `config.yaml`. The
+layout mirrors the workspace's other shared packages (`dssatengine`, `dssatutils`):
+
+```
+python/dssatcalibrator/   # the Python package
+R/                        # the R twin (DESCRIPTION / NAMESPACE / R/*.R)
+config_*.yaml             # one config, read by BOTH languages
+run_calibration.{py,R}    # mirrored CLIs
+scaffold_crop.{py,R}      # mirrored CLIs
+```
+
+```r
+# install (from the repo root)
+# install.packages("remotes"); remotes::install_local(".")
+library(dssatcalibrator)
+cfg <- load_config("config_hemp.yaml")
+result <- calibrate(cfg)                 # preset C / GLUE by default
+result$best_theta
+```
+
+```bash
+Rscript run_calibration.R config_hemp.yaml --preset A --n-particles 250
+Rscript run_calibration.R config_hemp.yaml --validate --cv-scheme year
+Rscript run_calibration.R config_hemp.yaml --nowcast 2021-07-15 --forecast
+```
+
+**Engines.** GLUE, AgMIP stepwise selection, Nelder-Mead/`DEoptim`, CMA-ES,
+Morris screening, the SMC particle filter, adaptive-Metropolis MCMC, DREAM (DE-MC),
+ES-MDA, Bayesian optimisation (`DiceKriging`), NSGA-II (`mco`), and GP/RF
+surrogates (`DiceKriging`/`ranger`) are all available in R. This R path **supersedes
+the former `DSSAT_Calibration` repo** (its CroptimizR / AgMIP-stepwise capability now
+lives here with full Python parity).
+
+**LAI assimilation mode.** In-season LAI data assimilation (formerly the planned
+`DSSAT_LAI_Assimilation` repo) is a **mode of this package**, not a separate project:
+a satellite LAI observation source (`sentinel2_lai` / `modis_lai`) feeds the coupled
+recalibration path (`assimilate()` with `mode: recalibration`) or the `nowcast()` +
+`forecast_lai()` forward-LAI product. The uncoupled EnKF/forcing prototypes remain
+gated behind `assimilation.allow_uncoupled: true`.
+
+## Parity testing
+
+R↔Python parity is a contract. Python is the source of truth; golden fixtures are
+generated from it and checked by the R suite:
+
+```bash
+PYTHONPATH=python python tests/generate_parity_fixtures.py   # regenerate goldens
+Rscript -e 'devtools::test()'                                # run R parity tests
+python -m pytest -m "not slow"                               # run Python tests
+```
+
+Deterministic surfaces (config, priors' log-density, objective metrics, the
+fixed-width DSSAT file writers, output parsers, `theta_hash`, GLUE post-processing)
+are checked to machine precision. Stochastic engines (MCMC, SMC-PF, NSGA-II,
+surrogate) are validated statistically, since RNG streams cannot match bit-for-bit
+across languages.
+
+## Dependencies (R)
+
+R packages: `yaml` (core); plus, per engine, `lhs` + `randtoolbox` (sampling),
+`DEoptim` (differential evolution), `sensitivity` (Sobol), `BayesianTools` (MCMC
+helpers), `mco` (NSGA-II), `DiceKriging`/`ranger` (surrogate), `ggplot2` (figures),
+`digest` (theta hashing), `jsonlite` (state/IO), and the workspace packages
+`dssatengine` (execution backend) and `dssatutils` (weather/soil acquisition).
+Pins follow the workspace `DEPENDENCIES.md`: `dssatengine@v0.3.0`,
+`dssatutils@v0.2.0`.
+

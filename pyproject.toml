@@ -36,10 +36,12 @@ full = [
 ]
 
 [tool.setuptools.packages.find]
+where = ["python"]
 include = ["dssatcalibrator*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["python"]
 markers = [
     "slow: end-to-end tests that invoke the DSSAT binary (deselect with -m 'not slow')",
 ]

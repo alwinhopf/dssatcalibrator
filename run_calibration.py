@@ -19,6 +19,17 @@ from dssatcalibrator import orchestrator, viz
 from dssatcalibrator.config import load_config
 
 
+def _display_path(path) -> str:
+    """Return a readable path without assuming outputs live under cwd."""
+    p = Path(path)
+    if not p.is_absolute():
+        return str(p)
+    try:
+        return str(p.relative_to(Path.cwd()))
+    except ValueError:
+        return str(p)
+
+
 def _write_assimilation(res: dict, outdir: Path) -> None:
     """Write assimilation results: a full JSON dump plus, for recalibration, a
     tidy per-checkpoint parameter trace CSV."""
@@ -193,7 +204,7 @@ def main():
     print(f"\nData tables -> {outdir.resolve()}")
     print(f"Figures     -> {figdir.resolve()}")
     for k, p in paths.items():
-        print(f"  {k}: {Path(p).relative_to(Path.cwd()) if Path(p).is_absolute() else p}")
+        print(f"  {k}: {_display_path(p)}")
 
     # clean up temporary work directories if configured
     if not cfg["calibrator"].get("keep_run_dirs", False):

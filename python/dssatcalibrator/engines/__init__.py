@@ -21,6 +21,9 @@ Optional dependencies (lazy-imported, only when that engine is used):
 Everything else needs only NumPy/SciPy (already core dependencies).
 """
 
+from .bayesopt import BayesOptResult, run_bayesopt  # noqa: F401
+from .dream import run_dream  # noqa: F401
+from .es_mda import run_es_mda  # noqa: F401
 from .glue import GlueResult, posterior_summary, run_glue  # noqa: F401
 from .mcmc import McmcResult, run_mcmc  # noqa: F401
 from .nsga2 import Nsga2Result, run_nsga2  # noqa: F401

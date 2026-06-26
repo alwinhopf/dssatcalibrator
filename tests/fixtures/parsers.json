@@ -1,0 +1,92 @@
+{
+  "plantgro": {
+    "nrow": 3,
+    "columns": [
+      "YEAR",
+      "DOY",
+      "DAS",
+      "DAP",
+      "L#SD",
+      "GSTD",
+      "LAID",
+      "CWAD",
+      "GWAD",
+      "run",
+      "treatment",
+      "date"
+    ],
+    "treatment": [
+      1,
+      1,
+      1
+    ],
+    "LAID": [
+      0.0,
+      0.45,
+      3.2
+    ],
+    "CWAD": [
+      0.0,
+      120.0,
+      3500.0
+    ],
+    "dates": [
+      "2021-06-01",
+      "2021-06-09",
+      "2021-07-19"
+    ]
+  },
+  "evaluate": [
+    {
+      "treatment": 1,
+      "variable": "ADAP",
+      "sim": 45.0,
+      "meas": 47.0
+    },
+    {
+      "treatment": 1,
+      "variable": "HWAM",
+      "sim": 3200.0,
+      "meas": 3100.0
+    },
+    {
+      "treatment": 1,
+      "variable": "LAIX",
+      "sim": 3.2,
+      "meas": 3.0
+    },
+    {
+      "treatment": 2,
+      "variable": "ADAP",
+      "sim": 50.0,
+      "meas": 49.0
+    },
+    {
+      "treatment": 2,
+      "variable": "HWAM",
+      "sim": 3400.0,
+      "meas": 3500.0
+    },
+    {
+      "treatment": 2,
+      "variable": "LAIX",
+      "sim": 3.5,
+      "meas": 3.4
+    }
+  ],
+  "summary": {
+    "nrow": 2,
+    "RUNNO": [
+      1,
+      2
+    ],
+    "CWAM": [
+      3500.0,
+      3600.0
+    ],
+    "HWAM": [
+      3200.0,
+      3400.0
+    ]
+  }
+}

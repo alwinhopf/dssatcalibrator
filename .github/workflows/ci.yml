@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  python:
+    name: Python tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Span versions so numpy/pandas API drift (e.g. read-only `.values`)
+        # is caught here, not in a user's run.
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install (core + optional engines + dev)
+        # Only PyPI extras: the [shared]/[acquire] extras pull pinned git
+        # packages and are exercised separately, not in unit CI.
+        run: pip install -e ".[full,dev]"
+      - name: Run fast test suite
+        run: python -m pytest -m "not slow" -q
+
+  r-parity:
+    name: R parity tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - name: Install R parity dependencies
+        run: Rscript -e 'install.packages(c("testthat","jsonlite","yaml","digest"))'
+      - name: Run R parity suite
+        run: Rscript run_r_tests.R
+
+  parity-fixtures-current:
+    name: Golden fixtures match Python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install (core + optional engines)
+        run: pip install -e ".[full]"
+      - name: Regenerate parity goldens
+        run: PYTHONPATH=python python tests/generate_parity_fixtures.py
+      - name: Fail if committed goldens drifted from Python
+        run: |
+          if ! git diff --quiet -- tests/fixtures; then
+            echo "::error::Golden fixtures are stale. Run:"
+            echo "  PYTHONPATH=python python tests/generate_parity_fixtures.py"
+            echo "and commit tests/fixtures."
+            git --no-pager diff --stat -- tests/fixtures
+            exit 1
+          fi
+          echo "Golden fixtures are up to date."

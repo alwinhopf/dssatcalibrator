@@ -1,0 +1,36 @@
+{
+  "active_names": [
+    "P1",
+    "P5",
+    "PHINT"
+  ],
+  "active_groups": [
+    "cultivar",
+    "cultivar",
+    "ecotype"
+  ],
+  "space_names": [
+    "P1",
+    "P5",
+    "PHINT"
+  ],
+  "space_low": [
+    100.0,
+    300.0,
+    60.0
+  ],
+  "space_high": [
+    500.0,
+    700.0,
+    120.0
+  ],
+  "space_start": [
+    300.0,
+    505.0,
+    90.0
+  ],
+  "ndim": 3,
+  "merged_preset": "C",
+  "merged_seed": 7,
+  "default_gating_ecotype": "gated"
+}

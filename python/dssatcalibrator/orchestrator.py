@@ -321,6 +321,154 @@ def _results_scorer(cfg: dict, setup, n_workers):
     return score_results
 
 
+# ---------------------------------------------------------------------------
+# Estimator registry — the main "stage 3" engines (CONCEPT.md §14a)
+# ---------------------------------------------------------------------------
+# Each estimator has one signature and returns a CalibrationResult, so adding a
+# new main estimator is a function + one ``@_register_estimator`` line (no edit
+# to ``calibrate``). ``_resolve_estimator`` maps the configured method block to
+# a registry key; the optimiser aliases all resolve to the one "optimizer" entry.
+
+ESTIMATOR_REGISTRY: dict[str, callable] = {}
+_OPTIMIZER_ALIASES = ("nelder_mead", "diffevo", "neldermead", "nm", "de",
+                      "cmaes", "cma_es", "cma")
+
+
+def _register_estimator(name):
+    def deco(fn):
+        ESTIMATOR_REGISTRY[name] = fn
+        return fn
+    return deco
+
+
+def _resolve_estimator(method: dict) -> str:
+    """Pick the estimator registry key from the resolved ``method`` block.
+
+    Precedence: surrogate accelerator > explicit bayesian engine > optimiser
+    (when ``bayesian.engine`` is none) > GLUE default.
+    """
+    if _stage_on(method.get("surrogate")):
+        return "surrogate"
+    bayes = str(method.get("bayesian", {}).get("engine", "glue")).lower()
+    if bayes in ESTIMATOR_REGISTRY and bayes not in ("none", ""):
+        return bayes
+    opt = str(method.get("optimizer", {}).get("engine", "none")).lower()
+    if bayes in ("none", "") and opt in _OPTIMIZER_ALIASES:
+        return "optimizer"
+    return "glue"
+
+
+@_register_estimator("surrogate")
+def _estimate_surrogate(work_cfg, space, setup, method, *, seed, n_workers, extras, progress):
+    from .engines import run_glue, run_surrogate
+    _, _crop, _exe, _specs, _run_root, obs, experiments, _trts = setup
+    scorer = _results_scorer(work_cfg, setup, n_workers)
+    sur = run_surrogate(work_cfg, space, scorer, progress=progress)
+    glue = run_glue(sur.design, space.names, work_cfg, space=space)
+    best = sur.obj_results[glue.best_sample_id]
+    extras["surrogate_info"] = sur.info
+    return CalibrationResult(cfg=work_cfg, space=space, obs=obs, experiments=experiments,
+                             design=glue.design, obj_results=sur.obj_results,
+                             best_theta=glue.best_theta, best=best, glue=glue, extras=extras)
+
+
+@_register_estimator("smc_pf")
+def _estimate_smc_pf(work_cfg, space, setup, method, *, seed, n_workers, extras, progress):
+    from .engines import run_smc_pf
+    _, _crop, _exe, _specs, _run_root, obs, experiments, _trts = setup
+    smc = run_smc_pf(work_cfg, progress=progress)
+    extras.update(initial_design=smc.initial_design, engine="smc_pf")
+    return CalibrationResult(cfg=work_cfg, space=space, obs=obs, experiments=experiments,
+                             design=smc.design, obj_results=smc.obj_results,
+                             best_theta=smc.best_theta, best=smc.best, glue=smc, extras=extras)
+
+
+@_register_estimator("mcmc")
+def _estimate_mcmc(work_cfg, space, setup, method, *, seed, n_workers, extras, progress):
+    from .engines import run_mcmc
+    _, _crop, _exe, _specs, _run_root, obs, experiments, _trts = setup
+    scorer = _results_scorer(work_cfg, setup, n_workers)
+    mc = run_mcmc(work_cfg, scorer, space, progress=progress)
+    extras.update(initial_design=mc.initial_design, engine="mcmc",
+                  mcmc_chain=mc.chain, acceptance=mc.acceptance)
+    return CalibrationResult(cfg=work_cfg, space=space, obs=obs, experiments=experiments,
+                             design=mc.design, obj_results=mc.obj_results,
+                             best_theta=mc.best_theta, best=mc.best, glue=mc, extras=extras)
+
+
+@_register_estimator("optimizer")
+def _estimate_optimizer(work_cfg, space, setup, method, *, seed, n_workers, extras, progress):
+    from .engines import run_optimizer
+    _, _crop, _exe, _specs, _run_root, obs, experiments, _trts = setup
+    ocfg = method.get("optimizer", {})
+    opt = str(ocfg.get("engine", "none")).lower()
+    scorer = _results_scorer(work_cfg, setup, n_workers)
+    score_batch = lambda ths: [r.score for r in scorer(ths)]   # noqa: E731
+    ores = run_optimizer(space, score_batch, method=opt, seed=seed,
+                         maxiter=ocfg.get("maxiter"), popsize=int(ocfg.get("popsize", 15)),
+                         restarts=int(ocfg.get("restarts", 1)), progress=progress)
+    best = scorer([ores.best_theta])[0]
+    # Represent the optimiser's trace as a one-row "design" so reporting works.
+    design = pd.DataFrame([{"sample_id": 0, **ores.best_theta, "score": best.score,
+                            "loglik": best.loglik, "n_obs": len(best.residuals), "weight": 1.0}])
+    extras.update(engine="optimizer", optimizer_history=ores.history, n_eval=ores.n_eval)
+    return CalibrationResult(cfg=work_cfg, space=space, obs=obs, experiments=experiments,
+                             design=design, obj_results={0: best},
+                             best_theta=ores.best_theta, best=best, glue=None, extras=extras)
+
+
+@_register_estimator("dream")
+def _estimate_dream(work_cfg, space, setup, method, *, seed, n_workers, extras, progress):
+    from .engines import run_dream
+    _, _crop, _exe, _specs, _run_root, obs, experiments, _trts = setup
+    scorer = _results_scorer(work_cfg, setup, n_workers)
+    mc = run_dream(work_cfg, scorer, space, progress=progress)
+    extras.update(initial_design=mc.initial_design, engine="dream",
+                  mcmc_chain=mc.chain, acceptance=mc.acceptance)
+    return CalibrationResult(cfg=work_cfg, space=space, obs=obs, experiments=experiments,
+                             design=mc.design, obj_results=mc.obj_results,
+                             best_theta=mc.best_theta, best=mc.best, glue=mc, extras=extras)
+
+
+@_register_estimator("es_mda")
+def _estimate_es_mda(work_cfg, space, setup, method, *, seed, n_workers, extras, progress):
+    from .engines import run_es_mda
+    _, _crop, _exe, _specs, _run_root, obs, experiments, _trts = setup
+    scorer = _results_scorer(work_cfg, setup, n_workers)
+    es = run_es_mda(work_cfg, scorer, space, progress=progress)
+    extras.update(initial_design=es.initial_design, engine="es_mda")
+    return CalibrationResult(cfg=work_cfg, space=space, obs=obs, experiments=experiments,
+                             design=es.design, obj_results=es.obj_results,
+                             best_theta=es.best_theta, best=es.best, glue=es, extras=extras)
+
+
+@_register_estimator("bayesopt")
+def _estimate_bayesopt(work_cfg, space, setup, method, *, seed, n_workers, extras, progress):
+    from .engines import run_bayesopt
+    _, _crop, _exe, _specs, _run_root, obs, experiments, _trts = setup
+    scorer = _results_scorer(work_cfg, setup, n_workers)
+    bo = run_bayesopt(work_cfg, scorer, space, progress=progress)
+    extras.update(engine="bayesopt", bayesopt_info=bo.info)
+    return CalibrationResult(cfg=work_cfg, space=space, obs=obs, experiments=experiments,
+                             design=bo.design, obj_results=bo.obj_results,
+                             best_theta=bo.best_theta, best=bo.best, glue=None, extras=extras)
+
+
+@_register_estimator("glue")
+def _estimate_glue(work_cfg, space, setup, method, *, seed, n_workers, extras, progress):
+    from .engines import run_glue
+    n = int(method.get("sample", {}).get("n", 200))
+    engine = method.get("sample", {}).get("engine", "lhs")
+    samples = sample(space, n=n, engine=engine, seed=seed, include_start=True)
+    design, obj_results, (space, obs, experiments) = evaluate_design(work_cfg, samples, progress=progress)
+    glue = run_glue(design, space.names, work_cfg, space=space)
+    best = obj_results[glue.best_sample_id]
+    extras.update(engine="glue")
+    return CalibrationResult(cfg=work_cfg, space=space, obs=obs, experiments=experiments,
+                             design=glue.design, obj_results=obj_results,
+                             best_theta=glue.best_theta, best=best, glue=glue, extras=extras)
+
+
 def calibrate(cfg: dict, *, progress=True) -> CalibrationResult:
     """Run the configured calibration pipeline.
 
@@ -331,8 +479,7 @@ def calibrate(cfg: dict, *, progress=True) -> CalibrationResult:
       3. estimate with the chosen engine: glue | smc_pf | mcmc | optimizer | surrogate
       4. [multiobjective] NSGA-II Pareto front add-on
     """
-    from .engines import (run_glue, run_mcmc, run_nsga2, run_optimizer,
-                          run_sensitivity, run_smc_pf, run_surrogate, stepwise_select)
+    from .engines import run_nsga2, run_sensitivity, stepwise_select
 
     cfg = _apply_staging(cfg)
     method = _resolve_method(cfg)
@@ -386,70 +533,22 @@ def calibrate(cfg: dict, *, progress=True) -> CalibrationResult:
     if str(cfg.get("objective", {}).get("weighting", "")).lower() == "agmip_wls":
         work_cfg = _agmip_reweight(work_cfg, setup, n_workers, seed, progress)
 
-    # --- 3. main estimator --------------------------------------------------------
-    bayes = str(method.get("bayesian", {}).get("engine", "glue")).lower()
-    opt = str(method.get("optimizer", {}).get("engine", "none")).lower()
-    surrogate_on = _stage_on(method.get("surrogate"))
-    _, _crop, _exe, _specs, _run_root, obs, experiments, _trts = setup
-
+    # --- 3. main estimator (registry dispatch) ------------------------------------
+    estimator = _resolve_estimator(method)
     if progress:
-        print(f"[3/4] Estimating with "
-              f"{'surrogate+' if surrogate_on else ''}"
-              f"{bayes if bayes not in ('none','') else opt}...", flush=True)
+        bayes = str(method.get("bayesian", {}).get("engine", "glue")).lower()
+        opt = str(method.get("optimizer", {}).get("engine", "none")).lower()
+        main = bayes if bayes not in ("none", "") else opt
+        label = f"surrogate+{main}" if estimator == "surrogate" else \
+            (opt if estimator == "optimizer" else main)
+        print(f"[3/4] Estimating with {label}...", flush=True)
 
-    if surrogate_on:
-        scorer = _results_scorer(work_cfg, setup, n_workers)
-        sur = run_surrogate(work_cfg, space, scorer, progress=progress)
-        glue = run_glue(sur.design, space.names, work_cfg, space=space)
-        best = sur.obj_results[glue.best_sample_id]
-        extras["surrogate_info"] = sur.info
-        result = CalibrationResult(cfg=work_cfg, space=space, obs=obs, experiments=experiments,
-                                   design=glue.design, obj_results=sur.obj_results,
-                                   best_theta=glue.best_theta, best=best, glue=glue, extras=extras)
-
-    elif bayes == "smc_pf":
-        smc = run_smc_pf(work_cfg, progress=progress)
-        extras.update(initial_design=smc.initial_design, engine="smc_pf")
-        result = CalibrationResult(cfg=work_cfg, space=space, obs=obs, experiments=experiments,
-                                   design=smc.design, obj_results=smc.obj_results,
-                                   best_theta=smc.best_theta, best=smc.best, glue=smc, extras=extras)
-
-    elif bayes == "mcmc":
-        scorer = _results_scorer(work_cfg, setup, n_workers)
-        mc = run_mcmc(work_cfg, scorer, space, progress=progress)
-        extras.update(initial_design=mc.initial_design, engine="mcmc",
-                      mcmc_chain=mc.chain, acceptance=mc.acceptance)
-        result = CalibrationResult(cfg=work_cfg, space=space, obs=obs, experiments=experiments,
-                                   design=mc.design, obj_results=mc.obj_results,
-                                   best_theta=mc.best_theta, best=mc.best, glue=mc, extras=extras)
-
-    elif bayes in ("none", "") and opt in ("nelder_mead", "diffevo", "neldermead", "nm", "de"):
-        ocfg = method.get("optimizer", {})
-        scorer = _results_scorer(work_cfg, setup, n_workers)
-        score_batch = lambda ths: [r.score for r in scorer(ths)]   # noqa: E731
-        ores = run_optimizer(space, score_batch, method=opt, seed=seed,
-                             maxiter=ocfg.get("maxiter"), popsize=int(ocfg.get("popsize", 15)),
-                             restarts=int(ocfg.get("restarts", 1)), progress=progress)
-        best = scorer([ores.best_theta])[0]
-        # Represent the optimiser's trace as a one-row "design" so reporting works.
-        design = pd.DataFrame([{"sample_id": 0, **ores.best_theta, "score": best.score,
-                                "loglik": best.loglik, "n_obs": len(best.residuals), "weight": 1.0}])
-        extras.update(engine="optimizer", optimizer_history=ores.history, n_eval=ores.n_eval)
-        result = CalibrationResult(cfg=work_cfg, space=space, obs=obs, experiments=experiments,
-                                   design=design, obj_results={0: best},
-                                   best_theta=ores.best_theta, best=best, glue=None, extras=extras)
-
-    else:  # glue (default) — sample a design, evaluate, GLUE post-process
-        n = int(method.get("sample", {}).get("n", 200))
-        engine = method.get("sample", {}).get("engine", "lhs")
-        samples = sample(space, n=n, engine=engine, seed=seed, include_start=True)
-        design, obj_results, (space, obs, experiments) = evaluate_design(work_cfg, samples, progress=progress)
-        glue = run_glue(design, space.names, work_cfg, space=space)
-        best = obj_results[glue.best_sample_id]
-        extras.update(engine="glue")
-        result = CalibrationResult(cfg=work_cfg, space=space, obs=obs, experiments=experiments,
-                                   design=glue.design, obj_results=obj_results,
-                                   best_theta=glue.best_theta, best=best, glue=glue, extras=extras)
+    result = ESTIMATOR_REGISTRY[estimator](
+        work_cfg, space, setup, method,
+        seed=seed, n_workers=n_workers, extras=extras, progress=progress)
+    # The GLUE estimator rebuilds the space from its own setup; keep the local
+    # ``space`` aligned with the result so the NSGA-II add-on uses the same one.
+    space = result.space
 
     # --- 4. multi-objective Pareto front add-on (optional) ------------------------
     if method.get("multiobjective", {}).get("engine") == "nsga2":

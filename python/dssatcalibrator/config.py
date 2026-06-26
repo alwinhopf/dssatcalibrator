@@ -119,8 +119,12 @@ def _deep_merge(base: dict, over: dict) -> dict:
     return out
 
 
-def load_config(path: str | Path) -> dict:
-    """Load a config YAML, merge defaults, and apply env overrides."""
+def load_config(path: str | Path, *, validate: bool = True) -> dict:
+    """Load a config YAML, merge defaults, apply env overrides, and validate.
+
+    Set ``validate=False`` to skip the schema check (e.g. when building a config
+    incrementally before all fields are populated).
+    """
     path = Path(path)
     with open(path, "r", encoding="utf-8") as fh:
         user = yaml.safe_load(fh) or {}
@@ -133,6 +137,114 @@ def load_config(path: str | Path) -> dict:
             cfg[sec][key] = int(val) if key == "num_cores" else val
 
     cfg["_config_path"] = str(path.resolve())
+    if validate:
+        validate_config(cfg)
+    return cfg
+
+
+# Allowed vocabularies, kept here so both the validator and the docs cite one
+# source. These mirror the Python engine code paths (and the R twin).
+PRESETS = {"A", "B", "C", "D"}
+WEIGHTING_MODES = {"unified", "sigma", "user", "count_scale", "agmip_wls"}
+CV_SCHEMES = {"none", "loeo", "year", "site", "random"}
+PRIOR_DISTS = {"uniform", "normal", "lognormal", "triangular"}
+GATING_LEVELS = {"free", "gated", "blocked"}
+EXECUTION_BACKENDS = {"native", "dssatengine"}
+ASSIMILATION_MODES = {"recalibration", "enkf", "forcing"}
+BAYES_ENGINES = {"glue", "smc_pf", "mcmc", "dream", "es_mda", "bayesopt", "none", ""}
+OPTIMIZER_ENGINES = {"nelder_mead", "neldermead", "nm", "diffevo", "de",
+                     "cmaes", "cma_es", "cma", "none", ""}
+
+
+def validate_config(cfg: dict) -> dict:
+    """Validate a merged config, raising ``ValueError`` listing *all* problems.
+
+    Catches the mistakes that would otherwise fail deep in a long run (or, worse,
+    run silently wrong): unknown engine/preset/weighting vocabulary, inverted or
+    non-numeric parameter bounds, start values outside their bounds, unknown prior
+    distributions, and an empty active-parameter set (nothing to calibrate).
+    Returns ``cfg`` unchanged on success so it composes: ``cfg = validate_config(cfg)``.
+    """
+    errors: list[str] = []
+
+    def _is_num(x) -> bool:
+        return isinstance(x, (int, float)) and not isinstance(x, bool)
+
+    method = cfg.get("method", {}) or {}
+    preset = str(method.get("preset", "C")).upper()
+    if preset not in PRESETS:
+        errors.append(f"method.preset '{preset}' is not one of {sorted(PRESETS)}.")
+
+    scheme = str((method.get("validation", {}) or {}).get("scheme", "none")).lower()
+    if scheme not in CV_SCHEMES:
+        errors.append(f"method.validation.scheme '{scheme}' is not one of {sorted(CV_SCHEMES)}.")
+
+    weighting = str((cfg.get("objective", {}) or {}).get("weighting", "unified")).lower()
+    if weighting not in WEIGHTING_MODES:
+        errors.append(f"objective.weighting '{weighting}' is not one of {sorted(WEIGHTING_MODES)}.")
+
+    backend = str((cfg.get("execution", {}) or {}).get("backend", "native")).lower()
+    if backend not in EXECUTION_BACKENDS:
+        errors.append(f"execution.backend '{backend}' is not one of {sorted(EXECUTION_BACKENDS)}.")
+
+    mode = str((cfg.get("assimilation", {}) or {}).get("mode", "recalibration")).lower()
+    if mode not in ASSIMILATION_MODES:
+        errors.append(f"assimilation.mode '{mode}' is not one of {sorted(ASSIMILATION_MODES)}.")
+
+    be = str((method.get("bayesian", {}) or {}).get("engine", "glue")).lower()
+    if be not in BAYES_ENGINES:
+        errors.append(f"method.bayesian.engine '{be}' is not one of "
+                      f"{sorted(BAYES_ENGINES - {''})}.")
+    oe = str((method.get("optimizer", {}) or {}).get("engine", "none")).lower()
+    if oe not in OPTIMIZER_ENGINES:
+        errors.append(f"method.optimizer.engine '{oe}' is not one of "
+                      f"{sorted(OPTIMIZER_ENGINES - {''})}.")
+
+    for lvl in ("cultivar", "ecotype", "species"):
+        g = str((cfg.get("gating", {}) or {}).get(lvl, "free")).lower()
+        if g not in GATING_LEVELS:
+            errors.append(f"gating.{lvl} '{g}' is not one of {sorted(GATING_LEVELS)}.")
+
+    cores = (cfg.get("calibrator", {}) or {}).get("num_cores", 0)
+    if not (_is_num(cores) and int(cores) >= 0):
+        errors.append(f"calibrator.num_cores must be an integer >= 0 (got {cores!r}).")
+
+    # Per-parameter bounds / start / prior, over ALL declared parameters.
+    n_active = 0
+    for group, params in (cfg.get("parameters") or {}).items():
+        if not isinstance(params, dict):
+            continue
+        for name, spec in params.items():
+            if not isinstance(spec, dict):
+                errors.append(f"parameters.{group}.{name} must be a mapping.")
+                continue
+            tag = f"parameters.{group}.{name}"
+            lo, hi = spec.get("min"), spec.get("max")
+            if not _is_num(lo) or not _is_num(hi):
+                errors.append(f"{tag}: min/max must both be numeric (got min={lo!r}, max={hi!r}).")
+            elif lo >= hi:
+                errors.append(f"{tag}: min ({lo}) must be < max ({hi}).")
+            start = spec.get("start")
+            if start is not None and _is_num(lo) and _is_num(hi) and _is_num(start):
+                if not (lo <= start <= hi):
+                    errors.append(f"{tag}: start ({start}) is outside [min={lo}, max={hi}].")
+            prior = spec.get("prior")
+            if isinstance(prior, dict):
+                dist = str(prior.get("dist", "uniform")).lower()
+                if dist not in PRIOR_DISTS:
+                    errors.append(f"{tag}: prior.dist '{dist}' is not one of {sorted(PRIOR_DISTS)}.")
+            if spec.get("active", False):
+                n_active += 1
+
+    if n_active == 0:
+        errors.append("No active parameters: at least one parameter must have "
+                      "`active: true` to calibrate.")
+
+    if errors:
+        raise ValueError(
+            "Invalid configuration ({} problem{}):\n  - {}".format(
+                len(errors), "s" if len(errors) != 1 else "", "\n  - ".join(errors))
+        )
     return cfg
 
 

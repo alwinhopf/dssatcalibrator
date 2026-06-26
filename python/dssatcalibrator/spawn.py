@@ -215,6 +215,16 @@ def spawn_and_run(
 
     run_dir.mkdir(parents=True, exist_ok=True)
 
+    # DSSAT profile (DSSATPRO) — CSM reads it from the current directory first,
+    # then its compiled default path. Copying it from the install root into the
+    # run dir lets a non-standard install (one whose root differs from the
+    # binary's compiled default, e.g. a relocated or per-user DSSAT48) resolve
+    # its Genotype/Weather/Soil paths. Harmless when CSM would find it anyway.
+    for pro in ("DSSATPRO.L48", "DSSATPRO.V48", "DSSATPRO.v48", "DSCSM048.CTR"):
+        src = dssat_paths["root"] / pro
+        if src.exists():
+            shutil.copy(src, run_dir / pro)
+
     # genotype files (edit a local copy)
     for e in ("CUL", "ECO", "SPE"):
         src = geno_dir / f"{stem}.{e}"

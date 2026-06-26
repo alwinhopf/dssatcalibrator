@@ -61,7 +61,11 @@ def identifiability(result, *, behavioural_quantile: float = 0.1) -> pd.DataFram
     sub = d[names].astype(float)
 
     corr = sub.corr().abs()
-    np.fill_diagonal(corr.values, np.nan)
+    # ``DataFrame.values`` can be a read-only view (newer pandas/numpy), so write
+    # the NaN diagonal on an owned copy and rebuild the frame.
+    _carr = corr.to_numpy(copy=True)
+    np.fill_diagonal(_carr, np.nan)
+    corr = pd.DataFrame(_carr, index=corr.index, columns=corr.columns)
 
     rows = []
     for n in names:

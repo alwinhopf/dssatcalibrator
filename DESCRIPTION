@@ -1,0 +1,35 @@
+Package: dssatcalibrator
+Type: Package
+Title: Monte-Carlo and Bayesian Calibration Framework for DSSAT-CSM
+Version: 0.0.1
+Authors@R: person("Alwin", "Hopf", email = "alwinhopf@gmail.com", role = c("aut", "cre"))
+Description: Config-driven Monte-Carlo and Bayesian calibration of DSSAT-CSM
+    cultivar/ecotype/species coefficients (and optionally management, soil and
+    weather) against observed LAI, biomass, grain yield and phenology, across one
+    or many experiments. R twin of the Python package; identical public function
+    names and a shared config.yaml so the two stay in lock-step (parity is a
+    contract, enforced by cross-language tests).
+License: MIT
+Encoding: UTF-8
+Imports:
+    yaml,
+    stats,
+    utils
+Suggests:
+    ggplot2,
+    lhs,
+    randtoolbox,
+    sensitivity,
+    DEoptim,
+    BayesianTools,
+    mco,
+    DiceKriging,
+    ranger,
+    dssatengine,
+    dssatutils,
+    digest,
+    parallel,
+    testthat (>= 3.0.0),
+    jsonlite
+Config/testthat/edition: 3
+RoxygenNote: 7.3.1

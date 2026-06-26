@@ -1,0 +1,138 @@
+{
+  "field_LAID": {
+    "variable": "LAID",
+    "value": 3.2,
+    "metadata": {},
+    "sigma": 0.48
+  },
+  "field_HWAM": {
+    "variable": "HWAM",
+    "value": 4000.0,
+    "metadata": {},
+    "sigma": 320.0
+  },
+  "field_ADAT": {
+    "variable": "ADAT",
+    "value": 99001.0,
+    "metadata": {},
+    "sigma": 3.0
+  },
+  "field_unknown": {
+    "variable": "ZZZZ",
+    "value": 50.0,
+    "metadata": {},
+    "sigma": 7.5
+  },
+  "uav_LAID_good": {
+    "variable": "LAID",
+    "value": 2.0,
+    "metadata": {
+      "flight_quality": "good"
+    },
+    "sigma": 0.4
+  },
+  "uav_LAID_poor": {
+    "variable": "LAID",
+    "value": 2.0,
+    "metadata": {
+      "flight_quality": "poor"
+    },
+    "sigma": 0.6000000000000001
+  },
+  "uav_unknown": {
+    "variable": "WWWW",
+    "value": 10.0,
+    "metadata": {
+      "flight_quality": "good"
+    },
+    "sigma": 1.5
+  },
+  "iot_sw_cap_factory": {
+    "variable": "SW",
+    "value": 0.3,
+    "metadata": {
+      "sensor_type": "capacitance",
+      "calibration_status": "factory"
+    },
+    "sigma": 0.04
+  },
+  "iot_sw_tdr_calib": {
+    "variable": "SW",
+    "value": 0.3,
+    "metadata": {
+      "sensor_type": "tdr",
+      "calibration_status": "field_calibrated"
+    },
+    "sigma": 0.012
+  },
+  "iot_tmean": {
+    "variable": "TMEAN",
+    "value": 25.0,
+    "metadata": {},
+    "sigma": 1.0
+  },
+  "sentinel_below_sat": {
+    "variable": "LAID",
+    "value": 2.0,
+    "metadata": {
+      "cloud_fraction": 0.0
+    },
+    "sigma": 0.7
+  },
+  "sentinel_above_sat_cloud": {
+    "variable": "LAID",
+    "value": 6.0,
+    "metadata": {
+      "cloud_fraction": 0.4
+    },
+    "sigma": 1.3439999999999999
+  },
+  "modis_qc0": {
+    "variable": "LAID",
+    "value": 3.0,
+    "metadata": {
+      "qc_flag": 0
+    },
+    "sigma": 0.66
+  },
+  "modis_qc2": {
+    "variable": "LAID",
+    "value": 3.0,
+    "metadata": {
+      "qc_flag": 2
+    },
+    "sigma": 1.32
+  },
+  "farm_gstd_weekly": {
+    "variable": "GSTD",
+    "value": 5.0,
+    "metadata": {
+      "date_precision": "weekly"
+    },
+    "sigma": 2.0
+  },
+  "farm_adat_biweekly": {
+    "variable": "ADAT",
+    "value": 1.0,
+    "metadata": {
+      "date_precision": "biweekly"
+    },
+    "sigma": 7.0
+  },
+  "mgmt_date": {
+    "variable": "spray_date",
+    "value": 1.0,
+    "metadata": {},
+    "sigma": 1.0
+  },
+  "mgmt_amount": {
+    "variable": "irrig_amount",
+    "value": 40.0,
+    "metadata": {},
+    "sigma": 2.0
+  },
+  "_obs_operator": {
+    "identity": 3.0,
+    "scaled": 2.9000000000000004
+  }
+}

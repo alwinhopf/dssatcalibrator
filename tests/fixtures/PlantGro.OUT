@@ -1,0 +1,8 @@
+*RUN   1        : parity sample
+ MODEL          CRGRO048
+ TREATMENT  1   RAINFED
+
+@YEAR DOY   DAS   DAP  L#SD  GSTD  LAID  CWAD  GWAD
+ 2021 152     0     0   0.0   1.0  0.00     0     0
+ 2021 160     8     8   2.0   2.0  0.45   120     0
+ 2021 200    48    48   8.0   5.0  3.20  3500   100

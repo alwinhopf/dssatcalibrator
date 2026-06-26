@@ -1,0 +1,59 @@
+{
+  "input": [
+    {
+      "exp_id": "E1",
+      "treatment": 1,
+      "variable": "LAID",
+      "kind": "timeseries",
+      "date": "2021-06-01",
+      "value": 2.0,
+      "sigma": 0.5,
+      "weight": 1.0,
+      "source": "sentinel2_lai",
+      "quality_flag": 0,
+      "spatial_res_m": 10.0
+    },
+    {
+      "exp_id": "E1",
+      "treatment": 1,
+      "variable": "LAID",
+      "kind": "timeseries",
+      "date": "2021-06-01",
+      "value": 2.6,
+      "sigma": 0.7,
+      "weight": 1.0,
+      "source": "modis_lai",
+      "quality_flag": 0,
+      "spatial_res_m": 250.0
+    },
+    {
+      "exp_id": "E1",
+      "treatment": 1,
+      "variable": "CWAD",
+      "kind": "timeseries",
+      "date": "2021-06-10",
+      "value": 1500.0,
+      "sigma": 120.0,
+      "weight": 1.0,
+      "source": "field_measurements",
+      "quality_flag": 0,
+      "spatial_res_m": "nan"
+    }
+  ],
+  "merged": [
+    {
+      "variable": "CWAD",
+      "date": "2021-06-10",
+      "value": 1500.0,
+      "sigma": 120.0,
+      "source": "field_measurements"
+    },
+    {
+      "variable": "LAID",
+      "date": "2021-06-01",
+      "value": 2.2027027027027026,
+      "sigma": 0.4068667356033675,
+      "source": "modis_lai+sentinel2_lai"
+    }
+  ]
+}

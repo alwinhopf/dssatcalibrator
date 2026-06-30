@@ -172,13 +172,43 @@ class SpawnResult:
     message: str = ""
 
 
-def _partition_theta(theta: dict, param_specs: list[dict]) -> dict[str, dict]:
+def _spec_applies_to_exp(spec: dict, exp_id: str | None) -> bool:
+    if spec.get("scope") != "experiment":
+        return True
+    return exp_id is None or str(spec.get("exp_id")) == str(exp_id)
+
+
+def _effective_theta(theta: dict, param_specs: list[dict], exp_id: str | None = None) -> dict[str, float]:
+    """Return the coefficient/value pairs that actually affect one spawn."""
+    out: dict[str, float] = {}
+    matched = set()
+    for spec in param_specs:
+        name = spec["name"]
+        if name not in theta or not _spec_applies_to_exp(spec, exp_id):
+            continue
+        base = spec.get("base_name", name)
+        out[base] = theta[name]
+        matched.add(name)
+    if not matched:
+        return dict(theta)
+    return out
+
+
+def _partition_theta(theta: dict, param_specs: list[dict], exp_id: str | None = None) -> dict[str, dict]:
     """Split a flat theta into per-group update dicts using the param specs."""
-    group_of = {p["name"]: p["group"] for p in param_specs}
     groups: dict[str, dict] = {}
-    for name, val in theta.items():
-        g = group_of.get(name, "genetic_cultivar")
-        groups.setdefault(g, {})[name] = val
+    matched = set()
+    for spec in param_specs:
+        name = spec["name"]
+        if name not in theta or not _spec_applies_to_exp(spec, exp_id):
+            continue
+        g = spec.get("group", "genetic_cultivar")
+        base = spec.get("base_name", name)
+        groups.setdefault(g, {})[base] = theta[name]
+        matched.add(name)
+    if not matched:
+        for name, val in theta.items():
+            groups.setdefault("genetic_cultivar", {})[name] = val
     return groups
 
 
@@ -203,7 +233,8 @@ def spawn_and_run(
     ext = crop["filex_ext"]          # FileX extension, e.g. "HMX"
     code = crop["code"]              # crop code for observed files, e.g. "HM" -> .HMA/.HMT
 
-    run_dir = run_root / exp_id / f"s_{theta_hash(theta)}"
+    effective_theta = _effective_theta(theta, param_specs, exp_id)
+    run_dir = run_root / exp_id / f"s_{theta_hash(effective_theta)}"
     pg_path = run_dir / "PlantGro.OUT"
 
     if cfg["calibrator"].get("cache_spawns", True) and pg_path.exists() and pg_path.stat().st_size > 0:
@@ -240,7 +271,7 @@ def spawn_and_run(
             shutil.copy(src, run_dir / f"{exp_id}.{obs_ext}")
 
     # apply parameter perturbations
-    groups = _partition_theta(theta, param_specs)
+    groups = _partition_theta(theta, param_specs, exp_id)
     cul_updates = {}
     for g in GENETIC_GROUPS:
         cul_updates.update(groups.get(g, {}))
@@ -260,8 +291,15 @@ def spawn_and_run(
         if spe_file.exists():
             updates = {}
             for name, val in spe_updates.items():
-                spec = next((s for s in param_specs if s["name"] == name), None)
-                updates[(spec or {}).get("spe_key", name)] = val
+                spec = next((s for s in param_specs if s.get("base_name", s["name"]) == name), None)
+                key = (spec or {}).get("spe_key", name)
+                if spec and ("spe_index" in spec or "token_index" in spec):
+                    updates[key] = {
+                        "value": val,
+                        "index": int(spec.get("spe_index", spec.get("token_index", 0))),
+                    }
+                else:
+                    updates[key] = val
             edit_species(spe_file, updates)
 
     # edit management and initial conditions in FileX
@@ -269,7 +307,7 @@ def spawn_and_run(
     init_updates = groups.get("initial_conditions", {})
     mgt_fields = {}
     for name, val in mgt_updates.items():
-        spec = next((s for s in param_specs if s["name"] == name), None)
+        spec = next((s for s in param_specs if s.get("base_name", s["name"]) == name), None)
         if spec and "dssat" in spec:
             mgt_fields[spec["dssat"]] = val
     # per-experiment planting date override (e.g. from farm-management software):
@@ -342,18 +380,31 @@ def spawn_and_run(
         if soil_updates and fields.get("id_soil"):
             from .writers import extract_soil_profile, edit_soil
             local_sol = run_dir / "SOIL.SOL"
-            src_sol = local_sol if local_sol.exists() else dssat_paths["soil"] / "SOIL.SOL"
             pid = fields["id_soil"]
-            if src_sol.exists():
-                layer_mults, profile_sets = {}, {}
-                for name, val in soil_updates.items():
-                    spec = next((s for s in param_specs if s["name"] == name), None)
-                    if not spec or "dssat" not in spec:
-                        continue
-                    (profile_sets if spec.get("op") == "set" else layer_mults)[spec["dssat"]] = val
-                if src_sol != local_sol:
-                    local_sol.write_text(extract_soil_profile(src_sol, pid), encoding="utf-8")
-                edit_soil(local_sol, pid, layer_mults=layer_mults, profile_sets=profile_sets)
+            candidates = []
+            if local_sol.exists():
+                candidates.append(local_sol)
+            candidates.append(dssat_paths["soil"] / "SOIL.SOL")
+            candidates.extend(sorted(dssat_paths["soil"].glob("*.SOL")))
+            profile_text = None
+            for src_sol in candidates:
+                if not src_sol.exists():
+                    continue
+                try:
+                    profile_text = extract_soil_profile(src_sol, pid)
+                    break
+                except ValueError:
+                    continue
+            if profile_text is None:
+                raise ValueError(f"Soil profile '{pid}' not found in DSSAT soil directory {dssat_paths['soil']}")
+            layer_mults, profile_sets = {}, {}
+            for name, val in soil_updates.items():
+                spec = next((s for s in param_specs if s.get("base_name", s["name"]) == name), None)
+                if not spec or "dssat" not in spec:
+                    continue
+                (profile_sets if spec.get("op") == "set" else layer_mults)[spec["dssat"]] = val
+            local_sol.write_text(profile_text, encoding="utf-8")
+            edit_soil(local_sol, pid, layer_mults=layer_mults, profile_sets=profile_sets)
 
         if weather_updates and fields.get("wsta"):
             from .writers import edit_weather
@@ -363,7 +414,7 @@ def spawn_and_run(
             if src_wth.exists():
                 ops = {}
                 for name, val in weather_updates.items():
-                    spec = next((s for s in param_specs if s["name"] == name), None)
+                    spec = next((s for s in param_specs if s.get("base_name", s["name"]) == name), None)
                     if not spec or "dssat" not in spec:
                         continue
                     ops[spec["dssat"]] = (spec.get("op", "mult"), val)

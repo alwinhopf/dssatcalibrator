@@ -28,6 +28,27 @@ def _fmt(value: float, width: int) -> str:
     return f"{value:.0f}".rjust(width)[:width]
 
 
+def _fmt_like_token(value: float, token: str) -> str:
+    """Format a scalar like an existing DSSAT token, preserving leading-dot decimals."""
+    width = len(token)
+    old = token.strip()
+    if re.match(r"^-?\.\d+$", old):
+        decimals = len(old.split(".", 1)[1])
+        s = f"{value:.{decimals}f}"
+        if s.startswith("0."):
+            s = s[1:]
+        elif s.startswith("-0."):
+            s = "-." + s.split(".", 1)[1]
+        if len(s) <= width:
+            return s.rjust(width)
+    if "." in old and "e" not in old.lower():
+        decimals = len(old.rsplit(".", 1)[1])
+        s = f"{value:.{decimals}f}"
+        if len(s) <= width:
+            return s.rjust(width)
+    return _fmt(value, width)
+
+
 def _parse(cell: str):
     cell = cell.strip()
     try:
@@ -453,10 +474,10 @@ def edit_ecotype(eco_path: str | Path, anchor_code: str, updates: dict[str, floa
     eco_path.write_text("\n".join(lines) + "\n")
 
 
-_NUM_RE = re.compile(r"-?\d+\.?\d*(?:[eE][-+]?\d+)?")
+_NUM_RE = re.compile(r"-?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
 
 
-def edit_species(spe_path: str | Path, updates: dict[str, float]) -> None:
+def edit_species(spe_path: str | Path, updates: dict[str, float | dict]) -> None:
     """Best-effort in-place edit of named scalar values in a CROPGRO/CERES ``.SPE``.
 
     ``.SPE`` files are free-form (not column-tabular like ``.CUL``/``.ECO``), so this
@@ -473,6 +494,10 @@ def edit_species(spe_path: str | Path, updates: dict[str, float]) -> None:
     spe_path = Path(spe_path)
     lines = spe_path.read_text(errors="replace").splitlines()
     for key, val in updates.items():
+        token_index = 0
+        if isinstance(val, dict):
+            token_index = int(val.get("index", val.get("token_index", 0)))
+            val = val.get("value")
         matches = [i for i, ln in enumerate(lines)
                    if key in ln and ln.strip() and not ln.lstrip().startswith(("*", "@", "!"))
                    and _NUM_RE.search(ln)]
@@ -481,10 +506,14 @@ def edit_species(spe_path: str | Path, updates: dict[str, float]) -> None:
                            f"{spe_path.name} (need exactly 1); refine the key.")
         i = matches[0]
         ln = lines[i]
-        m = _NUM_RE.search(ln)
-        width = m.end() - m.start()
-        new = _fmt(float(val), width) if width > 0 else f"{float(val):.3f}"
-        lines[i] = ln[:m.start()] + new.strip().rjust(width) + ln[m.end():]
+        nums = list(_NUM_RE.finditer(ln))
+        if token_index < 0 or token_index >= len(nums):
+            raise KeyError(f"Species key '{key}' token index {token_index} out of range "
+                           f"for {spe_path.name} (found {len(nums)} numeric tokens).")
+        m = nums[token_index]
+        old = m.group(0)
+        new = _fmt_like_token(float(val), old) if old else f"{float(val):.3f}"
+        lines[i] = ln[:m.start()] + new + ln[m.end():]
     spe_path.write_text("\n".join(lines) + "\n")
 
 

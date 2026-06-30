@@ -47,6 +47,7 @@ offline tests under `tests/`.
 | Preset pipelines A/B/C/D + custom | implemented | `orchestrator.py` | `method.preset` |
 | Leave-one-environment-out validation | implemented | `orchestrator.py` | `--validate` |
 | Parallel execution (thread-pool over DSSAT subprocesses) | implemented | `runner.py` | `calibrator.num_cores` |
+| Parameter impact atlas (real-DSSAT one-at-a-time genotype/input sweeps + broad `*.OUT` collection + summaries) | implemented | `impact.py`, `R/impact.R`, `run_impact_atlas.py` | `python run_impact_atlas.py ...`; `run_impact_atlas(...)` from R |
 | Serial warm-up → parallel schedule | hook present (no-op here) | `runner.py` | `run_many(..., warmup=k)` |
 | New-site weather/soil acquisition via `dssatutils` | implemented (optional extra; real experiments unchanged) | `weather.py`, `acquisition.py` | `weather.provider: dssatutils`, `soil.provider: dssatutils` |
 | R parity layer (wrap CroptimizR) | **future** (Python-only today) | — | — |
@@ -351,6 +352,12 @@ crops:
 - **Ranges + start + prior** satisfy the explicit request: a plausible range *and* a
   starting point, plus a prior distribution for the Bayesian stage (default
   `uniform(min,max)` if `prior` omitted; `start` is the prior mean for `normal`).
+- **Parameter pooling** is explicit: omitted `scope` or `scope: global` means one
+  shared value is fitted across all experiments; `scope: experiment` (alias
+  `pooling: per_experiment`) expands the parameter into one optimizer dimension
+  per experiment, then writes each value back to the original DSSAT coefficient
+  name for that experiment's run directory. This supports pooled species
+  calibration with experiment-specific cultivar or ecotype coefficients.
 - **`active: false`** parameters are *declared but dormant* — the "all variables a user
   might vary even if only a few are activated" requirement.
 - The **sensitivity stage** can flip `active` automatically (screen all, keep the most

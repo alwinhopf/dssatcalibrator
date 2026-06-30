@@ -9,7 +9,8 @@
 * ``fig_obs_vs_sim``       — 1:1 simulated-vs-observed for the best fit.
 * ``fig_timeseries``       — best-fit simulated growth curves vs observed points.
 * ``fig_fit_bars``         — per-variable nRMSE / Willmott d.
-* ``summary_fit.csv`` / ``posterior_summary.csv`` / ``design.csv`` / ``best_theta.json``.
+* ``summary_fit.csv`` / ``objective_breakdown.csv`` / ``manifest.csv`` /
+  ``posterior_summary.csv`` / ``design.csv`` / ``best_theta.json``.
 """
 
 from __future__ import annotations
@@ -288,6 +289,41 @@ def summary_fit_table(result) -> pd.DataFrame:
     return df[[c for c in cols if c in df.columns]].round(3)
 
 
+def objective_breakdown_table(result) -> pd.DataFrame:
+    """Return per-experiment/per-variable objective components for the best fit."""
+    resid = getattr(result.best, "residuals", pd.DataFrame())
+    if resid is None or resid.empty:
+        return pd.DataFrame(columns=[
+            "exp_id", "user_var", "kind", "n", "mean_loss", "weighted_loss",
+            "RMSE", "MBE", "mean_obs", "mean_sim",
+        ])
+    df = resid.copy()
+    if "_loss" not in df.columns:
+        sigma = pd.to_numeric(df.get("sigma", 1.0), errors="coerce").replace(0, np.nan)
+        df["_loss"] = (pd.to_numeric(df["resid"], errors="coerce") / sigma) ** 2
+    if "weight" not in df.columns:
+        df["weight"] = 1.0
+    group_cols = [c for c in ("exp_id", "user_var", "kind") if c in df.columns]
+    rows = []
+    for keys, g in df.groupby(group_cols, dropna=False):
+        if not isinstance(keys, tuple):
+            keys = (keys,)
+        rec = dict(zip(group_cols, keys))
+        resid_vals = pd.to_numeric(g["resid"], errors="coerce")
+        rec.update({
+            "n": int(len(g)),
+            "mean_loss": float(pd.to_numeric(g["_loss"], errors="coerce").mean()),
+            "weighted_loss": float((pd.to_numeric(g["_loss"], errors="coerce") *
+                                    pd.to_numeric(g["weight"], errors="coerce")).sum()),
+            "RMSE": float(np.sqrt(np.nanmean(resid_vals ** 2))),
+            "MBE": float(resid_vals.mean()),
+            "mean_obs": float(pd.to_numeric(g["obs"], errors="coerce").mean()),
+            "mean_sim": float(pd.to_numeric(g["sim"], errors="coerce").mean()),
+        })
+        rows.append(rec)
+    return pd.DataFrame(rows).sort_values(group_cols).reset_index(drop=True)
+
+
 def make_report(result, outdir, best_spawns=None, figdir=None) -> dict:
     """Write a calibration report. Data tables -> ``outdir``; all PNG figures ->
     ``figdir`` (defaults to ``outdir`` if not given). Returns the paths written."""
@@ -303,6 +339,20 @@ def make_report(result, outdir, best_spawns=None, figdir=None) -> dict:
     fit = summary_fit_table(result)
     fit.to_csv(outdir / "summary_fit.csv", index=False)
     paths["summary_fit"] = outdir / "summary_fit.csv"
+
+    objective_breakdown = objective_breakdown_table(result)
+    objective_breakdown.round(6).to_csv(outdir / "objective_breakdown.csv", index=False)
+    paths["objective_breakdown"] = outdir / "objective_breakdown.csv"
+
+    spawn_manifest = (result.extras or {}).get("spawn_manifest")
+    if spawn_manifest is not None and not spawn_manifest.empty:
+        spawn_manifest.to_csv(outdir / "manifest.csv", index=False)
+        (outdir / "manifest.json").write_text(
+            json.dumps(spawn_manifest.to_dict(orient="records"), indent=2, default=str),
+            encoding="utf-8",
+        )
+        paths["manifest"] = outdir / "manifest.csv"
+        paths["manifest_json"] = outdir / "manifest.json"
 
     (outdir / "best_theta.json").write_text(json.dumps(result.best_theta, indent=2))
     if result.glue is not None:

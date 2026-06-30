@@ -119,7 +119,7 @@ evaluate_design <- function(cfg, samples, progress = TRUE) {
                                    list(score = o$score, loglik = o$loglik, n_obs = nrow(o$residuals)))
   }
   if (!is.null(best_sid)) obj_results[[as.character(best_sid)]] <- best_obj_res
-  design <- do.call(rbind, lapply(rows, function(r) as.data.frame(r, stringsAsFactors = FALSE)))
+  design <- do.call(rbind, lapply(rows, function(r) as.data.frame(r, stringsAsFactors = FALSE, check.names = FALSE)))
   design <- design[order(design$sample_id), ]; rownames(design) <- NULL
   list(design = design, obj_results = obj_results, space = setup$space, obs = setup$obs, experiments = setup$experiments)
 }
@@ -236,7 +236,7 @@ evaluate_design <- function(cfg, samples, progress = TRUE) {
   best <- scorer(list(ores$best_theta))[[1]]
   design <- as.data.frame(c(list(sample_id = 0L), ores$best_theta,
                             list(score = best$score, loglik = best$loglik, n_obs = nrow(best$residuals), weight = 1.0)),
-                          stringsAsFactors = FALSE)
+                          stringsAsFactors = FALSE, check.names = FALSE)
   extras$engine <- "optimizer"; extras$optimizer_history <- ores$history; extras$n_eval <- ores$n_eval
   .calib_result(work_cfg, space, obs, experiments, design, list(`0` = best), ores$best_theta, best, NULL, extras)
 }
@@ -276,6 +276,22 @@ evaluate_design <- function(cfg, samples, progress = TRUE) {
   .calib_result(work_cfg, space, obs, experiments, bo$design, bo$obj_results, bo$best_theta, bo$best, NULL, extras)
 }
 
+.estimate_history <- function(work_cfg, space, setup, method, seed, n_workers, extras, progress) {
+  obs <- setup$obs; experiments <- setup$experiments
+  scorer <- .results_scorer(work_cfg, setup, n_workers)
+  hm <- run_history_matching(work_cfg, scorer, space, progress = progress)
+  extras$engine <- "history"; extras$history_waves <- hm$waves
+  .calib_result(work_cfg, space, obs, experiments, hm$design, hm$obj_results, hm$best_theta, hm$best, hm, extras)
+}
+
+.estimate_abc_smc <- function(work_cfg, space, setup, method, seed, n_workers, extras, progress) {
+  obs <- setup$obs; experiments <- setup$experiments
+  scorer <- .results_scorer(work_cfg, setup, n_workers)
+  abc <- run_abc_smc(work_cfg, scorer, space, progress = progress)
+  extras$engine <- "abc_smc"; extras$thresholds <- abc$thresholds; extras$initial_design <- abc$initial_design
+  .calib_result(work_cfg, space, obs, experiments, abc$design, abc$obj_results, abc$best_theta, abc$best, abc, extras)
+}
+
 .ESTIMATOR_REGISTRY <- list(
   surrogate = .estimate_surrogate,
   smc_pf    = .estimate_smc_pf,
@@ -283,6 +299,8 @@ evaluate_design <- function(cfg, samples, progress = TRUE) {
   dream     = .estimate_dream,
   es_mda    = .estimate_es_mda,
   bayesopt  = .estimate_bayesopt,
+  history   = .estimate_history,
+  abc_smc   = .estimate_abc_smc,
   optimizer = .estimate_optimizer,
   glue      = .estimate_glue
 )
@@ -292,6 +310,10 @@ evaluate_design <- function(cfg, samples, progress = TRUE) {
 #' mcmc|optimizer|surrogate) -> [NSGA-II add-on].
 #' @export
 calibrate <- function(cfg, progress = TRUE) {
+  if (!isTRUE(.cfg_get(cfg, "_sparse_applied", FALSE))) cfg <- apply_sparse_config(cfg)
+  if (isTRUE(.cfg_get(.cfg_get(.cfg_get(cfg, "method", list()), "staged", list()), "active", FALSE))) {
+    return(calibrate_staged(cfg, progress = progress))
+  }
   cfg <- .apply_staging(cfg)
   method <- .resolve_method(cfg)
   seed <- as.integer(.cfg_get(cfg$calibrator, "seed", 42))
@@ -396,14 +418,14 @@ run_smc_pf <- function(cfg, progress = TRUE) {
   sample_engine <- .cfg_get(.cfg_get(method, "sample", list()), "engine", "lhs")
   if (has_informative_prior(space)) {
     prior_draws <- sample_prior_design(space, n_particles)
-    start_row <- as.data.frame(as.list(space$start)); names(start_row) <- space$names
+    start_row <- as.data.frame(as.list(space$start), check.names = FALSE); names(start_row) <- space$names
     samples <- rbind(start_row, prior_draws)
   } else {
     samples <- sample_design(space, n = n_particles, engine = sample_engine, seed = seed, include_start = TRUE)
   }
   n_particles <- nrow(samples)
   initial_design <- do.call(rbind, lapply(seq_len(n_particles) - 1L, function(sid)
-    as.data.frame(c(list(sample_id = sid), ps_to_theta(space, as.numeric(samples[sid + 1L, ]))), stringsAsFactors = FALSE)))
+    as.data.frame(c(list(sample_id = sid), ps_to_theta(space, as.numeric(samples[sid + 1L, ]))), stringsAsFactors = FALSE, check.names = FALSE)))
 
   jobs <- list(); idx <- list()
   for (sid in seq_len(n_particles) - 1L) {
@@ -524,7 +546,7 @@ run_smc_pf <- function(cfg, progress = TRUE) {
     rows[[length(rows) + 1L]] <- c(list(sample_id = i - 1L), particles[[i]]$theta,
                                    list(score = o$score, loglik = o$loglik, n_obs = nrow(o$residuals)))
   }
-  design <- do.call(rbind, lapply(rows, function(r) as.data.frame(r, stringsAsFactors = FALSE)))
+  design <- do.call(rbind, lapply(rows, function(r) as.data.frame(r, stringsAsFactors = FALSE, check.names = FALSE)))
   design$weight <- weights
   best_sample_id <- which.min(ifelse(is.finite(design$score), design$score, Inf)) - 1L
   best_theta <- particles[[best_sample_id + 1L]]$theta; best <- obj_results[[as.character(best_sample_id)]]

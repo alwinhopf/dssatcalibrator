@@ -23,14 +23,15 @@ OUT.mkdir(exist_ok=True)
 def _sanitize(o):
     """Replace non-finite floats with string sentinels so the JSON is standard
     (R's jsonlite rejects bare Infinity/NaN). The R tests decode these back."""
-    if isinstance(o, float):
+    if isinstance(o, (float, np.floating)):
+        o = float(o)
         if o != o:
             return "nan"
         if o == float("inf"):
             return "inf"
         if o == float("-inf"):
             return "-inf"
-        return o
+        return float(f"{o:.15g}")
     if isinstance(o, dict):
         return {k: _sanitize(v) for k, v in o.items()}
     if isinstance(o, (list, tuple)):

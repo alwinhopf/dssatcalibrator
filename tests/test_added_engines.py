@@ -1,5 +1,5 @@
 """Offline correctness tests for the newly added engines (CMA-ES, DREAM, ES-MDA,
-Bayesian optimisation). A synthetic linear-Gaussian problem with a known optimum
+Bayesian optimisation, history matching, ABC-SMC). A synthetic linear-Gaussian problem with a known optimum
 ``target`` is solved through each engine's real code path (no DSSAT), and we
 assert the engine recovers the optimum and the registry resolves it.
 """
@@ -98,6 +98,30 @@ def test_bayesopt_recovers_optimum():
     assert orch._resolve_estimator({"bayesian": {"engine": "bayesopt"}}) == "bayesopt"
 
 
+def test_history_matching_keeps_nroy_region():
+    from dssatcalibrator.engines.history import run_history_matching
+    r = run_history_matching(_cfg("history", n=96, waves=2, implausibility_cutoff=4.0),
+                             _scorer(), _space(), progress=False)
+    assert len(r.design) > 20
+    assert r.ess > 0
+    assert np.isfinite(r.best.score)
+    assert _err(r.best_theta) < 4.0
+    assert orch._resolve_estimator({"bayesian": {"engine": "history"}}) == "history"
+
+
+def test_abc_smc_accepts_final_population():
+    from dssatcalibrator.engines.abc_smc import run_abc_smc
+    r = run_abc_smc(_cfg("abc_smc", n_particles=40, waves=2, oversample=2,
+                         threshold_quantile=0.4),
+                    _scorer(), _space(), progress=False)
+    assert len(r.design) > 40
+    assert r.ess > 0
+    assert len(r.thresholds) == 2
+    assert r.thresholds[-1] <= r.thresholds[0]
+    assert _err(r.best_theta) < 2.5
+    assert orch._resolve_estimator({"bayesian": {"engine": "abc_smc"}}) == "abc_smc"
+
+
 def test_all_new_engines_in_registry():
-    for name in ("dream", "es_mda", "bayesopt"):
+    for name in ("dream", "es_mda", "bayesopt", "history", "abc_smc"):
         assert name in orch.ESTIMATOR_REGISTRY

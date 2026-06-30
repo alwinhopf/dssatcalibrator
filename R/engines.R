@@ -55,14 +55,19 @@ run_glue <- function(design, param_names, cfg, space = NULL) {
 #' @export
 posterior_summary <- function(glue, param_names) {
   d <- glue$design; w <- d$weight
+  wquantile <- function(x, probs) {
+    if (sum(w) <= 0) return(as.numeric(quantile(x, probs, names = FALSE, type = 7)))
+    o <- order(x); xs <- x[o]; ws <- w[o] / sum(w[o])
+    approx(cumsum(ws), xs, xout = probs, rule = 2, ties = "ordered")$y
+  }
   rows <- lapply(param_names, function(n) {
     x <- as.numeric(d[[n]])
     if (sum(w) > 0) {
       mean_ <- sum(w * x); var_ <- sum(w * (x - mean_)^2); sd_ <- sqrt(max(var_, 0))
     } else { mean_ <- mean(x); sd_ <- sd(x) }
+    qs <- wquantile(x, c(0.05, 0.95))
     data.frame(parameter = n, best = glue$best_theta[[n]], post_mean = mean_, post_sd = sd_,
-               p05 = as.numeric(quantile(x, 0.05, names = FALSE, type = 7)),
-               p95 = as.numeric(quantile(x, 0.95, names = FALSE, type = 7)),
+               p05 = qs[1], p95 = qs[2],
                stringsAsFactors = FALSE)
   })
   do.call(rbind, rows)

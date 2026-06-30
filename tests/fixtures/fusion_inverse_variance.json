@@ -51,8 +51,8 @@
     {
       "variable": "LAID",
       "date": "2021-06-01",
-      "value": 2.2027027027027026,
-      "sigma": 0.4068667356033675,
+      "value": 2.2027027027027,
+      "sigma": 0.406866735603368,
       "source": "modis_lai+sentinel2_lai"
     }
   ]

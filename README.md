@@ -17,6 +17,8 @@
 
   Pick the estimator with `method.bayesian.engine` (`glue` | `smc_pf` | `mcmc` | `dream` | `es_mda` | `bayesopt`) or `method.optimizer.engine` (`nelder_mead` | `diffevo` | `cmaes`). Each engine is one entry in the estimator registry, so adding another is a function + one registration. Rules of thumb: **CMA-ES** for the fastest single best-fit, **DREAM** for an honest posterior on correlated/multimodal coefficients, **ES-MDA** for many parameters with uncertainty in a few iterations, **Bayesian optimisation** when each DSSAT run is expensive.
 - **Priors that count**: declare `uniform` / `normal` / `lognormal` / `triangular` priors per parameter; the Bayesian engines use them.
+- **Pooled calibrations**: keep species parameters shared across all experiments by default, or set `scope: experiment` / `pooling: per_experiment` on cultivar/ecotype parameters to give each experiment its own coefficient while fitting them in one run.
+- **Parameter impact atlas**: run real-DSSAT one-at-a-time sweeps across discovered cultivar/ecotype/species coefficients plus management, soil, and weather parameters, collecting broad `*.OUT` tables, compact impact summaries, and a support-package capability map.
 - **Honest objective**: RMSE/nRMSE/MBE/Willmott-d/EF/R² metrics, four weighting modes (`unified`, `sigma`, `count_scale`, `user`), `agmip_wls` reweighting, and optional `obs_autocorr` down-weighting of dense time-series.
 - **Validation**: leave-one-environment-out cross-validation.
 - **Multi-source & in-season**: pluggable observation adapters (satellite, UAV, IoT, farm software, field) fused by inverse-variance/priority, plus an **in-season recalibration** mode that re-estimates parameters as data arrives (`--assimilate` / `--combined`). See [`WALKTHROUGH.md`](WALKTHROUGH.md) §14 and [`CONCEPT.md`](CONCEPT.md) §17. *(EnKF/forcing state-assimilation modes are uncoupled prototypes, gated behind `allow_uncoupled`.)*
@@ -66,9 +68,15 @@ python run_calibration.py config_hemp.yaml --surrogate gp
 # Subset of experiments / leave-one-environment-out cross-validation
 python run_calibration.py config_hemp.yaml --n 50 --experiments YUKU2101 YUFE2201
 python run_calibration.py config_hemp.yaml --validate
+
+# One-at-a-time real-DSSAT impact atlas
+python run_impact_atlas.py config_hemp.yaml --experiments UFCI2101 --discover-genotype --allow-species --max-per-group 1 --cores 2 --no-long
+
+# R front end to the same atlas runner
+Rscript -e "library(dssatcalibrator); run_impact_atlas('config_hemp.yaml', experiments='UFCI2101', discover_genotype=TRUE, allow_species=TRUE, max_per_group=1, num_cores=2, write_long=FALSE)"
 ```
 
-Calibration outputs (figures, design matrices, and best parameters) are written to `results/<calibrator_name>/` or custom directory paths.
+Calibration outputs (`design.csv`, `best_theta.json`, `objective_breakdown.csv`, `manifest.csv`/`.json`, and summary tables) are written to `results/<calibrator_name>/` or custom directory paths; figures go under `figures/<calibrator_name>/` by default.
 
 ## Testing
 

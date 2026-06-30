@@ -51,6 +51,26 @@ test_that("edit_ecotype reproduces the Python after-file byte-for-byte", {
   expect_identical(got, exp)
 })
 
+test_that("edit_species preserves leading-dot decimals", {
+  f <- tempfile(fileext = ".SPE")
+  writeLines(c(
+    " .0046 .0004 .3000  4.90 1.030             SLWREF,SLWSLO,NSLOPE,LNREF,PGREF",
+    "! .0036 .0004 .3000  4.90 1.030             SLWREF,SLWSLO,NSLOPE,LNREF,PGREF"
+  ), f)
+  edit_species(f, list("SLWREF,SLWSLO,NSLOPE,LNREF,PGREF" = 0.0048))
+  got <- readLines(f, warn = FALSE)
+  expect_true(startsWith(got[1], " .0048 .0004"))
+  expect_true(startsWith(got[2], "! .0036 .0004"))
+})
+
+test_that("edit_species can target a numeric token index", {
+  f <- tempfile(fileext = ".SPE")
+  writeLines("  40.00 61.00  0.96  0.10                   PARMAX,PHTMAX,KCAN,KC_SLOPE", f)
+  edit_species(f, list("PARMAX,PHTMAX,KCAN,KC_SLOPE" = list(value = 0.88, index = 2L)))
+  got <- readLines(f, warn = FALSE)
+  expect_true(startsWith(got[1], "  40.00 61.00  0.88  0.10"))
+})
+
 test_that("read_cultivar_values and read_cul_calibration_bounds match Python", {
   vals <- read_cultivar_values(file.path(fixture_dir, "sample.CUL"), "IB0008")
   for (k in names(meta$read_cultivar_values)) {

@@ -16,6 +16,17 @@ TARGET_EXPERIMENTS = [
     "YUBA2101", "YUKU2101", "YUKU2201",
 ]
 
+HEMP_REFERENCE_FILES = [
+    "CNKU2101.HMT",
+    "YUFE2101.HMA",
+    "YUFE2201.HMA",
+    "YUBA2101.HMA",
+    "YUKU2101.HMA",
+    "YUKU2101.HMT",
+    "YUKU2101.HMX",
+    "YUKU2201.HMA",
+]
+
 
 @pytest.fixture
 def smoke_dir():
@@ -28,6 +39,9 @@ def smoke_dir():
 def hemp_dir():
     if not HEMP.exists():
         pytest.skip("local DSSAT hemp install not present")
+    missing = [name for name in HEMP_REFERENCE_FILES if not (HEMP / name).exists()]
+    if missing:
+        pytest.skip("local DSSAT hemp reference files not present: " + ", ".join(missing))
     return HEMP
 
 

@@ -36,7 +36,9 @@ DEFAULTS: dict[str, Any] = {
         "sample": {"engine": "lhs", "n": 200},
         "validation": {"scheme": "none"},
     },
-    "objective": {"weighting": "unified", "weights": {}, "error_model": {}},
+    "objective": {"weighting": "unified", "weights": {}, "error_model": {},
+                  "likelihood": {"type": "gaussian"},
+                  "model_discrepancy": {}},
     "parameters": {},
     "crops": [],
     "experiments": [],
@@ -96,6 +98,15 @@ DEFAULTS: dict[str, Any] = {
             "smoothing": True,
         },
     },
+    # Sparse-data cultivar/species tools. All are opt-in transforms or helper
+    # engines; the default remains the simple GLUE path.
+    "sparse": {
+        "delta_from_analog": {"active": False},
+        "hierarchical_priors": {"active": False},
+        "trait_priors": {"active": False},
+        "identifiability_gate": {"active": False},
+        "observation_design": {"active": False},
+    },
 }
 
 # Environment overrides: ENV name -> (section, key)
@@ -151,9 +162,15 @@ PRIOR_DISTS = {"uniform", "normal", "lognormal", "triangular"}
 GATING_LEVELS = {"free", "gated", "blocked"}
 EXECUTION_BACKENDS = {"native", "dssatengine"}
 ASSIMILATION_MODES = {"recalibration", "enkf", "forcing"}
-BAYES_ENGINES = {"glue", "smc_pf", "mcmc", "dream", "es_mda", "bayesopt", "none", ""}
+BAYES_ENGINES = {"glue", "smc_pf", "mcmc", "dream", "es_mda", "bayesopt",
+                 "abc_smc", "history", "none", ""}
 OPTIMIZER_ENGINES = {"nelder_mead", "neldermead", "nm", "diffevo", "de",
                      "cmaes", "cma_es", "cma", "none", ""}
+PARAMETER_SCOPES = {
+    "global", "shared", "pooled", "pool",
+    "experiment", "experiments", "per_experiment", "per-experiment",
+    "experiment_specific", "experiment-specific", "local",
+}
 
 
 def validate_config(cfg: dict) -> dict:
@@ -233,6 +250,12 @@ def validate_config(cfg: dict) -> dict:
                 dist = str(prior.get("dist", "uniform")).lower()
                 if dist not in PRIOR_DISTS:
                     errors.append(f"{tag}: prior.dist '{dist}' is not one of {sorted(PRIOR_DISTS)}.")
+            scope = str(spec.get("scope", spec.get("pooling", "global"))).lower()
+            if scope not in PARAMETER_SCOPES:
+                errors.append(f"{tag}: scope '{scope}' is not one of {sorted(PARAMETER_SCOPES)}.")
+            if scope in {"experiment", "experiments", "per_experiment", "per-experiment",
+                         "experiment_specific", "experiment-specific", "local"} and not cfg.get("experiments"):
+                errors.append(f"{tag}: scope '{scope}' requires at least one configured experiment.")
             if spec.get("active", False):
                 n_active += 1
 

@@ -90,14 +90,41 @@ normalize_treatments <- function(treatments, backend = "native") {
 }
 
 # Split a flat theta into per-group update lists using the param specs.
-.partition_theta <- function(theta, param_specs) {
-  group_of <- list()
-  for (p in param_specs) group_of[[p$name]] <- p$group
+.spec_applies_to_exp <- function(spec, exp_id = NULL) {
+  if (!identical(.cfg_get(spec, "scope", "global"), "experiment")) return(TRUE)
+  is.null(exp_id) || as.character(.cfg_get(spec, "exp_id", "")) == as.character(exp_id)
+}
+
+.effective_theta <- function(theta, param_specs, exp_id = NULL) {
+  out <- list()
+  matched <- character(0)
+  for (spec in param_specs) {
+    name <- spec$name
+    if (is.null(theta[[name]]) || !.spec_applies_to_exp(spec, exp_id)) next
+    base <- .cfg_get(spec, "base_name", name)
+    out[[base]] <- theta[[name]]
+    matched <- c(matched, name)
+  }
+  if (length(matched) == 0) theta else out
+}
+
+.partition_theta <- function(theta, param_specs, exp_id = NULL) {
   groups <- list()
-  for (name in names(theta)) {
-    g <- if (!is.null(group_of[[name]])) group_of[[name]] else "genetic_cultivar"
+  matched <- character(0)
+  for (spec in param_specs) {
+    name <- spec$name
+    if (is.null(theta[[name]]) || !.spec_applies_to_exp(spec, exp_id)) next
+    g <- .cfg_get(spec, "group", "genetic_cultivar")
+    base <- .cfg_get(spec, "base_name", name)
     if (is.null(groups[[g]])) groups[[g]] <- list()
-    groups[[g]][[name]] <- theta[[name]]
+    groups[[g]][[base]] <- theta[[name]]
+    matched <- c(matched, name)
+  }
+  if (length(matched) == 0) {
+    for (name in names(theta)) {
+      if (is.null(groups[["genetic_cultivar"]])) groups[["genetic_cultivar"]] <- list()
+      groups[["genetic_cultivar"]][[name]] <- theta[[name]]
+    }
   }
   groups
 }
@@ -111,7 +138,7 @@ normalize_treatments <- function(treatments, backend = "native") {
     error = function(e) structure(character(0), status = 1L, msg = conditionMessage(e)))
   status <- attr(out, "status")
   if (length(out) > 0) {
-    writeLines(out, file.path(run_dir, "dssat_B_stdout_stderr.log"))
+    writeLines(out, "dssat_B_stdout_stderr.log")
   }
   if (!is.null(status) && status != 0) {
     tail <- if (length(out)) paste(utils::tail(out, 12), collapse = " | ") else "<no stdout/stderr captured>"
@@ -143,7 +170,8 @@ spawn_and_run <- function(theta, exp_id, cfg, crop, param_specs, run_root,
   ext <- crop$filex_ext
   code <- crop$code
 
-  run_dir <- file.path(run_root, exp_id, paste0("s_", theta_hash(theta)))
+  effective_theta <- .effective_theta(theta, param_specs, exp_id)
+  run_dir <- file.path(run_root, exp_id, paste0("s_", theta_hash(effective_theta)))
   pg_path <- file.path(run_dir, "PlantGro.OUT")
 
   if (isTRUE(.cfg_get(cfg$calibrator, "cache_spawns", TRUE)) &&
@@ -167,7 +195,7 @@ spawn_and_run <- function(theta, exp_id, cfg, crop, param_specs, run_root,
     if (file.exists(src)) file.copy(src, file.path(run_dir, sprintf("%s.%s", exp_id, obs_ext)), overwrite = TRUE)
   }
 
-  groups <- .partition_theta(theta, param_specs)
+  groups <- .partition_theta(theta, param_specs, exp_id)
   cul_updates <- list()
   for (g in GENETIC_GROUPS) cul_updates <- modifyList(cul_updates, .cfg_get(groups, g, list()))
   if (length(cul_updates) > 0) {
@@ -185,9 +213,16 @@ spawn_and_run <- function(theta, exp_id, cfg, crop, param_specs, run_root,
     if (file.exists(spe_file)) {
       updates <- list()
       for (name in names(spe_updates)) {
-        spec <- Find(function(s) s$name == name, param_specs)
+        spec <- Find(function(s) .cfg_get(s, "base_name", s$name) == name, param_specs)
         key <- if (!is.null(spec) && !is.null(spec$spe_key)) spec$spe_key else name
-        updates[[key]] <- spe_updates[[name]]
+        if (!is.null(spec) && (!is.null(spec$spe_index) || !is.null(spec$token_index))) {
+          updates[[key]] <- list(
+            value = spe_updates[[name]],
+            index = as.integer(.cfg_get(spec, "spe_index", .cfg_get(spec, "token_index", 0L)))
+          )
+        } else {
+          updates[[key]] <- spe_updates[[name]]
+        }
       }
       edit_species(spe_file, updates)
     }
@@ -197,7 +232,7 @@ spawn_and_run <- function(theta, exp_id, cfg, crop, param_specs, run_root,
   init_updates <- .cfg_get(groups, "initial_conditions", list())
   mgt_fields <- list()
   for (name in names(mgt_updates)) {
-    spec <- Find(function(s) s$name == name, param_specs)
+    spec <- Find(function(s) .cfg_get(s, "base_name", s$name) == name, param_specs)
     if (!is.null(spec) && !is.null(spec$dssat)) mgt_fields[[spec$dssat]] <- mgt_updates[[name]]
   }
   pdate <- .cfg_get(.cfg_get(cfg, "_planting_dates", list()), exp_id, NULL)
@@ -219,19 +254,28 @@ spawn_and_run <- function(theta, exp_id, cfg, crop, param_specs, run_root,
     fields <- parse_fields(file.path(run_dir, filex_name))
     if (length(soil_updates) > 0 && !is.null(fields$id_soil)) {
       local_sol <- file.path(run_dir, "SOIL.SOL")
-      src_sol <- if (file.exists(local_sol)) local_sol else file.path(dssat_paths$soil, "SOIL.SOL")
       pid <- fields$id_soil
-      if (file.exists(src_sol)) {
-        layer_mults <- list(); profile_sets <- list()
-        for (name in names(soil_updates)) {
-          spec <- Find(function(s) s$name == name, param_specs)
-          if (is.null(spec) || is.null(spec$dssat)) next
-          if (!is.null(spec$op) && spec$op == "set") profile_sets[[spec$dssat]] <- soil_updates[[name]]
-          else layer_mults[[spec$dssat]] <- soil_updates[[name]]
-        }
-        if (src_sol != local_sol) cat(extract_soil_profile(src_sol, pid), file = local_sol)
-        edit_soil(local_sol, pid, layer_mults = layer_mults, profile_sets = profile_sets)
+      candidates <- c(if (file.exists(local_sol)) local_sol else character(0),
+                      file.path(dssat_paths$soil, "SOIL.SOL"),
+                      list.files(dssat_paths$soil, pattern = "[.]SOL$", full.names = TRUE))
+      profile_text <- NULL
+      for (src_sol in unique(candidates)) {
+        if (!file.exists(src_sol)) next
+        profile_text <- tryCatch(extract_soil_profile(src_sol, pid), error = function(e) NULL)
+        if (!is.null(profile_text)) break
       }
+      if (is.null(profile_text)) {
+        stop(sprintf("Soil profile '%s' not found in DSSAT soil directory %s", pid, dssat_paths$soil))
+      }
+      layer_mults <- list(); profile_sets <- list()
+      for (name in names(soil_updates)) {
+        spec <- Find(function(s) .cfg_get(s, "base_name", s$name) == name, param_specs)
+        if (is.null(spec) || is.null(spec$dssat)) next
+        if (!is.null(spec$op) && spec$op == "set") profile_sets[[spec$dssat]] <- soil_updates[[name]]
+        else layer_mults[[spec$dssat]] <- soil_updates[[name]]
+      }
+      cat(profile_text, file = local_sol)
+      edit_soil(local_sol, pid, layer_mults = layer_mults, profile_sets = profile_sets)
     }
     if (length(weather_updates) > 0 && !is.null(fields$wsta)) {
       wsta <- fields$wsta
@@ -240,7 +284,7 @@ spawn_and_run <- function(theta, exp_id, cfg, crop, param_specs, run_root,
       if (file.exists(src_wth)) {
         ops <- list()
         for (name in names(weather_updates)) {
-          spec <- Find(function(s) s$name == name, param_specs)
+          spec <- Find(function(s) .cfg_get(s, "base_name", s$name) == name, param_specs)
           if (is.null(spec) || is.null(spec$dssat)) next
           ops[[spec$dssat]] <- list(if (!is.null(spec$op)) spec$op else "mult", weather_updates[[name]])
         }

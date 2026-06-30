@@ -62,10 +62,41 @@ metrics <- function(obs, sim) {
 .obj_sigma <- function(user_var, obs_value, cfg) {
   em <- if (!is.null(cfg$objective$error_model)) cfg$objective$error_model else list()
   spec <- em[[user_var]]
-  if (is.null(spec)) return(max(abs(0.10 * obs_value), 1e-6))   # default: 10% relative
-  type <- if (!is.null(spec$type)) as.character(spec$type) else "relative"
-  if (type == "relative") return(max(abs(as.numeric(spec$value) * obs_value), 1e-6))
-  as.numeric(spec$value)
+  if (is.null(spec)) {
+    sigma <- max(abs(0.10 * obs_value), 1e-6)   # default: 10% relative
+  } else {
+    type <- if (!is.null(spec$type)) as.character(spec$type) else "relative"
+    sigma <- if (type == "relative") max(abs(as.numeric(spec$value) * obs_value), 1e-6) else as.numeric(spec$value)
+  }
+  disc_cfg <- if (!is.null(cfg$objective$model_discrepancy)) cfg$objective$model_discrepancy else list()
+  disc <- as.numeric(.cfg_get(disc_cfg, "default", .cfg_get(disc_cfg, "value", 0.0)))
+  variables <- .cfg_get(disc_cfg, "variables", list())
+  relative <- .cfg_get(disc_cfg, "relative", list())
+  if (!is.null(variables[[user_var]])) disc <- as.numeric(variables[[user_var]])
+  if (!is.null(relative[[user_var]])) disc <- max(disc, abs(as.numeric(relative[[user_var]]) * obs_value))
+  if (is.finite(disc) && disc > 0) sigma <- sqrt(sigma^2 + disc^2)
+  max(as.numeric(sigma), 1e-12)
+}
+
+.standardized_loss <- function(z, cfg) {
+  lcfg <- .cfg_get(.cfg_get(cfg, "objective", list()), "likelihood", list(type = "gaussian"))
+  if (is.character(lcfg)) {
+    kind <- tolower(lcfg)
+    lcfg <- list()
+  } else {
+    kind <- tolower(as.character(.cfg_get(lcfg, "type", "gaussian")))
+  }
+  z <- as.numeric(z)
+  if (kind %in% c("student_t", "student-t", "t")) {
+    nu <- max(as.numeric(.cfg_get(lcfg, "df", .cfg_get(lcfg, "nu", 4.0))), 1.01)
+    return((nu + 1.0) * log1p((z^2) / nu))
+  }
+  if (kind == "huber") {
+    delta <- max(as.numeric(.cfg_get(lcfg, "delta", 1.5)), 1e-9)
+    az <- abs(z)
+    return(ifelse(az <= delta, z^2, 2.0 * delta * az - delta^2))
+  }
+  z^2
 }
 
 #' Down-weight dense time-series for serial correlation (obs_autocorr: true).
@@ -98,10 +129,11 @@ metrics <- function(obs, sim) {
 #' @export
 build_residuals <- function(results, obs_table, cfg) {
   vm <- variable_maps(cfg)
-  ts_inv <- vm$ts_inv; sc_inv <- vm$sc_inv
+  ts_inv <- vm$ts_inv; sc_inv <- vm$sc_inv; sc_map <- vm$sc
   rows <- list()
   add <- function(r) rows[[length(rows) + 1L]] <<- r
   pheno <- c("ADAP", "EDAP", "MDAP")
+  seen_scalar <- character(0)
 
   # scalars / phenology from Evaluate.OUT
   for (exp in names(results)) {
@@ -128,6 +160,34 @@ build_residuals <- function(results, obs_table, cfg) {
                      user_var = sc_inv[[base_var]], dssat = base_var, kind = kind,
                      date = as.Date(NA), obs = as.numeric(meas), sim = as.numeric(sim),
                      stringsAsFactors = FALSE))
+      seen_scalar <- c(seen_scalar, paste(exp, as.integer(r$treatment), sc_inv[[base_var]], kind, sep = "\r"))
+    }
+  }
+
+  # CSV / fused scalar observations matched to Evaluate.OUT simulated values.
+  if (!is.null(obs_table) && nrow(obs_table) > 0) {
+    scalar_obs <- obs_table[obs_table$kind %in% c("scalar", "phenology"), , drop = FALSE]
+    for (exp in names(results)) {
+      ev <- results[[exp]]$evaluate
+      if (is.null(ev) || nrow(ev) == 0) next
+      o <- scalar_obs[scalar_obs$exp_id == exp, , drop = FALSE]
+      if (nrow(o) == 0) next
+      agg <- aggregate(value ~ treatment + variable + kind, data = o, FUN = mean)
+      for (i in seq_len(nrow(agg))) {
+        r <- agg[i, ]
+        user_var <- r$variable
+        dssat_var <- if (!is.null(sc_map[[user_var]])) sc_map[[user_var]] else user_var
+        if (!(dssat_var %in% ev$variable)) next
+        key <- paste(exp, as.integer(r$treatment), user_var, r$kind, sep = "\r")
+        if (key %in% seen_scalar) next
+        sub <- ev[ev$treatment == r$treatment & ev$variable == dssat_var, , drop = FALSE]
+        if (nrow(sub) == 0 || is.na(sub$sim[1]) || is.na(r$value)) next
+        add(data.frame(exp_id = exp, treatment = as.integer(r$treatment),
+                       user_var = user_var, dssat = dssat_var, kind = r$kind,
+                       date = as.Date(NA), obs = as.numeric(r$value),
+                       sim = as.numeric(sub$sim[1]), stringsAsFactors = FALSE))
+        seen_scalar <- c(seen_scalar, key)
+      }
     }
   }
 
@@ -187,28 +247,28 @@ score <- function(results, obs_table, cfg) {
   wts <- if (!is.null(cfg$objective$weights)) cfg$objective$weights else list()
   w <- function(uv) if (!is.null(wts[[uv]])) as.numeric(wts[[uv]]) else 1.0
 
-  loglik <- -0.5 * sum(((resid$resid / resid$sigma)^2) * resid$weight)
+  resid$`_loss` <- .standardized_loss(resid$resid / resid$sigma, cfg)
+  loglik <- -0.5 * sum(resid$`_loss` * resid$weight)
 
   by_var <- split(resid, resid$user_var)
   if (weighting == "sigma") {
-    sc <- sum(((resid$resid / resid$sigma)^2) * resid$weight)
+    sc <- sum(resid$`_loss` * resid$weight)
   } else if (weighting == "user") {
     sc <- 0.0
     for (uv in names(by_var)) {
-      g <- by_var[[uv]]; ob <- mean(g$obs)
-      nrmse <- sqrt(mean(g$resid^2)) / (if (ob != 0) abs(ob) else 1.0)
-      sc <- sc + w(uv) * nrmse
+      g <- by_var[[uv]]
+      sc <- sc + w(uv) * mean(g$`_loss`)
     }
   } else if (weighting == "count_scale") {
     per <- vapply(names(by_var), function(uv) {
-      g <- by_var[[uv]]; w(uv) * mean((g$resid / g$sigma)^2)
+      g <- by_var[[uv]]; w(uv) * mean(g$`_loss`)
     }, numeric(1))
     sc <- if (length(per)) mean(per) else Inf
   } else {  # "unified" (default) and "agmip_wls"
     sc <- 0.0
     for (uv in names(by_var)) {
       g <- by_var[[uv]]
-      mse <- mean((g$resid / g$sigma)^2)
+      mse <- mean(g$`_loss`)
       sc <- sc + w(uv) * mse
     }
   }

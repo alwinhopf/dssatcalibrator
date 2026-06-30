@@ -12,6 +12,7 @@ Module map:
     spawn         — run one DSSAT simulation for a parameter set
     runner        — run many spawns in parallel (thread-pool over subprocesses)
     objective     — align sim-vs-observed, metrics, and the weighted score / likelihood
+    impact        — one-at-a-time real-DSSAT parameter impact atlas
     orchestrator  — the pipeline driver: presets -> screen -> select -> estimate
     engines/      — calibration engines (glue, smc_pf, mcmc, optimizers, sensitivity,
                     selection, surrogate, nsga2)

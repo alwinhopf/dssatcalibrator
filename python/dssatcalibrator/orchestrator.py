@@ -12,6 +12,7 @@ NSGA-II engine and by leave-one-environment-out validation.
 from __future__ import annotations
 
 import gc
+import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -42,7 +43,7 @@ from .observations import Observations
 from .runner import resolve_cores, run_many
 from .samplers import sample
 from .spaces import ParameterSpace
-from .spawn import parse_treatments, spawn_and_run
+from .spawn import parse_treatments, spawn_and_run, theta_hash
 
 
 @dataclass
@@ -166,6 +167,7 @@ def evaluate_design(cfg: dict, samples: pd.DataFrame, *, progress=True):
     sample_ids = list(samples.index)
     
     rows = []
+    spawn_manifest_rows = []
     obj_results = {}
     best_score = float("inf")
     best_obj_res = None
@@ -196,8 +198,20 @@ def evaluate_design(cfg: dict, samples: pd.DataFrame, *, progress=True):
 
         # Score this batch
         per_sample: dict = {}
-        for (sid, exp), res in zip(idx, results):
+        for (sid, exp), res, job in zip(idx, results, jobs):
             per_sample.setdefault(sid, {})[exp] = res
+            theta = dict(getattr(res, "theta", {}) or job["theta"])
+            theta_jsonable = {k: (v.item() if hasattr(v, "item") else v) for k, v in theta.items()}
+            spawn_manifest_rows.append({
+                "sample_id": sid,
+                "exp_id": exp,
+                "theta_hash": theta_hash(theta) if theta else "",
+                "status": getattr(res, "status", ""),
+                "message": getattr(res, "message", ""),
+                "run_dir": str(getattr(res, "run_dir", "")),
+                "theta_json": json.dumps(theta_jsonable, sort_keys=True),
+                **{f"theta_{k}": v for k, v in theta.items()},
+            })
 
         for sid, rmap in per_sample.items():
             o = obj.score(rmap, obs.table, cfg)
@@ -222,6 +236,7 @@ def evaluate_design(cfg: dict, samples: pd.DataFrame, *, progress=True):
         obj_results[best_sid] = best_obj_res
 
     design = pd.DataFrame(rows).sort_values("sample_id").reset_index(drop=True)
+    design.attrs["spawn_manifest"] = pd.DataFrame(spawn_manifest_rows)
     return design, obj_results, (space, obs, experiments)
 
 
@@ -454,6 +469,31 @@ def _estimate_bayesopt(work_cfg, space, setup, method, *, seed, n_workers, extra
                              best_theta=bo.best_theta, best=bo.best, glue=None, extras=extras)
 
 
+@_register_estimator("history")
+def _estimate_history(work_cfg, space, setup, method, *, seed, n_workers, extras, progress):
+    from .engines import run_history_matching
+    _, _crop, _exe, _specs, _run_root, obs, experiments, _trts = setup
+    scorer = _results_scorer(work_cfg, setup, n_workers)
+    hm = run_history_matching(work_cfg, scorer, space, progress=progress)
+    extras.update(engine="history", history_waves=hm.waves)
+    return CalibrationResult(cfg=work_cfg, space=space, obs=obs, experiments=experiments,
+                             design=hm.design, obj_results=hm.obj_results,
+                             best_theta=hm.best_theta, best=hm.best, glue=hm, extras=extras)
+
+
+@_register_estimator("abc_smc")
+def _estimate_abc_smc(work_cfg, space, setup, method, *, seed, n_workers, extras, progress):
+    from .engines import run_abc_smc
+    _, _crop, _exe, _specs, _run_root, obs, experiments, _trts = setup
+    scorer = _results_scorer(work_cfg, setup, n_workers)
+    abc = run_abc_smc(work_cfg, scorer, space, progress=progress)
+    extras.update(engine="abc_smc", thresholds=abc.thresholds,
+                  initial_design=abc.initial_design)
+    return CalibrationResult(cfg=work_cfg, space=space, obs=obs, experiments=experiments,
+                             design=abc.design, obj_results=abc.obj_results,
+                             best_theta=abc.best_theta, best=abc.best, glue=abc, extras=extras)
+
+
 @_register_estimator("glue")
 def _estimate_glue(work_cfg, space, setup, method, *, seed, n_workers, extras, progress):
     from .engines import run_glue
@@ -461,9 +501,12 @@ def _estimate_glue(work_cfg, space, setup, method, *, seed, n_workers, extras, p
     engine = method.get("sample", {}).get("engine", "lhs")
     samples = sample(space, n=n, engine=engine, seed=seed, include_start=True)
     design, obj_results, (space, obs, experiments) = evaluate_design(work_cfg, samples, progress=progress)
+    spawn_manifest = design.attrs.get("spawn_manifest")
     glue = run_glue(design, space.names, work_cfg, space=space)
     best = obj_results[glue.best_sample_id]
     extras.update(engine="glue")
+    if spawn_manifest is not None:
+        extras["spawn_manifest"] = spawn_manifest
     return CalibrationResult(cfg=work_cfg, space=space, obs=obs, experiments=experiments,
                              design=glue.design, obj_results=obj_results,
                              best_theta=glue.best_theta, best=best, glue=glue, extras=extras)
@@ -480,6 +523,12 @@ def calibrate(cfg: dict, *, progress=True) -> CalibrationResult:
       4. [multiobjective] NSGA-II Pareto front add-on
     """
     from .engines import run_nsga2, run_sensitivity, stepwise_select
+    from .sparse import apply_sparse_config, calibrate_staged
+
+    if not cfg.get("_sparse_applied", False):
+        cfg = apply_sparse_config(cfg)
+    if (cfg.get("method", {}) or {}).get("staged", {}).get("active", False):
+        return calibrate_staged(cfg, progress=progress)
 
     cfg = _apply_staging(cfg)
     method = _resolve_method(cfg)

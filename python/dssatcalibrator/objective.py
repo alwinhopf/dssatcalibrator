@@ -72,16 +72,64 @@ def metrics(obs, sim) -> dict:
 def _sigma(user_var: str, obs_value: float, cfg: dict) -> float:
     spec = (cfg.get("objective", {}).get("error_model", {}) or {}).get(user_var)
     if spec is None:
-        return max(abs(0.10 * obs_value), 1e-6)          # default: 10% relative
-    if str(spec.get("type", "relative")) == "relative":
-        return max(abs(float(spec["value"]) * obs_value), 1e-6)
-    return float(spec["value"])
+        sigma = max(abs(0.10 * obs_value), 1e-6)          # default: 10% relative
+    elif str(spec.get("type", "relative")) == "relative":
+        sigma = max(abs(float(spec["value"]) * obs_value), 1e-6)
+    else:
+        sigma = float(spec["value"])
+
+    # Optional model discrepancy: observations can be precise while the selected
+    # DSSAT module is still structurally imperfect, especially for new species.
+    # Add this in quadrature so calibration does not over-bend parameters to
+    # explain known model error.
+    disc_cfg = (cfg.get("objective", {}) or {}).get("model_discrepancy", {}) or {}
+    disc = disc_cfg.get("default", disc_cfg.get("value", 0.0))
+    variables = disc_cfg.get("variables", {}) or {}
+    relative = disc_cfg.get("relative", {}) or {}
+    if user_var in variables:
+        disc = variables[user_var]
+    if user_var in relative:
+        disc = max(float(disc), abs(float(relative[user_var]) * obs_value))
+    disc = float(disc or 0.0)
+    if disc > 0:
+        sigma = float(np.sqrt(sigma ** 2 + disc ** 2))
+    return max(float(sigma), 1e-12)
+
+
+def _standardized_loss(z, cfg: dict):
+    """Robust squared-error replacement in standardized residual units.
+
+    objective.likelihood:
+      gaussian  -> z^2
+      student_t -> heavy-tailed pseudo deviance
+      huber     -> quadratic near zero, linear in the tails
+    """
+    lcfg = (cfg.get("objective", {}) or {}).get("likelihood", {}) or {}
+    if isinstance(lcfg, str):
+        kind, lcfg = lcfg.lower(), {}
+    else:
+        kind = str(lcfg.get("type", "gaussian")).lower()
+    z = np.asarray(z, dtype=float)
+    if kind in ("student_t", "student-t", "t"):
+        nu = max(float(lcfg.get("df", lcfg.get("nu", 4.0))), 1.01)
+        return (nu + 1.0) * np.log1p((z ** 2) / nu)
+    if kind == "huber":
+        delta = max(float(lcfg.get("delta", 1.5)), 1e-9)
+        az = np.abs(z)
+        return np.where(az <= delta, z ** 2, 2.0 * delta * az - delta ** 2)
+    return z ** 2
+
+
+def _weighted_loss(resid: pd.DataFrame, cfg: dict) -> pd.Series:
+    z = resid["resid"].to_numpy(dtype=float) / resid["sigma"].to_numpy(dtype=float)
+    return pd.Series(_standardized_loss(z, cfg), index=resid.index)
 
 
 def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     """Assemble the residual table (one row per matched observation)."""
-    _, _, ts_inv, sc_inv = variable_maps(cfg)
+    ts_map, sc_map, ts_inv, sc_inv = variable_maps(cfg)
     rows = []
+    seen_scalar = set()
 
     # scalars / phenology from Evaluate.OUT
     for exp, res in results.items():
@@ -104,6 +152,35 @@ def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.Dat
             kind = "phenology" if base in ("ADAP", "EDAP", "MDAP") else "scalar"
             rows.append(dict(exp_id=exp, treatment=int(r["treatment"]), user_var=sc_inv[base],
                              dssat=base, kind=kind, date=pd.NaT, obs=float(meas), sim=float(sim)))
+            seen_scalar.add((exp, int(r["treatment"]), sc_inv[base], kind))
+
+    # CSV / fused scalar observations: match observed scalar rows to Evaluate.OUT
+    # simulated values even when Evaluate.OUT does not carry measured FileA data.
+    if obs_table is not None and not obs_table.empty:
+        scalar_obs = obs_table[obs_table["kind"].isin(["scalar", "phenology"])]
+        for exp, res in results.items():
+            ev = getattr(res, "evaluate", None)
+            if ev is None or ev.empty:
+                continue
+            o = scalar_obs[scalar_obs["exp_id"] == exp]
+            if o.empty:
+                continue
+            oavg = o.groupby(["treatment", "variable", "kind"], as_index=False)["value"].mean()
+            for _, r in oavg.iterrows():
+                user_var = r["variable"]
+                dssat_var = sc_map.get(user_var, user_var)
+                if dssat_var not in set(ev["variable"]):
+                    continue
+                key = (exp, int(r["treatment"]), user_var, r["kind"])
+                if key in seen_scalar:
+                    continue
+                sub = ev[(ev["treatment"] == r["treatment"]) & (ev["variable"] == dssat_var)]
+                if sub.empty or pd.isna(sub.iloc[0]["sim"]) or pd.isna(r["value"]):
+                    continue
+                rows.append(dict(exp_id=exp, treatment=int(r["treatment"]),
+                                 user_var=user_var, dssat=dssat_var, kind=r["kind"],
+                                 date=pd.NaT, obs=float(r["value"]), sim=float(sub.iloc[0]["sim"])))
+                seen_scalar.add(key)
 
     # time-series from PlantGro matched to FileT/CSV obs
     if obs_table is not None and not obs_table.empty:
@@ -227,26 +304,26 @@ def score(results: dict, obs_table: pd.DataFrame, cfg: dict) -> ObjectiveResult:
     weighting = cfg.get("objective", {}).get("weighting", "unified")
     wts = cfg.get("objective", {}).get("weights", {}) or {}
 
-    loglik = float(-0.5 * np.sum(((resid["resid"] / resid["sigma"]) ** 2) * resid["weight"]))
+    resid = resid.copy()
+    resid["_loss"] = _weighted_loss(resid, cfg)
+    loglik = float(-0.5 * np.sum(resid["_loss"] * resid["weight"]))
 
     if weighting == "sigma":
         # Total sigma-weighted chi-square (NO per-variable averaging). The
         # statistically 'correct' misfit; matches the Gaussian log-likelihood, and
         # is what the Bayesian engines expect.
-        sc = float(np.sum(((resid["resid"] / resid["sigma"]) ** 2) * resid["weight"]))
+        sc = float(np.sum(resid["_loss"] * resid["weight"]))
     elif weighting == "user":
         # Raw normalised RMSE per variable x explicit weights. Full manual control,
         # no automatic balancing of counts or scales.
         sc = 0.0
         for uv, g in resid.groupby("user_var"):
-            ob = g["obs"].mean()
-            nrmse = float(np.sqrt(np.mean(g["resid"] ** 2))) / (abs(ob) if ob else 1.0)
-            sc += float(wts.get(uv, 1.0)) * nrmse
+            sc += float(wts.get(uv, 1.0)) * float(np.mean(g["_loss"]))
     elif weighting == "count_scale":
         # Each variable contributes the AVERAGE normalised squared error of its own
         # points (count-balanced: a 100-point series can't drown a 1-point yield),
         # then we average ACROSS variables -> a clean 'mean per-variable misfit'.
-        per = [float(wts.get(uv, 1.0)) * float(np.mean((g["resid"] / g["sigma"]) ** 2))
+        per = [float(wts.get(uv, 1.0)) * float(np.mean(g["_loss"]))
                for uv, g in resid.groupby("user_var")]
         sc = float(np.mean(per)) if per else float("inf")
     else:  # "unified" (default) and "agmip_wls"
@@ -256,7 +333,7 @@ def score(results: dict, obs_table: pd.DataFrame, cfg: dict) -> ObjectiveResult:
         # the per-variable weights to 1 / residual-variance (see pipeline).
         sc = 0.0
         for uv, g in resid.groupby("user_var"):
-            mse = float(np.mean((g["resid"] / g["sigma"]) ** 2))
+            mse = float(np.mean(g["_loss"]))
             sc += float(wts.get(uv, 1.0)) * mse
 
     per_var = {uv: metrics(g["obs"], g["sim"]) for uv, g in resid.groupby("user_var")}

@@ -37,7 +37,7 @@
     "metadata": {
       "flight_quality": "poor"
     },
-    "sigma": 0.6000000000000001
+    "sigma": 0.6
   },
   "uav_unknown": {
     "variable": "WWWW",
@@ -85,7 +85,7 @@
     "metadata": {
       "cloud_fraction": 0.4
     },
-    "sigma": 1.3439999999999999
+    "sigma": 1.344
   },
   "modis_qc0": {
     "variable": "LAID",
@@ -133,6 +133,6 @@
   },
   "_obs_operator": {
     "identity": 3.0,
-    "scaled": 2.9000000000000004
+    "scaled": 2.9
   }
 }

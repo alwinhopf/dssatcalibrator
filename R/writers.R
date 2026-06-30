@@ -18,6 +18,24 @@
   substr(sprintf("%*s", width, s), 1, width)
 }
 
+.fmt_like_token <- function(value, token) {
+  width <- nchar(token)
+  old <- trimws(token)
+  if (grepl("^-?\\.[0-9]+$", old)) {
+    decimals <- nchar(sub("^-?\\.", "", old))
+    s <- formatC(as.numeric(value), format = "f", digits = decimals)
+    s <- sub("^0\\.", ".", s)
+    s <- sub("^-0\\.", "-.", s)
+    if (nchar(s) <= width) return(sprintf("%*s", width, s))
+  }
+  if (grepl("\\.", old) && !grepl("[eE]", old)) {
+    decimals <- nchar(sub("^.*\\.", "", old))
+    s <- formatC(as.numeric(value), format = "f", digits = decimals)
+    if (nchar(s) <= width) return(sprintf("%*s", width, s))
+  }
+  .fmt(as.numeric(value), width)
+}
+
 # Parse a fixed-width cell to numeric, or NA if not a number. Mirrors _parse.
 .parse_cell <- function(cell) {
   v <- suppressWarnings(as.numeric(trimws(cell)))
@@ -430,7 +448,7 @@ edit_weather <- function(wth_path, ops) {
   invisible(NULL)
 }
 
-.NUM_RE <- "-?[0-9]+\\.?[0-9]*([eE][-+]?[0-9]+)?"
+.NUM_RE <- "-?(?:[0-9]+\\.?[0-9]*|\\.[0-9]+)(?:[eE][-+]?[0-9]+)?"
 
 #' Best-effort in-place edit of named scalar values in a `.SPE`.
 #' Mirrors writers.py:edit_species.
@@ -439,21 +457,31 @@ edit_species <- function(spe_path, updates) {
   lines <- readLines(spe_path, warn = FALSE)
   for (key in names(updates)) {
     val <- updates[[key]]
+    token_index <- 0L
+    if (is.list(val)) {
+      token_index <- as.integer(.cfg_get(val, "index", .cfg_get(val, "token_index", 0L)))
+      val <- val$value
+    }
     matches <- which(vapply(lines, function(ln) {
       grepl(key, ln, fixed = TRUE) && nzchar(trimws(ln)) &&
         !grepl("^[*@!]", trimws(ln, which = "left")) &&
-        grepl(.NUM_RE, ln)
+        grepl(.NUM_RE, ln, perl = TRUE)
     }, logical(1)))
     if (length(matches) != 1L) {
       stop(sprintf("Species key '%s' matched %d lines in %s (need exactly 1); refine the key.",
                    key, length(matches), basename(spe_path)))
     }
     i <- matches[1]; ln <- lines[i]
-    m <- regexpr(.NUM_RE, ln)
-    s0 <- as.integer(m); len <- attr(m, "match.length")
-    width <- len
-    new <- if (width > 0) .fmt(as.numeric(val), width) else formatC(as.numeric(val), format = "f", digits = 3)
-    new <- sprintf("%*s", width, trimws(new))
+    all <- gregexpr(.NUM_RE, ln, perl = TRUE)[[1]]
+    lens <- attr(all, "match.length")
+    if (length(all) == 1L && all[1] == -1L) all <- integer(0)
+    if (token_index < 0L || token_index >= length(all)) {
+      stop(sprintf("Species key '%s' token index %d out of range for %s (found %d numeric tokens).",
+                   key, token_index, basename(spe_path), length(all)))
+    }
+    s0 <- as.integer(all[token_index + 1L]); len <- lens[token_index + 1L]
+    old <- substr(ln, s0, s0 + len - 1L)
+    new <- if (len > 0) .fmt_like_token(as.numeric(val), old) else formatC(as.numeric(val), format = "f", digits = 3)
     lines[i] <- paste0(substr(ln, 1, s0 - 1L), new, substring(ln, s0 + len))
   }
   .write_lines(lines, spe_path)

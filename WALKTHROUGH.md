@@ -87,6 +87,22 @@ For each parameter:
   (see §7). Omit it and the tool assumes "anything in `[min, max]` is equally likely".
 - **`role`** *(optional)* — `obligatory` or `candidate`, used only by the stepwise
   selection stage (§6d).
+- **`scope`** *(optional)* — omit it or use `global` to fit one shared value across
+  all experiments. Use `scope: experiment` (or `pooling: per_experiment`) when each
+  experiment should get its own value inside one pooled calibration.
+
+For example, this fits one shared species parameter while letting every experiment
+have its own cultivar and ecotype offsets:
+
+```yaml
+parameters:
+  genetic_species:
+    LFMAX: { active: true, min: 0.3, max: 2.5, start: 1.4 }      # shared by default
+  genetic_cultivar:
+    CSDL:  { active: true, min: 11.5, max: 18.0, start: 12.8, scope: experiment }
+  genetic_ecotype:
+    ECOA:  { active: true, min: 0.8, max: 1.2, start: 1.0, pooling: per_experiment }
+```
 
 > **Tip for non-experts:** start with 3–6 active parameters. Calibrating 15 at once is
 > slow and tends to *over-fit* (see §9). Use the **sensitivity** stage (§6c) to find
@@ -107,7 +123,45 @@ engine:
 The tool reads your measurements from the DSSAT `FileA`/`FileT` files (or a CSV) and
 matches them to these outputs automatically.
 
-### 4c. Which engine / pipeline (the one knob that matters most)
+### 4c. Before calibrating: build a parameter impact atlas
+
+When you need to understand what each DSSAT input actually changes, run one-at-a-time
+real-DSSAT sweeps before a full calibration:
+
+```bash
+python run_impact_atlas.py config_hemp.yaml \
+  --experiments UFCI2101 \
+  --groups genetic_cultivar genetic_ecotype genetic_species management initial_conditions soil weather \
+  --discover-genotype --allow-species --max-per-group 1 --cores 2 --no-long
+```
+
+From R, call the same real-runner:
+
+```r
+library(dssatcalibrator)
+atlas <- run_impact_atlas(
+  "config_hemp.yaml",
+  experiments = "UFCI2101",
+  groups = c("genetic_cultivar", "genetic_ecotype", "genetic_species", "soil", "weather"),
+  discover_genotype = TRUE,
+  allow_species = TRUE,
+  max_per_group = 1,
+  num_cores = 2,
+  write_long = FALSE
+)
+```
+
+The atlas writes `impact_summary.md`, `run_manifest.csv`, `file_manifest.csv`,
+`parameter_catalog.csv`, `score_effects.csv`, `parameter_impact_summary.csv`,
+`output_impact_summary.csv`, `parameter_output_effects.csv`, and
+`capability_map.md`. If you keep the full long table, it also writes
+`outputs_long.csv` or `outputs_long.csv.gz`; for broad or longer sweeps, prefer
+`--no-long` / `write_long = FALSE` until you know you need the row-level table.
+Use the manifest to spot failed input edits, the summary tables to rank which
+parameters move the objective or DSSAT outputs, and the capability map to decide
+what should be upstreamed into `dssatengine` or `dssatutils`.
+
+### 4d. Which engine / pipeline (the one knob that matters most)
 
 ```yaml
 method:
@@ -281,8 +335,10 @@ After a run, `results/<name>/` holds the **tables** and `figures/<name>/` holds 
 |---|---|
 | `best_theta.json` | the best-fit parameter values (drop straight into DSSAT) |
 | `summary_fit.csv` | fit quality per variable (RMSE, nRMSE%, d, EF, R²) |
+| `objective_breakdown.csv` | objective components per experiment, variable, and observation kind |
 | `posterior_summary.csv` | best + mean ± spread + 5–95% range per parameter |
 | `design.csv` | every parameter set tried, with its score |
+| `manifest.csv` / `manifest.json` | every DSSAT spawn with sample, experiment, theta, run directory, and status |
 | `fit_by_experiment.csv` | fit broken down per experiment |
 | `sensitivity_ranking.csv` | parameter influence (if screening ran) |
 | `validation_loeo.csv` | calibration vs evaluation error (if `--validate`) |

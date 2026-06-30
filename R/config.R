@@ -33,7 +33,9 @@
       sample = list(engine = "lhs", n = 200L),
       validation = list(scheme = "none")
     ),
-    objective = list(weighting = "unified", weights = list(), error_model = list()),
+    objective = list(weighting = "unified", weights = list(), error_model = list(),
+                     likelihood = list(type = "gaussian"),
+                     model_discrepancy = list()),
     parameters = list(),
     crops = list(),
     experiments = list(),
@@ -62,6 +64,13 @@
       enkf = list(n_ensemble = 50L, inflation = 1.05,
                   state_variables = list("LAID", "CWAD")),
       forcing = list(min_confidence = 0.8, smoothing = TRUE)
+    ),
+    sparse = list(
+      delta_from_analog = list(active = FALSE),
+      hierarchical_priors = list(active = FALSE),
+      trait_priors = list(active = FALSE),
+      identifiability_gate = list(active = FALSE),
+      observation_design = list(active = FALSE)
     )
   )
 }
@@ -137,9 +146,13 @@ validate_config <- function(cfg) {
   GATING_LEVELS      <- c("free", "gated", "blocked")
   EXECUTION_BACKENDS <- c("native", "dssatengine")
   ASSIMILATION_MODES <- c("recalibration", "enkf", "forcing")
-  BAYES_ENGINES      <- c("glue", "smc_pf", "mcmc", "dream", "es_mda", "bayesopt", "none", "")
+  BAYES_ENGINES      <- c("glue", "smc_pf", "mcmc", "dream", "es_mda", "bayesopt",
+                          "abc_smc", "history", "none", "")
   OPTIMIZER_ENGINES  <- c("nelder_mead", "neldermead", "nm", "diffevo", "de",
                           "cmaes", "cma_es", "cma", "none", "")
+  PARAMETER_SCOPES   <- c("global", "shared", "pooled", "pool",
+                          "experiment", "experiments", "per_experiment", "per-experiment",
+                          "experiment_specific", "experiment-specific", "local")
 
   errors <- character(0)
   is_num <- function(x) is.numeric(x) && length(x) == 1L
@@ -220,6 +233,17 @@ validate_config <- function(cfg) {
           if (!dist %in% PRIOR_DISTS)
             errors <- c(errors, sprintf("%s: prior.dist '%s' is not one of %s.",
                                         tag, dist, paste(PRIOR_DISTS, collapse = ", ")))
+        }
+        scope <- tolower(as.character(.cfg_get(spec, "scope", .cfg_get(spec, "pooling", "global"))))
+        if (!scope %in% PARAMETER_SCOPES) {
+          errors <- c(errors, sprintf("%s: scope '%s' is not one of %s.",
+                                      tag, scope, paste(PARAMETER_SCOPES, collapse = ", ")))
+        }
+        if (scope %in% c("experiment", "experiments", "per_experiment", "per-experiment",
+                         "experiment_specific", "experiment-specific", "local") &&
+            length(.cfg_get(cfg, "experiments", list())) == 0) {
+          errors <- c(errors, sprintf("%s: scope '%s' requires at least one configured experiment.",
+                                      tag, scope))
         }
         if (isTRUE(spec$active)) n_active <- n_active + 1L
       }

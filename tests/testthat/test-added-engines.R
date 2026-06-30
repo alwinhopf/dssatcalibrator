@@ -1,5 +1,5 @@
 # Offline correctness tests for the R twins of the added engines (CMA-ES, DREAM,
-# ES-MDA). A synthetic linear-Gaussian problem with a known optimum is solved
+# ES-MDA, history matching, ABC-SMC). A synthetic linear-Gaussian problem with a known optimum is solved
 # through each engine's real code path (no DSSAT). Mirrors
 # tests/test_added_engines.py. Bayesian optimisation needs DiceKriging and is
 # covered in Python; here it is skipped unless the package is installed.
@@ -53,10 +53,32 @@ test_that("ES-MDA (R) recovers the optimum", {
   expect_lt(err(r$best_theta), 0.4)
 })
 
+test_that("history matching (R) keeps a finite NROY region", {
+  r <- run_history_matching(cfg_for("history", n = 96, waves = 2, implausibility_cutoff = 4.0),
+                            make_scorer(), make_space(), progress = FALSE)
+  expect_gt(nrow(r$design), 20)
+  expect_gt(r$ess, 0)
+  expect_true(is.finite(r$best$score))
+  expect_lt(err(r$best_theta), 4.0)
+})
+
+test_that("ABC-SMC (R) accepts a final population", {
+  r <- run_abc_smc(cfg_for("abc_smc", n_particles = 40, waves = 2, oversample = 2,
+                           threshold_quantile = 0.4),
+                   make_scorer(), make_space(), progress = FALSE)
+  expect_gt(nrow(r$design), 40)
+  expect_gt(r$ess, 0)
+  expect_equal(length(r$thresholds), 2)
+  expect_lte(tail(r$thresholds, 1), r$thresholds[1])
+  expect_lt(err(r$best_theta), 3.0)
+})
+
 test_that("the added engines resolve through the registry", {
   expect_equal(.resolve_estimator(list(bayesian = list(engine = "dream"))), "dream")
   expect_equal(.resolve_estimator(list(bayesian = list(engine = "es_mda"))), "es_mda")
   expect_equal(.resolve_estimator(list(bayesian = list(engine = "bayesopt"))), "bayesopt")
+  expect_equal(.resolve_estimator(list(bayesian = list(engine = "history"))), "history")
+  expect_equal(.resolve_estimator(list(bayesian = list(engine = "abc_smc"))), "abc_smc")
   expect_equal(.resolve_estimator(list(bayesian = list(engine = "none"),
                                        optimizer = list(engine = "cmaes"))), "optimizer")
 })

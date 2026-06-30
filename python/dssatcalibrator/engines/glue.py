@@ -77,6 +77,16 @@ def posterior_summary(glue: GlueResult, param_names: list[str]) -> pd.DataFrame:
     """Weighted posterior mean / sd / quantiles per parameter (for reporting)."""
     d = glue.design
     w = d["weight"].to_numpy()
+
+    def wquantile(x, probs):
+        if w.sum() <= 0:
+            return np.quantile(x, probs)
+        order = np.argsort(x)
+        xs = x[order]
+        ws = w[order] / w[order].sum()
+        cdf = np.cumsum(ws)
+        return np.interp(probs, cdf, xs)
+
     rows = []
     for n in param_names:
         x = d[n].to_numpy(dtype=float)
@@ -86,7 +96,8 @@ def posterior_summary(glue: GlueResult, param_names: list[str]) -> pd.DataFrame:
             sd = float(np.sqrt(max(var, 0.0)))
         else:
             mean, sd = float(np.mean(x)), float(np.std(x))
+        q05, q95 = wquantile(x, [0.05, 0.95])
         rows.append({"parameter": n, "best": glue.best_theta[n],
                      "post_mean": mean, "post_sd": sd,
-                     "p05": float(np.quantile(x, 0.05)), "p95": float(np.quantile(x, 0.95))})
+                     "p05": float(q05), "p95": float(q95)})
     return pd.DataFrame(rows)

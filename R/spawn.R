@@ -17,12 +17,18 @@ BATCH_FILE <- "DSSBatch.V48"
   s
 }
 
+.py_json_value <- function(x) {
+  v <- suppressWarnings(as.numeric(x))
+  if (length(v) == 1L && !is.na(v) && !isTRUE(is.logical(x))) return(.py_num(x))
+  jsonlite::toJSON(as.character(x), auto_unbox = TRUE)
+}
+
 #' Stable 10-char hash of a (rounded) theta. Mirrors spawn.py:theta_hash.
 #' Builds the identical JSON blob (sorted keys, ", "/": " separators) and SHA-1s it.
 #' @export
 theta_hash <- function(theta) {
   keys <- sort(names(theta), method = "radix")
-  parts <- vapply(keys, function(k) sprintf('"%s": %s', k, .py_num(theta[[k]])), character(1))
+  parts <- vapply(keys, function(k) sprintf('"%s": %s', k, .py_json_value(theta[[k]])), character(1))
   blob <- paste0("{", paste(parts, collapse = ", "), "}")
   if (!requireNamespace("digest", quietly = TRUE)) {
     stop("theta_hash requires the 'digest' package.")
@@ -230,10 +236,44 @@ spawn_and_run <- function(theta, exp_id, cfg, crop, param_specs, run_root,
 
   mgt_updates <- .cfg_get(groups, "management", list())
   init_updates <- .cfg_get(groups, "initial_conditions", list())
+  filex_update_from_spec <- function(name, val, spec, default_section) {
+    if (is.null(spec)) return(val)
+    section <- .cfg_get(spec, "section", .cfg_get(spec, "filex_section", NULL))
+    field <- .cfg_get(spec, "field", .cfg_get(spec, "filex_field", .cfg_get(spec, "dssat", NULL)))
+    is_soil_water_mult <- identical(default_section, "INITIAL CONDITIONS") &&
+      identical(name, "initial_soil_water_mult")
+    if (is_soil_water_mult && is.null(field)) field <- "SH2O"
+    generic_keys <- c("header_prefix", "row", "treatment", "trt", "trtno",
+                      "clip_01", "required", "type", "format")
+    if (is.null(section) && !is.null(field)) {
+      uses_generic <- any(generic_keys %in% names(spec)) ||
+        tolower(as.character(.cfg_get(spec, "op", "set"))) != "set"
+      if (identical(default_section, "PLANTING DETAILS") && !uses_generic) return(val)
+      out <- list(section = default_section, field = field, value = val,
+                  op = .cfg_get(spec, "op", if (is_soil_water_mult) "mult" else "set"))
+      if (is_soil_water_mult && is.null(spec$clip_01)) out$clip_01 <- TRUE
+      for (key in generic_keys) {
+        if (!is.null(spec[[key]])) out[[key]] <- spec[[key]]
+      }
+      return(out)
+    }
+    out <- list(section = section %||% default_section,
+                field = field %||% name,
+                value = val,
+                op = .cfg_get(spec, "op", if (is_soil_water_mult) "mult" else "set"))
+    if (is_soil_water_mult && is.null(spec$clip_01)) out$clip_01 <- TRUE
+    for (key in generic_keys) {
+      if (!is.null(spec[[key]])) out[[key]] <- spec[[key]]
+    }
+    out
+  }
   mgt_fields <- list()
   for (name in names(mgt_updates)) {
     spec <- Find(function(s) .cfg_get(s, "base_name", s$name) == name, param_specs)
-    if (!is.null(spec) && !is.null(spec$dssat)) mgt_fields[[spec$dssat]] <- mgt_updates[[name]]
+    if (!is.null(spec)) {
+      key <- .cfg_get(spec, "dssat", .cfg_get(spec, "field", .cfg_get(spec, "filex_field", name)))
+      mgt_fields[[key]] <- filex_update_from_spec(name, mgt_updates[[name]], spec, "PLANTING DETAILS")
+    }
   }
   pdate <- .cfg_get(.cfg_get(cfg, "_planting_dates", list()), exp_id, NULL)
   if (!is.null(pdate)) {
@@ -242,7 +282,17 @@ spawn_and_run <- function(theta, exp_id, cfg, crop, param_specs, run_root,
     mgt_fields[["PDATE"]] <- as.integer(sprintf("%02d%03d", yy, doy))
   }
   if (length(mgt_fields) > 0 || length(init_updates) > 0) {
-    edit_filex(file.path(run_dir, filex_name), mgt_fields, init_updates)
+    init_fields <- list()
+    for (name in names(init_updates)) {
+      spec <- Find(function(s) .cfg_get(s, "base_name", s$name) == name, param_specs)
+      if (!is.null(spec)) {
+        key <- .cfg_get(spec, "dssat", .cfg_get(spec, "field", .cfg_get(spec, "filex_field", name)))
+        init_fields[[key]] <- filex_update_from_spec(name, init_updates[[name]], spec, "INITIAL CONDITIONS")
+      } else {
+        init_fields[[name]] <- init_updates[[name]]
+      }
+    }
+    edit_filex(file.path(run_dir, filex_name), mgt_fields, init_fields)
   }
 
   # (soil/weather acquisition + editing mirror the Python path; acquisition is

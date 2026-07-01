@@ -57,6 +57,27 @@ def _parse(cell: str):
         return None
 
 
+def _is_numeric_value(value) -> bool:
+    if isinstance(value, bool):
+        return False
+    try:
+        float(value)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _fmt_filex_value(value, width: int, old_cell: str = "", *, force_text: bool = False) -> str:
+    """Format a FileX replacement cell, supporting numeric values and DSSAT codes."""
+    if not force_text and _is_numeric_value(value):
+        return _fmt(float(value), width)
+    text = str(value).strip()
+    if len(text) > width:
+        raise ValueError(f"FileX text value '{text}' does not fit in {width} columns.")
+    align = "left" if old_cell and old_cell.rstrip() == old_cell.strip() else "right"
+    return text.ljust(width) if align == "left" else text.rjust(width)
+
+
 def cultivar_field_map(cul_path: str | Path) -> dict[str, tuple[int, int]]:
     """Return {coefficient_name: (start_col, end_col)} from the ``@VAR#`` header."""
     lines = Path(cul_path).read_text(errors="replace").splitlines()
@@ -139,13 +160,169 @@ def parse_header_boundaries(header: str) -> dict[str, tuple[int, int]]:
     return fmap
 
 
-def edit_filex(filex_path: str | Path, mgt_fields: dict[str, float], init_updates: dict[str, float]) -> None:
-    """Edit management and initial conditions sections in a FileX in-place."""
+def _is_data_line(line: str) -> bool:
+    s = line.strip()
+    return bool(s) and not s.startswith(("!", "@", "*")) and bool(re.match(r"[-+]?(?:\d|\.\d)", s))
+
+
+def _normalize_filex_update(name: str, spec) -> dict:
+    if isinstance(spec, dict):
+        out = dict(spec)
+    else:
+        out = {"field": name, "value": spec}
+    out.setdefault("field", out.get("dssat", out.get("filex_field", name)))
+    out.setdefault("op", "set")
+    return out
+
+
+def _find_filex_section(lines: list[str], section: str) -> tuple[int, int] | None:
+    key = section.upper()
+    start = next((i for i, ln in enumerate(lines)
+                  if ln.lstrip().startswith("*") and key in ln.upper()), None)
+    if start is None:
+        return None
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("*")), len(lines))
+    return start, end
+
+
+def _apply_filex_section_updates(lines: list[str], updates: list[dict]) -> None:
+    for upd in updates:
+        section = upd.get("section", "PLANTING DETAILS")
+        found = _find_filex_section(lines, section)
+        if found is None:
+            if upd.get("required", False):
+                raise KeyError(f"FileX section '{section}' not found.")
+            continue
+        start, end = found
+        header_prefix = str(upd.get("header_prefix", "") or "")
+        field = str(upd["field"])
+        raw_value = upd["value"]
+        op = str(upd.get("op", "set")).lower()
+        force_text = str(upd.get("type", upd.get("format", ""))).lower() in {"text", "str", "string", "raw", "code"}
+        row_selector = upd.get("row")
+        treatment = upd.get("treatment", upd.get("trt", upd.get("trtno")))
+
+        header_idx = None
+        for i in range(start + 1, end):
+            stripped = lines[i].lstrip()
+            if not stripped.startswith("@"):
+                continue
+            if header_prefix and not stripped.startswith(header_prefix):
+                continue
+            fmap = parse_header_boundaries(lines[i])
+            if field in fmap:
+                header_idx = i
+                break
+        if header_idx is None:
+            if upd.get("required", False):
+                raise KeyError(f"FileX field '{field}' not found in section '{section}'.")
+            continue
+
+        fmap = parse_header_boundaries(lines[header_idx])
+        lo, hi = fmap[field]
+        last_end = max(hi2 for _, hi2 in fmap.values())
+        matched = False
+        data_row = 0
+        for i in range(header_idx + 1, end):
+            ln = lines[i]
+            if ln.lstrip().startswith("@"):
+                break
+            if not _is_data_line(ln):
+                continue
+            data_row += 1
+            if row_selector is not None and int(row_selector) != data_row:
+                continue
+            if treatment is not None and "TRT" in fmap:
+                tlo, thi = fmap["TRT"]
+                try:
+                    if int(float(ln[tlo:thi].strip())) != int(treatment):
+                        continue
+                except ValueError:
+                    continue
+            chars = list(ln.ljust(last_end))
+            old_cell = "".join(chars[lo:hi])
+            old = _parse(old_cell)
+            if op == "set":
+                new = raw_value
+            else:
+                if old is None:
+                    continue
+                if not _is_numeric_value(raw_value):
+                    raise ValueError(f"FileX operation '{op}' for field '{field}' requires a numeric value.")
+                value = float(raw_value)
+                if op in {"mult", "multiply"}:
+                    new = old * value
+                elif op == "add":
+                    new = old + value
+                else:
+                    raise ValueError(f"Unsupported FileX operation '{op}' for field '{field}'.")
+            if bool(upd.get("clip_01", False)):
+                new = min(max(float(new), 0.0), 1.0)
+            chars[lo:hi] = list(_fmt_filex_value(new, hi - lo, old_cell, force_text=force_text))
+            lines[i] = "".join(chars)
+            matched = True
+        if upd.get("required", False) and not matched:
+            raise KeyError(f"No FileX data rows matched field '{field}' in section '{section}'.")
+
+
+def edit_filex(
+    filex_path: str | Path,
+    mgt_fields: dict[str, float | dict],
+    init_updates: dict[str, float | dict],
+    section_updates: list[dict] | None = None,
+) -> None:
+    """Edit management and initial conditions sections in a FileX in-place.
+
+    ``mgt_fields`` keeps the historical shorthand for ``*PLANTING DETAILS``.
+    Dict values may target any FileX section, for example
+    ``{"irrig_amount": {"section": "IRRIGATION", "field": "IRVAL", "value": 25}}``.
+    ``init_updates`` supports the legacy ``initial_soil_water_mult`` plus generic
+    ``*INITIAL CONDITIONS`` field updates such as ``SH2O`` or ``SNH4``.
+    """
     filex_path = Path(filex_path)
     lines = filex_path.read_text(errors="replace").splitlines()
 
+    generic_updates = list(section_updates or [])
+    planting_fields = {}
+    for name, spec in (mgt_fields or {}).items():
+        upd = _normalize_filex_update(name, spec)
+        generic_keys = {
+            "section", "header_prefix", "row", "treatment", "trt", "trtno",
+            "clip_01", "required", "type", "format",
+        }
+        use_generic = (
+            isinstance(spec, dict)
+            and (bool(generic_keys.intersection(upd)) or str(upd.get("op", "set")).lower() != "set")
+        )
+        if use_generic:
+            upd.setdefault("section", "PLANTING DETAILS")
+            generic_updates.append(upd)
+        else:
+            planting_fields[upd["field"]] = upd["value"]
+
+    init_scalar_updates = {}
+    for name, spec in (init_updates or {}).items():
+        upd = _normalize_filex_update(name, spec)
+        if name == "initial_soil_water_mult" and not isinstance(spec, dict):
+            init_scalar_updates[name] = spec
+            continue
+        if isinstance(spec, dict):
+            upd.setdefault("section", "INITIAL CONDITIONS")
+            if name == "initial_soil_water_mult":
+                if not any(k in spec for k in ("field", "dssat", "filex_field")):
+                    upd["field"] = "SH2O"
+                if "op" not in spec:
+                    upd["op"] = "mult"
+                upd.setdefault("clip_01", True)
+            generic_updates.append(upd)
+        else:
+            init_scalar_updates[name] = spec
+
+    if generic_updates:
+        _apply_filex_section_updates(lines, generic_updates)
+
     # 1. Edit management (planting details)
-    if mgt_fields:
+    if planting_fields:
         # Find *PLANTING DETAILS section
         planting_sec_idx = None
         for i, ln in enumerate(lines):
@@ -178,15 +355,15 @@ def edit_filex(filex_path: str | Path, mgt_fields: dict[str, float], init_update
                         last_end = max(hi for _, hi in fmap.values())
                         if len(chars) < last_end:
                             chars += [" "] * (last_end - len(chars))
-                        for name, val in mgt_fields.items():
+                        for name, val in planting_fields.items():
                             if name in fmap:
                                 lo, hi = fmap[name]
                                 chars[lo:hi] = list(_fmt(float(val), hi - lo))
                         lines[i] = "".join(chars)
 
     # 2. Edit initial conditions (initial soil water multiplier)
-    if init_updates and "initial_soil_water_mult" in init_updates:
-        mult = float(init_updates["initial_soil_water_mult"])
+    if init_scalar_updates and "initial_soil_water_mult" in init_scalar_updates:
+        mult = float(init_scalar_updates["initial_soil_water_mult"])
         # Find *INITIAL CONDITIONS section
         init_sec_idx = None
         for i, ln in enumerate(lines):

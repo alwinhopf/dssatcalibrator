@@ -25,7 +25,9 @@ def main() -> None:
     ap.add_argument("--groups", nargs="*", default=None,
                     help=f"parameter groups to sweep (default: {' '.join(DEFAULT_GROUPS)})")
     ap.add_argument("--levels", nargs="*", default=["low", "high"],
-                    help="levels to run for each parameter: low high start")
+                    help="levels to run for each parameter: low high start grid1 grid2 ...")
+    ap.add_argument("--grid-points", type=int, default=0,
+                    help="add N evenly spaced internal grid levels between min and max")
     ap.add_argument("--active-only", action="store_true",
                     help="only sweep parameters with active: true in the config")
     ap.add_argument("--discover-cultivar", action="store_true",
@@ -84,6 +86,7 @@ def main() -> None:
         allow_species=args.allow_species,
         max_parameters=args.max_parameters,
         max_per_group=args.max_per_group,
+        grid_points=args.grid_points,
         output_files=args.outputs,
         num_cores=args.cores,
         write_long=not args.no_long,

@@ -69,14 +69,14 @@ python run_calibration.py config_hemp.yaml --surrogate gp
 python run_calibration.py config_hemp.yaml --n 50 --experiments YUKU2101 YUFE2201
 python run_calibration.py config_hemp.yaml --validate
 
-# One-at-a-time real-DSSAT impact atlas
-python run_impact_atlas.py config_hemp.yaml --experiments UFCI2101 --discover-genotype --allow-species --max-per-group 1 --cores 2 --no-long
+# One-at-a-time real-DSSAT impact atlas; add internal grid values with --grid-points
+python run_impact_atlas.py config_hemp.yaml --experiments UFCI2101 --discover-genotype --allow-species --max-per-group 1 --grid-points 3 --cores 2 --no-long
 
 # R front end to the same atlas runner
-Rscript -e "library(dssatcalibrator); run_impact_atlas('config_hemp.yaml', experiments='UFCI2101', discover_genotype=TRUE, allow_species=TRUE, max_per_group=1, num_cores=2, write_long=FALSE)"
+Rscript -e "library(dssatcalibrator); run_impact_atlas('config_hemp.yaml', experiments='UFCI2101', discover_genotype=TRUE, allow_species=TRUE, max_per_group=1, grid_points=3, num_cores=2, write_long=FALSE)"
 ```
 
-Calibration outputs (`design.csv`, `best_theta.json`, `objective_breakdown.csv`, `manifest.csv`/`.json`, and summary tables) are written to `results/<calibrator_name>/` or custom directory paths; figures go under `figures/<calibrator_name>/` by default.
+Calibration outputs (`design.csv`, `best_theta.json`, `objective_breakdown.csv`, `manifest.csv`/`.json`, and summary tables) are written to `results/<calibrator_name>/` or custom directory paths; figures go under `figures/<calibrator_name>/` by default. The impact atlas additionally writes `run_manifest.json`, `failed_runs.csv`, per-group plots under `plots/`, and broad DSSAT output effect summaries.
 
 ## Testing
 

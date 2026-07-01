@@ -50,6 +50,7 @@ class AtlasResult:
     score_effects: pd.DataFrame
     output_impact_summary: pd.DataFrame
     parameter_impact_summary: pd.DataFrame
+    plot_files: list[Path] | None = None
 
 
 def _safe_id(text: str) -> str:
@@ -212,17 +213,26 @@ def discover_ecotype_parameters(cfg: dict, *, rel_width: float = 0.10) -> list[d
     return out
 
 
-def _variant_specs(spec: dict, levels: list[str]) -> list[dict]:
+def _variant_specs(spec: dict, levels: list[str], *, grid_points: int = 0) -> list[dict]:
     values = {
         "start": float(spec["start"]),
         "low": float(spec["min"]),
         "high": float(spec["max"]),
     }
+    if grid_points and grid_points > 0:
+        for idx, value in enumerate(np.linspace(float(spec["min"]), float(spec["max"]), grid_points + 2)[1:-1], start=1):
+            values[f"grid{idx}"] = float(value)
+
     variants = []
+    seen_values: set[float] = set()
     for level in levels:
         if level not in values:
             continue
         value = values[level]
+        value_key = round(float(value), 12)
+        if value_key in seen_values:
+            continue
+        seen_values.add(value_key)
         rec = dict(spec)
         rec["active"] = True
         rec["scope"] = "global"
@@ -540,6 +550,88 @@ def write_capability_report(path: Path, cap: pd.DataFrame) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def write_impact_plots(
+    output_dir: Path,
+    parameter_impact_summary: pd.DataFrame,
+    output_impact_summary: pd.DataFrame,
+) -> list[Path]:
+    """Write lightweight PNG summaries for humans; CSVs remain authoritative."""
+    if parameter_impact_summary.empty and output_impact_summary.empty:
+        return []
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception:
+        return []
+
+    plot_dir = output_dir / "plots"
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+
+    if not parameter_impact_summary.empty:
+        df = parameter_impact_summary.copy()
+        for col in ("max_abs_score_delta", "max_abs_output_delta"):
+            if col not in df:
+                df[col] = np.nan
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+        df["impact_metric"] = df[["max_abs_score_delta", "max_abs_output_delta"]].max(axis=1)
+        top = df.sort_values("impact_metric", ascending=False).head(25)
+        if not top.empty:
+            fig, ax = plt.subplots(figsize=(8.5, max(3.0, 0.32 * len(top) + 1.0)))
+            labels = (top["group"].astype(str) + " / " + top["parameter"].astype(str)).to_list()
+            ax.barh(labels[::-1], top["impact_metric"].to_numpy()[::-1], color="#534AB7")
+            ax.set_xlabel("max absolute impact metric")
+            ax.set_title("Top parameter impacts")
+            fig.tight_layout()
+            path = plot_dir / "parameter_impact_top.png"
+            fig.savefig(path, dpi=140, bbox_inches="tight")
+            plt.close(fig)
+            written.append(path)
+
+        for group, g in df.groupby("group", dropna=False):
+            g = g.sort_values("impact_metric", ascending=False).head(20)
+            if g.empty:
+                continue
+            fig, ax = plt.subplots(figsize=(7.5, max(3.0, 0.35 * len(g) + 1.0)))
+            ax.barh(g["parameter"].astype(str).to_list()[::-1], g["impact_metric"].to_numpy()[::-1], color="#534AB7")
+            ax.set_xlabel("max absolute impact metric")
+            ax.set_title(f"{group} parameter impacts")
+            fig.tight_layout()
+            path = plot_dir / f"parameter_group_{_safe_id(group)}.png"
+            fig.savefig(path, dpi=140, bbox_inches="tight")
+            plt.close(fig)
+            written.append(path)
+
+    if not output_impact_summary.empty:
+        out = output_impact_summary.copy()
+        if "max_abs_delta" in out:
+            out["max_abs_delta"] = pd.to_numeric(out["max_abs_delta"], errors="coerce").fillna(0.0)
+        else:
+            out["max_abs_delta"] = 0.0
+        for group, g in out.groupby("group", dropna=False):
+            g = g.sort_values("max_abs_delta", ascending=False).head(20)
+            if g.empty:
+                continue
+            labels = (
+                g["parameter"].astype(str) + " / " +
+                g["source_file"].astype(str) + " / " +
+                g["variable"].astype(str) + " / " +
+                g["stat"].astype(str)
+            ).to_list()
+            fig, ax = plt.subplots(figsize=(9.5, max(3.0, 0.34 * len(g) + 1.0)))
+            ax.barh(labels[::-1], g["max_abs_delta"].to_numpy()[::-1], color="#1D9E75")
+            ax.set_xlabel("max absolute output delta")
+            ax.set_title(f"{group} output effects")
+            fig.tight_layout()
+            path = plot_dir / f"output_effects_{_safe_id(group)}.png"
+            fig.savefig(path, dpi=140, bbox_inches="tight")
+            plt.close(fig)
+            written.append(path)
+
+    return written
+
+
 def run_impact_atlas(
     cfg: dict,
     *,
@@ -555,6 +647,7 @@ def run_impact_atlas(
     allow_species: bool = False,
     max_parameters: int | None = None,
     max_per_group: int | None = None,
+    grid_points: int = 0,
     output_files: list[str] | None = None,
     num_cores: int | None = None,
     write_long: bool = True,
@@ -566,7 +659,12 @@ def run_impact_atlas(
     """Run a one-at-a-time real-DSSAT parameter impact atlas."""
     cfg = deepcopy(cfg)
     groups = groups or list(DEFAULT_GROUPS)
-    levels = levels or ["low", "high"]
+    levels = list(levels or ["low", "high"])
+    grid_points = max(0, int(grid_points or 0))
+    for idx in range(1, grid_points + 1):
+        level = f"grid{idx}"
+        if level not in levels:
+            levels.append(level)
     if discover_genotype:
         discover_cultivar = discover_ecotype = discover_species = True
     if experiments is not None:
@@ -657,7 +755,7 @@ def run_impact_atlas(
             "group": "baseline", "parameter": "baseline", "level": "baseline", "value": np.nan,
         })
         for spec in params:
-            for var in _variant_specs(spec, levels):
+            for var in _variant_specs(spec, levels, grid_points=grid_points):
                 variant_id = f"{exp_id}__{_safe_id(spec['group'])}__{_safe_id(spec['name'])}__{var['level']}"
                 jobs.append({
                     "theta": var["theta"],
@@ -698,7 +796,21 @@ def run_impact_atlas(
             scored = obj.score({m["exp_id"]: res}, obs.table, cfg)
             score = scored.score
             n_obs = len(scored.residuals)
-        collected = dssat_io.collect_run_outputs(res.run_dir, output_files=output_files)
+        if res.status in {"success", "cached"}:
+            collected = dssat_io.collect_run_outputs(res.run_dir, output_files=output_files)
+        else:
+            collected = {
+                "wide": pd.DataFrame(),
+                "long": pd.DataFrame(),
+                "plantgro": pd.DataFrame(),
+                "evaluate": pd.DataFrame(),
+                "summary": pd.DataFrame(),
+                "manifest": pd.DataFrame({
+                    "source_file": output_files or dssat_io.DEFAULT_OUTPUT_FILES,
+                    "exists": False,
+                    "size_bytes": 0,
+                }),
+            }
         long = collected["long"].copy()
         if not long.empty:
             for key, value in m.items():
@@ -720,6 +832,8 @@ def run_impact_atlas(
             fm = out_manifest.copy()
             for key, value in m.items():
                 fm["parameter_value" if key == "value" else key] = value
+            fm["status"] = res.status
+            fm["message"] = res.message
             fm["run_dir"] = str(res.run_dir)
             file_manifest_frames.append(fm)
         files_present = int(out_manifest["exists"].sum()) if not out_manifest.empty else 0
@@ -735,14 +849,21 @@ def run_impact_atlas(
 
     run_manifest = pd.DataFrame(manifest_rows)
     file_manifest = pd.concat(file_manifest_frames, ignore_index=True, sort=False) if file_manifest_frames else pd.DataFrame()
+    failed_runs = run_manifest[~run_manifest["status"].isin(["success", "cached"])].copy()
     output_long = pd.concat(long_frames, ignore_index=True, sort=False) if long_frames else pd.DataFrame()
     output_effects = pd.concat(effects_frames, ignore_index=True, sort=False) if effects_frames else pd.DataFrame()
     score_effects = summarize_score_effects(run_manifest)
     output_impact_summary = summarize_output_effects(output_effects, tolerance=effect_tolerance)
     parameter_impact_summary = summarize_parameter_impacts(score_effects, output_impact_summary)
     cap = capability_map(params)
+    plot_files = write_impact_plots(output_dir, parameter_impact_summary, output_impact_summary)
 
     run_manifest.to_csv(output_dir / "run_manifest.csv", index=False)
+    (output_dir / "run_manifest.json").write_text(
+        json.dumps(run_manifest.to_dict(orient="records"), indent=2, default=str),
+        encoding="utf-8",
+    )
+    failed_runs.to_csv(output_dir / "failed_runs.csv", index=False)
     if not file_manifest.empty:
         file_manifest.to_csv(output_dir / "file_manifest.csv", index=False)
     parameter_catalog.to_csv(output_dir / "parameter_catalog.csv", index=False)
@@ -768,6 +889,7 @@ def run_impact_atlas(
         "levels": levels,
         "num_parameters": len(params),
         "max_per_group": max_per_group,
+        "grid_points": grid_points,
         "num_jobs": len(jobs),
         "output_files": output_files or dssat_io.DEFAULT_OUTPUT_FILES,
         "write_long": bool(write_long),
@@ -780,6 +902,7 @@ def run_impact_atlas(
         "allow_species": bool(allow_species),
         "species_sweep_requested": bool(species_sweep_requested),
         "species_gate_opened": bool(species_gate_opened),
+        "plot_files": [str(p.relative_to(output_dir)) for p in plot_files],
     }, indent=2), encoding="utf-8")
 
     return AtlasResult(
@@ -793,4 +916,5 @@ def run_impact_atlas(
         score_effects,
         output_impact_summary,
         parameter_impact_summary,
+        plot_files,
     )

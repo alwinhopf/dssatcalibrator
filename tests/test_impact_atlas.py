@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -194,6 +195,164 @@ def test_run_impact_atlas_can_skip_long_output_and_write_catalog(tmp_path, monke
     assert not result.parameter_impact_summary.empty
     catalog = pd.read_csv(tmp_path / "atlas" / "parameter_catalog.csv")
     assert catalog["name"].tolist() == ["radiation_mult"]
+
+
+def test_run_impact_atlas_failed_spawn_writes_failure_artifacts_without_collecting_cwd(tmp_path, monkeypatch):
+    class FakeObs:
+        table = pd.DataFrame()
+
+        def experiments(self):
+            return ["EXP1"]
+
+    def fake_run_many(jobs, n_workers, on_done=None):
+        out = []
+        for i, job in enumerate(jobs):
+            if i == 0:
+                res = SimpleNamespace(
+                    status="success",
+                    run_dir=tmp_path / "run_success",
+                    theta=job["theta"],
+                    message="",
+                )
+            else:
+                res = SimpleNamespace(
+                    status="error",
+                    run_dir=Path("."),
+                    theta=job["theta"],
+                    message="synthetic DSSAT failure",
+                )
+            if on_done:
+                on_done(res)
+            out.append(res)
+        return out
+
+    def fake_collect(run_dir, output_files=None):
+        assert Path(run_dir) != Path(".")
+        long = pd.DataFrame({
+            "source_file": ["PlantGro.OUT"],
+            "variable": ["CWAD"],
+            "treatment": [1],
+            "row_index": [0],
+            "value": [100.0],
+        })
+        manifest = pd.DataFrame({
+            "source_file": output_files or ["PlantGro.OUT"],
+            "exists": [True] * len(output_files or ["PlantGro.OUT"]),
+            "size_bytes": [10] * len(output_files or ["PlantGro.OUT"]),
+        })
+        return {
+            "wide": pd.DataFrame(),
+            "long": long,
+            "plantgro": pd.DataFrame(),
+            "evaluate": pd.DataFrame(),
+            "summary": pd.DataFrame(),
+            "manifest": manifest,
+        }
+
+    monkeypatch.setattr(impact, "_load_observations", lambda cfg, experiments, crop: FakeObs())
+    monkeypatch.setattr(impact, "parse_treatments", lambda path: [1])
+    monkeypatch.setattr(impact, "run_many", fake_run_many)
+    monkeypatch.setattr(impact.dssat_io, "collect_run_outputs", fake_collect)
+    monkeypatch.setattr(impact.obj, "score", lambda results, obs, cfg: SimpleNamespace(score=10.0, residuals=[1]))
+
+    cfg = {
+        "calibrator": {"dssat_dir": str(tmp_path), "dssat_exe": str(tmp_path / "dssat.exe"), "num_cores": 1},
+        "source": {"hemp_dir": str(tmp_path)},
+        "crops": [{"code": "HM", "filex_ext": "HMX", "genotype_stem": "HMGRO048"}],
+        "experiments": ["EXP1"],
+        "parameters": {
+            "weather": {
+                "radiation_mult": {"active": True, "min": 0.9, "max": 1.1, "start": 1.0}
+            }
+        },
+    }
+
+    result = impact.run_impact_atlas(
+        cfg,
+        output_dir=tmp_path / "atlas_failed",
+        groups=["weather"],
+        levels=["low"],
+        output_files=["PlantGro.OUT", "Summary.OUT"],
+        write_long=False,
+        progress=False,
+    )
+
+    failed = pd.read_csv(tmp_path / "atlas_failed" / "failed_runs.csv")
+    manifest_json = (tmp_path / "atlas_failed" / "run_manifest.json").read_text(encoding="utf-8")
+    file_manifest = pd.read_csv(tmp_path / "atlas_failed" / "file_manifest.csv")
+
+    assert failed["status"].tolist() == ["error"]
+    assert "synthetic DSSAT failure" in manifest_json
+    failed_files = file_manifest[file_manifest["status"] == "error"]
+    assert failed_files["source_file"].tolist() == ["PlantGro.OUT", "Summary.OUT"]
+    assert failed_files["exists"].eq(False).all()
+    assert result.run_manifest.query("status == 'error'")["files_present"].iloc[0] == 0
+
+
+def test_run_impact_atlas_adds_internal_grid_levels(tmp_path, monkeypatch):
+    class FakeObs:
+        table = pd.DataFrame()
+
+        def experiments(self):
+            return ["EXP1"]
+
+    def fake_run_many(jobs, n_workers, on_done=None):
+        out = []
+        for i, job in enumerate(jobs):
+            res = SimpleNamespace(
+                status="success",
+                run_dir=tmp_path / f"run_{i}",
+                theta=job["theta"],
+                message="",
+            )
+            if on_done:
+                on_done(res)
+            out.append(res)
+        return out
+
+    def fake_collect(_run_dir, output_files=None):
+        return {
+            "wide": pd.DataFrame(),
+            "long": pd.DataFrame(),
+            "plantgro": pd.DataFrame(),
+            "evaluate": pd.DataFrame(),
+            "summary": pd.DataFrame(),
+            "manifest": pd.DataFrame({"source_file": ["PlantGro.OUT"], "exists": [True], "size_bytes": [1]}),
+        }
+
+    monkeypatch.setattr(impact, "_load_observations", lambda cfg, experiments, crop: FakeObs())
+    monkeypatch.setattr(impact, "parse_treatments", lambda path: [1])
+    monkeypatch.setattr(impact, "run_many", fake_run_many)
+    monkeypatch.setattr(impact.dssat_io, "collect_run_outputs", fake_collect)
+    monkeypatch.setattr(impact.obj, "score", lambda results, obs, cfg: SimpleNamespace(score=1.0, residuals=[]))
+
+    cfg = {
+        "calibrator": {"dssat_dir": str(tmp_path), "dssat_exe": str(tmp_path / "dssat.exe"), "num_cores": 1},
+        "source": {"hemp_dir": str(tmp_path)},
+        "crops": [{"code": "HM", "filex_ext": "HMX", "genotype_stem": "HMGRO048"}],
+        "experiments": ["EXP1"],
+        "parameters": {
+            "weather": {
+                "radiation_mult": {"active": True, "min": 0.0, "max": 4.0, "start": 1.0}
+            }
+        },
+    }
+
+    result = impact.run_impact_atlas(
+        cfg,
+        output_dir=tmp_path / "atlas_grid",
+        groups=["weather"],
+        levels=["start"],
+        grid_points=2,
+        write_long=False,
+        progress=False,
+    )
+
+    variants = result.run_manifest[result.run_manifest["variant_kind"] == "parameter"]
+    assert variants["level"].tolist() == ["start", "grid1", "grid2"]
+    assert variants["parameter_value"].tolist() == pytest.approx([1.0, 4.0 / 3.0, 8.0 / 3.0])
+    atlas_config = json.loads((tmp_path / "atlas_grid" / "atlas_config.json").read_text(encoding="utf-8"))
+    assert atlas_config["grid_points"] == 2
 
 
 def test_run_impact_atlas_errors_when_no_experiments_survive_filtering(tmp_path, monkeypatch):

@@ -24,6 +24,8 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
+from .spawn import theta_hash
+
 _ACCENT = "#534AB7"
 _OBS = "#D85A30"
 
@@ -324,6 +326,32 @@ def objective_breakdown_table(result) -> pd.DataFrame:
     return pd.DataFrame(rows).sort_values(group_cols).reset_index(drop=True)
 
 
+def spawn_manifest_table(result, best_spawns=None) -> pd.DataFrame:
+    """Return durable spawn metadata from a calibration result."""
+    manifest = (result.extras or {}).get("spawn_manifest")
+    if manifest is not None and not manifest.empty:
+        return manifest.copy()
+    if not best_spawns:
+        return pd.DataFrame(columns=[
+            "sample_id", "exp_id", "theta_hash", "status", "message", "run_dir", "theta_json",
+        ])
+    theta = getattr(result, "best_theta", {}) or {}
+    theta_jsonable = {k: (v.item() if hasattr(v, "item") else v) for k, v in theta.items()}
+    rows = []
+    for exp_id, res in best_spawns.items():
+        rows.append({
+            "sample_id": "best",
+            "exp_id": exp_id,
+            "theta_hash": theta_hash(theta) if theta else "",
+            "status": getattr(res, "status", ""),
+            "message": getattr(res, "message", ""),
+            "run_dir": str(getattr(res, "run_dir", "")),
+            "theta_json": json.dumps(theta_jsonable, sort_keys=True),
+            **{f"theta_{k}": v for k, v in theta.items()},
+        })
+    return pd.DataFrame(rows)
+
+
 def make_report(result, outdir, best_spawns=None, figdir=None) -> dict:
     """Write a calibration report. Data tables -> ``outdir``; all PNG figures ->
     ``figdir`` (defaults to ``outdir`` if not given). Returns the paths written."""
@@ -344,7 +372,7 @@ def make_report(result, outdir, best_spawns=None, figdir=None) -> dict:
     objective_breakdown.round(6).to_csv(outdir / "objective_breakdown.csv", index=False)
     paths["objective_breakdown"] = outdir / "objective_breakdown.csv"
 
-    spawn_manifest = (result.extras or {}).get("spawn_manifest")
+    spawn_manifest = spawn_manifest_table(result, best_spawns=best_spawns)
     if spawn_manifest is not None and not spawn_manifest.empty:
         spawn_manifest.to_csv(outdir / "manifest.csv", index=False)
         (outdir / "manifest.json").write_text(

@@ -1,3 +1,10 @@
+test_that("%||% handles vectors and lists without scalar NA errors", {
+  expect_equal(c(1, 2) %||% 9, c(1, 2))
+  expect_equal(list(a = 1, b = 2) %||% list(), list(a = 1, b = 2))
+  expect_equal(NULL %||% 9, 9)
+  expect_equal(NA_real_ %||% 9, 9)
+})
+
 test_that("run_many uses Windows PSOCK workers when requested", {
   skip_if_not(.Platform$OS.type == "windows")
   skip_if_not(requireNamespace("parallel", quietly = TRUE))

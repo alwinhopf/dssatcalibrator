@@ -82,3 +82,125 @@ test_that("read_cultivar_values and read_cul_calibration_bounds match Python", {
     expect_equal(bounds[[k]]$max, as.numeric(meta$calibration_bounds[[k]]$max), tolerance = 1e-9, info = k)
   }
 })
+
+.test_row <- function(header, values) {
+  fmap <- parse_header_boundaries(header)
+  width <- max(vapply(fmap, function(b) b[2], numeric(1)))
+  chars <- rep(" ", width)
+  for (field in names(values)) {
+    b <- fmap[[field]]
+    text <- sprintf("%*s", b[2] - b[1], trimws(as.character(values[[field]])))
+    if (nchar(text) > b[2] - b[1]) stop(sprintf("%s value too wide", field))
+    chars[(b[1] + 1L):b[2]] <- strsplit(text, "", fixed = TRUE)[[1]]
+  }
+  paste(chars, collapse = "")
+}
+
+.test_cell <- function(lines, section, header_prefix, field, row = 1L) {
+  sec <- which(startsWith(lines, section))[1]
+  hdr <- NA_integer_
+  for (i in (sec + 1L):length(lines)) {
+    if (startsWith(trimws(lines[i], which = "left"), header_prefix)) { hdr <- i; break }
+  }
+  fmap <- parse_header_boundaries(lines[hdr])
+  seen <- 0L
+  for (i in (hdr + 1L):length(lines)) {
+    ln <- lines[i]
+    if (startsWith(ln, "*") || startsWith(trimws(ln, which = "left"), "@")) break
+    if (!nzchar(trimws(ln)) || startsWith(trimws(ln, which = "left"), "!")) next
+    seen <- seen + 1L
+    if (seen == row) {
+      b <- fmap[[field]]
+      return(trimws(.py_slice(ln, b[1], b[2])))
+    }
+  }
+  stop(sprintf("row %d not found in %s", row, section))
+}
+
+.write_synthetic_filex <- function(path) {
+  p_hdr <- "@P PDATE EDATE  PPOP  PPOE  PLME  PLDS  PLRS  PLRD  PLDP"
+  c_hdr <- "@C  PCR ICDAT  ICBL  SH2O  SNH4  SNO3"
+  i_hdr <- "@I IDATE IROP  IRVAL"
+  f_hdr <- "@F FDATE FMCD FACD FDEP FAMN FAMP FAMK"
+  writeLines(c(
+    "*SYNTHETIC FILEX",
+    "*TREATMENTS",
+    "@N R O C TNAME....................",
+    " 1 1 0 0 CONTROL",
+    "*PLANTING DETAILS",
+    p_hdr,
+    .test_row(p_hdr, list(P = 1, PDATE = 21150, EDATE = -99, PPOP = 30.0, PPOE = 30.0,
+                          PLME = "S", PLDS = "R", PLRS = 50.0, PLRD = -99, PLDP = 3.0)),
+    .test_row(p_hdr, list(P = 2, PDATE = 21151, EDATE = -99, PPOP = 31.0, PPOE = 31.0,
+                          PLME = "S", PLDS = "R", PLRS = 55.0, PLRD = -99, PLDP = 3.5)),
+    "*INITIAL CONDITIONS",
+    c_hdr,
+    .test_row(c_hdr, list(C = 1, PCR = 100, ICDAT = 21140, ICBL = 5,
+                          SH2O = ".200", SNH4 = ".010", SNO3 = 1.20)),
+    .test_row(c_hdr, list(C = 1, PCR = 100, ICDAT = 21140, ICBL = 30,
+                          SH2O = ".250", SNH4 = ".020", SNO3 = 1.40)),
+    "*IRRIGATION AND WATER MANAGEMENT",
+    i_hdr,
+    .test_row(i_hdr, list(I = 1, IDATE = 21155, IROP = "IR001", IRVAL = 10.0)),
+    .test_row(i_hdr, list(I = 1, IDATE = 21170, IROP = "IR001", IRVAL = 15.0)),
+    "*FERTILIZERS (INORGANIC)",
+    f_hdr,
+    .test_row(f_hdr, list(F = 1, FDATE = 21156, FMCD = "FE001", FACD = "AP001",
+                          FDEP = 5.0, FAMN = 30.0, FAMP = 0.0, FAMK = 0.0))
+  ), path)
+}
+
+test_that("edit_filex supports generic FileX sections, row selectors, codes, and initial conditions", {
+  f <- tempfile(fileext = ".HMX")
+  .write_synthetic_filex(f)
+  edit_filex(
+    f,
+    list(
+      PPOP = 42.0,
+      row2_spacing = list(field = "PLRS", value = 44.0, row = 2L, required = TRUE),
+      irrig_code = list(section = "IRRIGATION", field = "IROP", value = "IR005",
+                        type = "code", row = 1L, required = TRUE),
+      irrig_amount = list(section = "IRRIGATION", field = "IRVAL", value = 2.0,
+                          op = "mult", row = 2L, required = TRUE),
+      fert_n = list(section = "FERTILIZERS", header_prefix = "@F", field = "FAMN",
+                    value = 45.0, required = TRUE)
+    ),
+    list(
+      initial_soil_water_mult = list(value = 1.5, required = TRUE),
+      soil_nh4 = list(field = "SNH4", value = 0.08, row = 1L, required = TRUE),
+      soil_no3_add = list(field = "SNO3", value = 0.10, op = "add", required = TRUE)
+    )
+  )
+  lines <- readLines(f, warn = FALSE)
+
+  expect_equal(as.numeric(.test_cell(lines, "*PLANTING DETAILS", "@P", "PPOP", 1L)), 42.0)
+  expect_equal(as.numeric(.test_cell(lines, "*PLANTING DETAILS", "@P", "PPOP", 2L)), 42.0)
+  expect_equal(as.numeric(.test_cell(lines, "*PLANTING DETAILS", "@P", "PLRS", 1L)), 50.0)
+  expect_equal(as.numeric(.test_cell(lines, "*PLANTING DETAILS", "@P", "PLRS", 2L)), 44.0)
+
+  expect_equal(as.numeric(.test_cell(lines, "*INITIAL CONDITIONS", "@C", "SH2O", 1L)), 0.3, tolerance = 1e-9)
+  expect_equal(as.numeric(.test_cell(lines, "*INITIAL CONDITIONS", "@C", "SH2O", 2L)), 0.375, tolerance = 1e-9)
+  expect_equal(as.numeric(.test_cell(lines, "*INITIAL CONDITIONS", "@C", "SNH4", 1L)), 0.08, tolerance = 1e-9)
+  expect_equal(as.numeric(.test_cell(lines, "*INITIAL CONDITIONS", "@C", "SNH4", 2L)), 0.02, tolerance = 1e-9)
+  expect_equal(as.numeric(.test_cell(lines, "*INITIAL CONDITIONS", "@C", "SNO3", 1L)), 1.3, tolerance = 1e-9)
+  expect_equal(as.numeric(.test_cell(lines, "*INITIAL CONDITIONS", "@C", "SNO3", 2L)), 1.5, tolerance = 1e-9)
+
+  expect_equal(.test_cell(lines, "*IRRIGATION", "@I", "IROP", 1L), "IR005")
+  expect_equal(.test_cell(lines, "*IRRIGATION", "@I", "IROP", 2L), "IR001")
+  expect_equal(as.numeric(.test_cell(lines, "*IRRIGATION", "@I", "IRVAL", 1L)), 10.0)
+  expect_equal(as.numeric(.test_cell(lines, "*IRRIGATION", "@I", "IRVAL", 2L)), 30.0)
+  expect_equal(as.numeric(.test_cell(lines, "*FERTILIZERS", "@F", "FAMN", 1L)), 45.0)
+})
+
+test_that("edit_filex required generic fields fail loudly", {
+  f <- tempfile(fileext = ".HMX")
+  .write_synthetic_filex(f)
+  expect_error(
+    edit_filex(
+      f,
+      list(bad = list(section = "IRRIGATION", field = "NOT_A_FIELD", value = 1, required = TRUE)),
+      list()
+    ),
+    "NOT_A_FIELD"
+  )
+})

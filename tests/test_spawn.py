@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from dssatcalibrator.config import load_config, crop_for, active_parameters, resolve_exe
-from dssatcalibrator.spawn import spawn_and_run, parse_treatments
+from dssatcalibrator.spawn import spawn_and_run, parse_treatments, theta_hash
 
 REPO = Path(__file__).resolve().parents[1]
 HEMP_CFG = REPO / "config_hemp.yaml"
@@ -25,6 +25,12 @@ def hemp_setup(hemp_dir):
 def test_parse_treatments(hemp_dir):
     trts = parse_treatments(hemp_dir / "YUKU2101.HMX")
     assert trts == [1, 2, 3, 4]
+
+
+def test_theta_hash_supports_filex_code_values():
+    assert theta_hash({"irrig_code": "IR004", "x": 1.0}) == "31684502a7"
+    assert theta_hash({"x": 1, "irrig_code": "IR004"}) == "31684502a7"
+    assert theta_hash({"irrig_code": "IR005", "x": 1.0}) != "31684502a7"
 
 
 def test_spawn_default_reproduces_smoke(hemp_setup, tmp_path):

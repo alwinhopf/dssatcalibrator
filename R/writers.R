@@ -43,6 +43,25 @@
   v
 }
 
+.is_numeric_value <- function(value) {
+  v <- suppressWarnings(as.numeric(value))
+  length(v) == 1L && !is.na(v) && !isTRUE(is.logical(value))
+}
+
+.fmt_filex_value <- function(value, width, old_cell = "", force_text = FALSE) {
+  if (!force_text && .is_numeric_value(value)) return(.fmt(as.numeric(value), width))
+  text <- trimws(as.character(value))
+  if (nchar(text) > width) {
+    stop(sprintf("FileX text value '%s' does not fit in %d columns.", text, width))
+  }
+  align_left <- nzchar(old_cell) && identical(sub("\\s+$", "", old_cell), trimws(old_cell))
+  if (align_left) sprintf("%-*s", width, text) else sprintf("%*s", width, text)
+}
+
+.seq_if <- function(from, to) {
+  if (from <= to) seq.int(from, to) else integer(0)
+}
+
 # Python line[lo:hi] (0-indexed, half-open), tolerant of short lines.
 .py_slice <- function(line, lo, hi) {
   n <- nchar(line)
@@ -125,6 +144,104 @@ parse_header_boundaries <- function(header) {
     fmap[[name]] <- c(start, sp$end0[i])
   }
   fmap
+}
+
+.filex_is_data <- function(ln) {
+  t <- trimws(ln)
+  nzchar(t) && !grepl("^[!@*]", t) && grepl("^[-+]?([0-9]|\\.[0-9])", t)
+}
+
+.filex_section_bounds <- function(lines, section) {
+  key <- toupper(section)
+  start <- which(startsWith(trimws(lines, which = "left"), "*") &
+                   grepl(key, toupper(lines), fixed = TRUE))
+  if (length(start) == 0) return(NULL)
+  start <- start[1]
+  end <- length(lines) + 1L
+  if (start < length(lines)) {
+    nxt <- which(startsWith(lines[(start + 1L):length(lines)], "*"))
+    if (length(nxt) > 0) end <- start + nxt[1]
+  }
+  c(start, end)
+}
+
+.normalize_filex_update <- function(name, spec) {
+  if (is.list(spec)) out <- spec else out <- list(field = name, value = spec)
+  if (is.null(out$field)) out$field <- out$dssat %||% out$filex_field %||% name
+  if (is.null(out$op)) out$op <- "set"
+  out
+}
+
+.apply_filex_section_updates <- function(lines, updates) {
+  for (upd in updates) {
+    section <- upd$section %||% "PLANTING DETAILS"
+    bounds <- .filex_section_bounds(lines, section)
+    if (is.null(bounds)) {
+      if (isTRUE(upd$required)) stop(sprintf("FileX section '%s' not found.", section))
+      next
+    }
+    start <- bounds[1]; end <- bounds[2]
+    header_prefix <- upd$header_prefix %||% ""
+    field <- as.character(upd$field)
+    raw_value <- upd$value
+    op <- tolower(as.character(upd$op %||% "set"))
+    force_text <- tolower(as.character(upd$type %||% upd$format %||% "")) %in%
+      c("text", "str", "string", "raw", "code")
+    row_selector <- upd$row
+    treatment <- upd$treatment %||% upd$trt %||% upd$trtno
+    header_idx <- NA_integer_
+    for (i in .seq_if(start + 1L, end - 1L)) {
+      stripped <- trimws(lines[i], which = "left")
+      if (!startsWith(stripped, "@")) next
+      if (nzchar(header_prefix) && !startsWith(stripped, header_prefix)) next
+      fmap <- parse_header_boundaries(lines[i])
+      if (field %in% names(fmap)) { header_idx <- i; break }
+    }
+    if (is.na(header_idx)) {
+      if (isTRUE(upd$required)) stop(sprintf("FileX field '%s' not found in section '%s'.", field, section))
+      next
+    }
+    fmap <- parse_header_boundaries(lines[header_idx])
+    b <- fmap[[field]]; lo <- b[1]; hi <- b[2]
+    last_end <- max(vapply(fmap, function(x) x[2], numeric(1)))
+    matched <- FALSE
+    data_row <- 0L
+    for (i in .seq_if(header_idx + 1L, end - 1L)) {
+      ln <- lines[i]
+      if (startsWith(trimws(ln, which = "left"), "@")) break
+      if (!.filex_is_data(ln)) next
+      data_row <- data_row + 1L
+      if (!is.null(row_selector) && as.integer(row_selector) != data_row) next
+      if (!is.null(treatment) && "TRT" %in% names(fmap)) {
+        tb <- fmap[["TRT"]]
+        trt_val <- suppressWarnings(as.integer(as.numeric(trimws(.py_slice(ln, tb[1], tb[2])))))
+        if (is.na(trt_val) || trt_val != as.integer(treatment)) next
+      }
+      chars <- .chars(.ljust(ln, last_end))
+      old_cell <- paste(chars[(lo + 1L):hi], collapse = "")
+      old <- .parse_cell(old_cell)
+      if (op == "set") {
+        new_val <- raw_value
+      } else {
+        if (is.na(old)) next
+        if (!.is_numeric_value(raw_value)) {
+          stop(sprintf("FileX operation '%s' for field '%s' requires a numeric value.", op, field))
+        }
+        value <- as.numeric(raw_value)
+        if (op %in% c("mult", "multiply")) new_val <- old * value
+        else if (op == "add") new_val <- old + value
+        else stop(sprintf("Unsupported FileX operation '%s' for field '%s'.", op, field))
+      }
+      if (isTRUE(upd$clip_01)) new_val <- min(max(as.numeric(new_val), 0.0), 1.0)
+      chars <- .splice(chars, lo, hi, .fmt_filex_value(new_val, hi - lo, old_cell, force_text = force_text))
+      lines[i] <- paste(chars, collapse = "")
+      matched <- TRUE
+    }
+    if (isTRUE(upd$required) && !matched) {
+      stop(sprintf("No FileX data rows matched field '%s' in section '%s'.", field, section))
+    }
+  }
+  lines
 }
 
 # shared row-editor for tabular genotype files (.CUL/.ECO)
@@ -210,27 +327,70 @@ edit_filex <- function(filex_path, mgt_fields = list(), init_updates = list()) {
   lines <- readLines(filex_path, warn = FALSE)
   is_data <- function(ln) { t <- trimws(ln); nzchar(t) && grepl("^[0-9]", t) }
 
+  generic_updates <- list()
+  planting_fields <- list()
   if (length(mgt_fields) > 0) {
+    for (name in names(mgt_fields)) {
+      spec <- mgt_fields[[name]]
+      upd <- .normalize_filex_update(name, spec)
+      generic_keys <- c("section", "header_prefix", "row", "treatment", "trt",
+                        "trtno", "clip_01", "required", "type", "format")
+      use_generic <- is.list(spec) &&
+        (any(generic_keys %in% names(upd)) || tolower(as.character(upd$op %||% "set")) != "set")
+      if (use_generic) {
+        upd$section <- upd$section %||% "PLANTING DETAILS"
+        generic_updates[[length(generic_updates) + 1L]] <- upd
+      } else {
+        planting_fields[[upd$field]] <- upd$value
+      }
+    }
+  }
+  init_scalar_updates <- list()
+  if (length(init_updates) > 0) {
+    for (name in names(init_updates)) {
+      spec <- init_updates[[name]]
+      upd <- .normalize_filex_update(name, spec)
+      if (name == "initial_soil_water_mult" && !is.list(spec)) {
+        init_scalar_updates[[name]] <- spec
+      } else if (is.list(spec)) {
+        upd$section <- upd$section %||% "INITIAL CONDITIONS"
+        if (name == "initial_soil_water_mult") {
+          if (!any(c("field", "dssat", "filex_field") %in% names(spec))) upd$field <- "SH2O"
+          if (!("op" %in% names(spec))) upd$op <- "mult"
+          upd$clip_01 <- upd$clip_01 %||% TRUE
+        }
+        generic_updates[[length(generic_updates) + 1L]] <- upd
+      } else {
+        init_scalar_updates[[name]] <- spec
+      }
+    }
+  }
+
+  if (length(generic_updates) > 0) {
+    lines <- .apply_filex_section_updates(lines, generic_updates)
+  }
+
+  if (length(planting_fields) > 0) {
     psec <- which(startsWith(lines, "*PLANTING DETAILS"))
     if (length(psec) > 0) {
       psec <- psec[1]; header_idx <- NA_integer_
-      for (i in (psec + 1L):length(lines)) {
+      for (i in .seq_if(psec + 1L, length(lines))) {
         if (startsWith(lines[i], "*")) break
         if (startsWith(trimws(lines[i], which = "left"), "@P")) { header_idx <- i; break }
       }
       if (!is.na(header_idx)) {
         fmap <- parse_header_boundaries(lines[header_idx])
         last_end <- max(vapply(fmap, function(b) b[2], numeric(1)))
-        for (i in (header_idx + 1L):length(lines)) {
+        for (i in .seq_if(header_idx + 1L, length(lines))) {
           ln <- lines[i]
           if (startsWith(ln, "*") || startsWith(trimws(ln, which = "left"), "@")) break
           if (startsWith(trimws(ln, which = "left"), "!") || !nzchar(trimws(ln))) next
           if (is_data(ln)) {
             chars <- .chars(.ljust(ln, last_end))
-            for (name in names(mgt_fields)) {
+            for (name in names(planting_fields)) {
               if (name %in% names(fmap)) {
                 b <- fmap[[name]]
-                chars <- .splice(chars, b[1], b[2], .fmt(as.numeric(mgt_fields[[name]]), b[2] - b[1]))
+                chars <- .splice(chars, b[1], b[2], .fmt(as.numeric(planting_fields[[name]]), b[2] - b[1]))
               }
             }
             lines[i] <- paste(chars, collapse = "")
@@ -240,12 +400,12 @@ edit_filex <- function(filex_path, mgt_fields = list(), init_updates = list()) {
     }
   }
 
-  if (length(init_updates) > 0 && !is.null(init_updates[["initial_soil_water_mult"]])) {
-    mult <- as.numeric(init_updates[["initial_soil_water_mult"]])
+  if (length(init_scalar_updates) > 0 && !is.null(init_scalar_updates[["initial_soil_water_mult"]])) {
+    mult <- as.numeric(init_scalar_updates[["initial_soil_water_mult"]])
     isec <- which(startsWith(lines, "*INITIAL CONDITIONS"))
     if (length(isec) > 0) {
       isec <- isec[1]; header_idx <- NA_integer_
-      for (i in (isec + 1L):length(lines)) {
+      for (i in .seq_if(isec + 1L, length(lines))) {
         if (startsWith(lines[i], "*")) break
         if (startsWith(trimws(lines[i], which = "left"), "@C") && grepl("SH2O", lines[i])) {
           header_idx <- i; break
@@ -255,7 +415,7 @@ edit_filex <- function(filex_path, mgt_fields = list(), init_updates = list()) {
         fmap <- parse_header_boundaries(lines[header_idx])
         if ("SH2O" %in% names(fmap)) {
           b <- fmap[["SH2O"]]; lo <- b[1]; hi <- b[2]
-          for (i in (header_idx + 1L):length(lines)) {
+          for (i in .seq_if(header_idx + 1L, length(lines))) {
             ln <- lines[i]
             if (startsWith(ln, "*") || startsWith(trimws(ln, which = "left"), "@")) break
             if (startsWith(trimws(ln, which = "left"), "!") || !nzchar(trimws(ln))) next
@@ -361,7 +521,7 @@ edit_soil <- function(sol_path, profile_id, layer_mults = list(), profile_sets =
   }
 
   if (length(profile_sets) > 0) {
-    for (j in start:(end - 1L)) {
+    for (j in .seq_if(start, end - 1L)) {
       ln <- lines[j]
       if (startsWith(trimws(ln, which = "left"), "@") && grepl("SALB", ln) && !grepl("SDUL", ln)) {
         fmap <- parse_header_boundaries(ln)
@@ -380,11 +540,11 @@ edit_soil <- function(sol_path, profile_id, layer_mults = list(), profile_sets =
   }
 
   if (length(layer_mults) > 0) {
-    for (j in start:(end - 1L)) {
+    for (j in .seq_if(start, end - 1L)) {
       ln <- lines[j]
       if (startsWith(trimws(ln, which = "left"), "@") && grepl("SDUL", ln) && grepl("SLB", ln)) {
         fmap <- parse_header_boundaries(ln)
-        for (k in (j + 1L):(end - 1L)) {
+        for (k in .seq_if(j + 1L, end - 1L)) {
           row <- lines[k]
           lstrip <- trimws(row, which = "left")
           if (startsWith(lstrip, "@") || startsWith(lstrip, "*")) break
@@ -426,7 +586,7 @@ edit_weather <- function(wth_path, ops) {
     s <- formatC(value, format = "f", digits = 1)
     if (nchar(s) <= width) sprintf("%*s", width, s) else .fmt(value, width)
   }
-  for (i in (hdr_idx + 1L):length(lines)) {
+  for (i in .seq_if(hdr_idx + 1L, length(lines))) {
     ln <- lines[i]
     lstrip <- trimws(ln, which = "left")
     if (!nzchar(trimws(ln)) || grepl("^[@*!$]", lstrip)) next

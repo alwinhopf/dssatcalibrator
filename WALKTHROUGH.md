@@ -132,7 +132,7 @@ real-DSSAT sweeps before a full calibration:
 python run_impact_atlas.py config_hemp.yaml \
   --experiments UFCI2101 \
   --groups genetic_cultivar genetic_ecotype genetic_species management initial_conditions soil weather \
-  --discover-genotype --allow-species --max-per-group 1 --cores 2 --no-long
+  --discover-genotype --allow-species --max-per-group 1 --grid-points 3 --cores 2 --no-long
 ```
 
 From R, call the same real-runner:
@@ -146,20 +146,29 @@ atlas <- run_impact_atlas(
   discover_genotype = TRUE,
   allow_species = TRUE,
   max_per_group = 1,
+  grid_points = 3,
   num_cores = 2,
   write_long = FALSE
 )
 ```
 
-The atlas writes `impact_summary.md`, `run_manifest.csv`, `file_manifest.csv`,
-`parameter_catalog.csv`, `score_effects.csv`, `parameter_impact_summary.csv`,
-`output_impact_summary.csv`, `parameter_output_effects.csv`, and
-`capability_map.md`. If you keep the full long table, it also writes
-`outputs_long.csv` or `outputs_long.csv.gz`; for broad or longer sweeps, prefer
-`--no-long` / `write_long = FALSE` until you know you need the row-level table.
-Use the manifest to spot failed input edits, the summary tables to rank which
+The atlas writes `impact_summary.md`, `run_manifest.csv`, `run_manifest.json`,
+`failed_runs.csv`, `file_manifest.csv`, `parameter_catalog.csv`,
+`score_effects.csv`, `parameter_impact_summary.csv`, `output_impact_summary.csv`,
+`parameter_output_effects.csv`, `capability_map.md`, and per-group PNGs under
+`plots/`. If you keep the full long table, it also writes `outputs_long.csv` or
+`outputs_long.csv.gz`; for broad or longer sweeps, prefer `--no-long` /
+`write_long = FALSE` until you know you need the row-level table. Use the
+manifests to spot failed input edits, the summary tables to rank which
 parameters move the objective or DSSAT outputs, and the capability map to decide
 what should be upstreamed into `dssatengine` or `dssatutils`.
+
+FileX parameters can target any section/field, including row-scoped management
+and starting-condition edits. For example, a management parameter can set
+`section: IRRIGATION`, `field: IRVAL`, `op: mult`, and `row: 2`, while an
+initial-condition parameter can set `field: SNH4` or multiply `SH2O` via
+`initial_soil_water_mult`. Text/code fields are supported with `type: code`;
+use `required: true` when a missing section or column should fail loudly.
 
 ### 4d. Which engine / pipeline (the one knob that matters most)
 

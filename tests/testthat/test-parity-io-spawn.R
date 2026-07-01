@@ -46,6 +46,13 @@ test_that("theta_hash matches Python (identical SHA-1 of identical blob)", {
   }
 })
 
+test_that("theta_hash supports FileX code values", {
+  skip_if_not_installed("digest")
+  expect_equal(theta_hash(list(irrig_code = "IR004", x = 1.0)), "31684502a7")
+  expect_equal(theta_hash(list(x = 1L, irrig_code = "IR004")), "31684502a7")
+  expect_false(theta_hash(list(irrig_code = "IR005", x = 1.0)) == "31684502a7")
+})
+
 test_that("write_dssbatch and normalize_treatments match Python", {
   gold <- read_fix("spawn_helpers.json")
   d <- tempfile(); dir.create(d)

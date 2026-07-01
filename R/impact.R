@@ -42,6 +42,7 @@
                                discover_genotype = FALSE,
                                allow_species = FALSE,
                                max_parameters = NULL, max_per_group = NULL,
+                               grid_points = NULL,
                                output_files = NULL, num_cores = NULL,
                                dssat_exe = NULL, dssat_dir = NULL,
                                hemp_dir = NULL, keep_existing = FALSE,
@@ -60,6 +61,7 @@
   if (isTRUE(allow_species)) args <- c(args, "--allow-species")
   if (!is.null(max_parameters)) args <- c(args, "--max-parameters", as.character(as.integer(max_parameters)))
   if (!is.null(max_per_group)) args <- c(args, "--max-per-group", as.character(as.integer(max_per_group)))
+  if (!is.null(grid_points)) args <- c(args, "--grid-points", as.character(as.integer(grid_points)))
   args <- .impact_add_values(args, "--outputs", output_files)
   if (!is.null(num_cores)) args <- c(args, "--cores", as.character(as.integer(num_cores)))
   if (!is.null(dssat_exe)) args <- c(args, "--dssat-exe", dssat_exe)
@@ -102,6 +104,8 @@
 #' @param allow_species Explicitly allow `.SPE` species edits for species sweeps.
 #' @param max_parameters Optional total parameter limit for smoke tests.
 #' @param max_per_group Optional per-group parameter limit for smoke tests.
+#' @param grid_points Optional number of internal evenly spaced parameter values
+#'   between each parameter's min and max.
 #' @param output_files Optional DSSAT `*.OUT` files to collect.
 #' @param num_cores Override `calibrator.num_cores`.
 #' @param dssat_exe,dssat_dir,hemp_dir Optional path overrides.
@@ -127,6 +131,7 @@ run_impact_atlas <- function(config, output_dir = NULL,
                              discover_genotype = FALSE,
                              allow_species = FALSE,
                              max_parameters = NULL, max_per_group = NULL,
+                             grid_points = NULL,
                              output_files = NULL, num_cores = NULL,
                              dssat_exe = NULL, dssat_dir = NULL,
                              hemp_dir = NULL, keep_existing = FALSE,
@@ -160,7 +165,8 @@ run_impact_atlas <- function(config, output_dir = NULL,
     discover_genotype = discover_genotype,
     allow_species = allow_species,
     max_parameters = max_parameters,
-    max_per_group = max_per_group, output_files = output_files,
+    max_per_group = max_per_group, grid_points = grid_points,
+    output_files = output_files,
     num_cores = num_cores, dssat_exe = dssat_exe, dssat_dir = dssat_dir,
     hemp_dir = hemp_dir, keep_existing = keep_existing, write_long = write_long,
     compress_long = compress_long, effect_tolerance = effect_tolerance,

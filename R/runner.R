@@ -15,7 +15,11 @@ resolve_cores <- function(num_cores) {
   max(1L, (parallel::detectCores() %||% 2L) - 2L)
 }
 
-`%||%` <- function(a, b) if (is.null(a) || is.na(a)) b else a
+`%||%` <- function(a, b) {
+  if (is.null(a)) return(b)
+  if (length(a) == 1L && is.atomic(a) && is.na(a)) return(b)
+  a
+}
 
 #' Run a list of spawn jobs and return their results in job order.
 #'

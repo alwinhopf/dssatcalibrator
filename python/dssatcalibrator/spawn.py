@@ -31,7 +31,15 @@ BATCH_FILE = "DSSBatch.V48"
 
 
 def theta_hash(theta: dict[str, float]) -> str:
-    blob = json.dumps({k: round(float(v), 6) for k, v in sorted(theta.items())})
+    def normalize(value):
+        if isinstance(value, bool):
+            return value
+        try:
+            return round(float(value), 6)
+        except (TypeError, ValueError):
+            return str(value)
+
+    blob = json.dumps({k: normalize(v) for k, v in sorted(theta.items())})
     return hashlib.sha1(blob.encode()).hexdigest()[:10]
 
 
@@ -305,11 +313,53 @@ def spawn_and_run(
     # edit management and initial conditions in FileX
     mgt_updates = groups.get("management", {})
     init_updates = groups.get("initial_conditions", {})
+    def filex_update_from_spec(name, val, spec, default_section):
+        if spec is None:
+            return val
+        section = spec.get("section", spec.get("filex_section"))
+        field = spec.get("field", spec.get("filex_field", spec.get("dssat")))
+        is_soil_water_mult = default_section == "INITIAL CONDITIONS" and name == "initial_soil_water_mult"
+        if is_soil_water_mult and not field:
+            field = "SH2O"
+        generic_keys = {
+            "header_prefix", "row", "treatment", "trt", "trtno",
+            "clip_01", "required", "type", "format",
+        }
+        if not section and field:
+            uses_generic = bool(generic_keys.intersection(spec)) or str(spec.get("op", "set")).lower() != "set"
+            if default_section == "PLANTING DETAILS" and not uses_generic:
+                return val
+            out = {
+                "section": default_section,
+                "field": field,
+                "value": val,
+                "op": spec.get("op", "mult" if is_soil_water_mult else "set"),
+            }
+            if is_soil_water_mult and "clip_01" not in spec:
+                out["clip_01"] = True
+            for key in generic_keys:
+                if key in spec:
+                    out[key] = spec[key]
+            return out
+        out = {
+            "section": section or default_section,
+            "field": field or name,
+            "value": val,
+            "op": spec.get("op", "mult" if is_soil_water_mult else "set"),
+        }
+        if is_soil_water_mult and "clip_01" not in spec:
+            out["clip_01"] = True
+        for key in ("header_prefix", "row", "treatment", "trt", "trtno", "clip_01", "required", "type", "format"):
+            if key in spec:
+                out[key] = spec[key]
+        return out
+
     mgt_fields = {}
     for name, val in mgt_updates.items():
         spec = next((s for s in param_specs if s.get("base_name", s["name"]) == name), None)
-        if spec and "dssat" in spec:
-            mgt_fields[spec["dssat"]] = val
+        if spec:
+            key = spec.get("dssat", spec.get("field", spec.get("filex_field", name)))
+            mgt_fields[key] = filex_update_from_spec(name, val, spec, "PLANTING DETAILS")
     # per-experiment planting date override (e.g. from farm-management software):
     # set PDATE directly rather than calibrating it. cfg["_planting_dates"] maps
     # exp_id -> a date; written as the DSSAT YYDDD code.
@@ -319,7 +369,15 @@ def spawn_and_run(
         mgt_fields["PDATE"] = int(f"{ts.year % 100:02d}{ts.dayofyear:03d}")
     if mgt_fields or init_updates:
         from .writers import edit_filex
-        edit_filex(run_dir / filex_name, mgt_fields, init_updates)
+        init_fields = {}
+        for name, val in init_updates.items():
+            spec = next((s for s in param_specs if s.get("base_name", s["name"]) == name), None)
+            if spec:
+                key = spec.get("dssat", spec.get("field", spec.get("filex_field", name)))
+                init_fields[key] = filex_update_from_spec(name, val, spec, "INITIAL CONDITIONS")
+            else:
+                init_fields[name] = val
+        edit_filex(run_dir / filex_name, mgt_fields, init_fields)
 
     soil_updates = groups.get("soil", {})
     weather_updates = groups.get("weather", {})

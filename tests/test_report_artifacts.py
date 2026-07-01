@@ -15,6 +15,7 @@ def test_make_report_writes_manifest_and_objective_breakdown(tmp_path, monkeypat
         "plot_obs_vs_sim",
         "plot_obs_vs_sim_by_category",
         "plot_fit_bars",
+        "plot_timeseries",
     ):
         monkeypatch.setattr(viz, name, lambda *args, **kwargs: None)
 
@@ -66,3 +67,47 @@ def test_make_report_writes_manifest_and_objective_breakdown(tmp_path, monkeypat
     assert manifest.shape[0] == 2
     assert {"exp_id", "user_var", "weighted_loss", "RMSE"} <= set(breakdown.columns)
     assert breakdown.query("exp_id == 'E2'")["weighted_loss"].iloc[0] == 2.0
+
+
+def test_make_report_falls_back_to_best_spawn_manifest(tmp_path, monkeypatch):
+    for name in (
+        "plot_param_posteriors",
+        "plot_score_funnel",
+        "plot_ess_trajectory",
+        "plot_mcmc_trace",
+        "plot_sensitivity",
+        "plot_obs_vs_sim",
+        "plot_obs_vs_sim_by_category",
+        "plot_fit_bars",
+        "plot_timeseries",
+    ):
+        monkeypatch.setattr(viz, name, lambda *args, **kwargs: None)
+
+    best = SimpleNamespace(
+        residuals=pd.DataFrame(),
+        per_var={},
+        per_exp_var=pd.DataFrame(),
+    )
+    result = SimpleNamespace(
+        cfg={"method": {"bayesian": {"behavioural_quantile": 0.1}}},
+        space=SimpleNamespace(names=["P1"], low=[0.0], high=[2.0], start=[1.0]),
+        design=pd.DataFrame({"sample_id": [0], "P1": [1.25], "score": [1.0], "loglik": [-1.0], "n_obs": [1]}),
+        best_theta={"P1": 1.25},
+        best=best,
+        glue=None,
+        nsga2=None,
+        extras={},
+    )
+    best_spawns = {
+        "E1": SimpleNamespace(status="success", message="", run_dir="runs/E1"),
+        "E2": SimpleNamespace(status="success", message="", run_dir="runs/E2"),
+    }
+
+    paths = viz.make_report(result, tmp_path, best_spawns=best_spawns)
+
+    manifest = pd.read_csv(paths["manifest"])
+    assert manifest["sample_id"].tolist() == ["best", "best"]
+    assert manifest["exp_id"].tolist() == ["E1", "E2"]
+    assert manifest["status"].tolist() == ["success", "success"]
+    assert {"theta_hash", "theta_json", "theta_P1"} <= set(manifest.columns)
+    assert (tmp_path / "manifest.json").exists()

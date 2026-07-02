@@ -67,7 +67,8 @@ def test_run_smc_pf_synthetic(mock_setup_fn, mock_spawn_fn):
             "seed": 42,
             "workdir": "fake_workdir",
             "dssat_dir": "fake_dssat",
-            "num_cores": 1
+            "num_cores": 1,
+            "cache_evaluations": False
         },
         "method": {
             "sample": {"engine": "lhs", "n": 8},

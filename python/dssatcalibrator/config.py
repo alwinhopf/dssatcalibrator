@@ -29,6 +29,9 @@ DEFAULTS: dict[str, Any] = {
         "dssat_dir": "C:/DSSAT48",
         "num_cores": 0,
         "cache_spawns": True,
+        "cache_evaluations": True,
+        "evaluation_cache_dir": "",
+        "evaluation_cache_salt": "",
         "keep_run_dirs": False,
     },
     "method": {

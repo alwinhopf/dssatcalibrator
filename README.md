@@ -78,6 +78,21 @@ Rscript -e "library(dssatcalibrator); run_impact_atlas('config_hemp.yaml', exper
 
 Calibration outputs (`design.csv`, `best_theta.json`, `objective_breakdown.csv`, `manifest.csv`/`.json`, and summary tables) are written to `results/<calibrator_name>/` or custom directory paths; figures go under `figures/<calibrator_name>/` by default. The impact atlas additionally writes `run_manifest.json`, `failed_runs.csv`, per-group plots under `plots/`, and broad DSSAT output effect summaries.
 
+## Cloud runs (SageMaker / EKS)
+
+Large calibrations can run from the same YAML config in AWS. See
+[`../dssatdocker/README.md`](../dssatdocker/README.md) for the end-to-end workflow:
+
+- build/push a DSSAT calibrator image to ECR,
+- stage `config.yaml`, `DSSAT48/`, and optional `dssat_templates/` in S3,
+- run directly on a SageMaker compute instance,
+- submit one large SageMaker Processing job, or
+- render an EKS Indexed Job for many independent calibration shards.
+
+The container entrypoint patches only path-like config fields for the cloud
+mounts, then delegates to `run_calibration.py` or `run_calibration.R`, so local
+and cloud runs use the same calibrator implementation and output schema.
+
 ## Testing
 
 Run unit tests via `pytest`:
@@ -150,6 +165,13 @@ are checked to machine precision. Stochastic engines (MCMC, SMC-PF, NSGA-II,
 surrogate) are validated statistically, since RNG streams cannot match bit-for-bit
 across languages.
 
+## R/Python parity note
+
+The SageMaker/EKS files under `../dssatdocker/` are orchestration wrappers. The staging
+launcher is Python because it handles AWS/S3 plumbing, but the container can run
+either `run_calibration.py` or `run_calibration.R` via `--language python|r`.
+This does not add a new calibration algorithm or output schema.
+
 ## Dependencies (R)
 
 R packages: `yaml` (core); plus, per engine, `lhs` + `randtoolbox` (sampling),
@@ -159,4 +181,3 @@ helpers), `mco` (NSGA-II), `DiceKriging`/`ranger` (surrogate), `ggplot2` (figure
 `dssatengine` (execution backend) and `dssatutils` (weather/soil acquisition).
 Pins follow the workspace `DEPENDENCIES.md`: `dssatengine@v0.3.0`,
 `dssatutils@v0.2.0`.
-

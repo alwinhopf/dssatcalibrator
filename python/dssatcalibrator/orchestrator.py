@@ -39,6 +39,7 @@ def _warn_unmatched(obs, cfg: dict) -> None:
 
 from . import objective as obj
 from .config import active_parameters, crop_for, resolve_exe
+from .eval_cache import EvaluationCache
 from .observations import Observations
 from .runner import resolve_cores, run_many
 from .samplers import sample
@@ -97,6 +98,16 @@ def _setup(cfg: dict):
 
 def _score_theta(theta: dict, experiments, *, cfg, crop, specs, run_root, treatments,
                  exe, obs, n_workers) -> obj.ObjectiveResult:
+    cache = EvaluationCache.from_setup(
+        cfg, crop=crop, specs=specs, experiments=list(experiments),
+        treatments={e: treatments[e] for e in experiments}, obs_table=obs.table, exe=exe,
+    )
+    if cache.enabled:
+        key = cache.key(theta, list(experiments))
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
+
     jobs, keys = [], []
     for exp in experiments:
         jobs.append(dict(theta=dict(theta), exp_id=exp, cfg=cfg, crop=crop, param_specs=specs,
@@ -104,7 +115,10 @@ def _score_theta(theta: dict, experiments, *, cfg, crop, specs, run_root, treatm
         keys.append(exp)
     results = run_many(jobs, n_workers=n_workers)
     rmap = {k: r for k, r in zip(keys, results)}
-    return obj.score(rmap, obs.table, cfg)
+    scored = obj.score(rmap, obs.table, cfg)
+    if cache.enabled:
+        cache.put(key, scored)
+    return scored
 
 
 def evaluate_thetas(cfg: dict, thetas: list[dict], *, setup=None, n_workers=None,
@@ -134,13 +148,30 @@ def evaluate_thetas(cfg: dict, thetas: list[dict], *, setup=None, n_workers=None
     if n_workers is None:
         n_workers = resolve_cores(cfg["calibrator"].get("num_cores", 0))
 
-    jobs, idx = [], []
+    cache = EvaluationCache.from_setup(
+        cfg, crop=crop, specs=specs, experiments=experiments,
+        treatments=treatments, obs_table=obs.table, exe=exe,
+    )
+    out: list[obj.ObjectiveResult | None] = [None] * len(thetas)
+    miss_by_key: dict[str, dict] = {}
     for ti, theta in enumerate(thetas):
+        key = cache.key(theta, experiments) if cache.enabled else f"no-cache-{ti}"
+        cached = cache.get(key) if cache.enabled else None
+        if cached is not None:
+            out[ti] = cached
+            continue
+        rec = miss_by_key.setdefault(key, {"theta": dict(theta), "indices": []})
+        rec["indices"].append(ti)
+
+    jobs, idx = [], []
+    miss_keys = list(miss_by_key)
+    for mi, key in enumerate(miss_keys):
+        theta = miss_by_key[key]["theta"]
         for exp in experiments:
             jobs.append(dict(theta=dict(theta), exp_id=exp, cfg=cfg, crop=crop,
                              param_specs=specs, run_root=run_root,
                              treatments=treatments[exp], exe=exe))
-            idx.append((ti, exp))
+            idx.append((mi, exp))
 
     total = len(jobs)
     done = {"n": 0}
@@ -150,12 +181,21 @@ def evaluate_thetas(cfg: dict, thetas: list[dict], *, setup=None, n_workers=None
         if progress and (done["n"] % max(1, total // 20) == 0 or done["n"] == total):
             print(f"  spawns {done['n']}/{total}", flush=True)
 
-    results = run_many(jobs, n_workers=n_workers, on_done=_cb if progress else None)
+    results = run_many(jobs, n_workers=n_workers, on_done=_cb if progress and jobs else None) if jobs else []
 
-    per_theta: list[dict] = [{} for _ in thetas]
-    for (ti, exp), res in zip(idx, results):
-        per_theta[ti][exp] = res
-    return [obj.score(rmap, obs.table, cfg) for rmap in per_theta], setup
+    per_miss: list[dict] = [{} for _ in miss_keys]
+    for (mi, exp), res in zip(idx, results):
+        per_miss[mi][exp] = res
+    for mi, key in enumerate(miss_keys):
+        scored = obj.score(per_miss[mi], obs.table, cfg)
+        if cache.enabled:
+            cache.put(key, scored)
+        for ti in miss_by_key[key]["indices"]:
+            out[ti] = scored
+
+    if any(r is None for r in out):
+        raise RuntimeError("evaluation cache bookkeeping left one or more theta results unresolved")
+    return list(out), setup
 
 
 def evaluate_design(cfg: dict, samples: pd.DataFrame, *, progress=True):
@@ -181,53 +221,87 @@ def evaluate_design(cfg: dict, samples: pd.DataFrame, *, progress=True):
         if progress and (done["n"] % max(1, total_jobs // 20) == 0 or done["n"] == total_jobs):
             print(f"  spawns {done['n']}/{total_jobs}", flush=True)
 
+    cache = EvaluationCache.from_setup(
+        cfg, crop=crop, specs=specs, experiments=experiments,
+        treatments=treatments, obs_table=obs.table, exe=exe,
+    )
+
+    def _record_objective(sid, theta, o):
+        nonlocal best_score, best_obj_res, best_sid
+        if o.score < best_score:
+            best_score = o.score
+            best_obj_res = o
+            best_sid = sid
+        rec = {"sample_id": sid, **theta,
+               "score": o.score, "loglik": o.loglik, "n_obs": len(o.residuals)}
+        rows.append(rec)
+
     for b_start in range(0, len(sample_ids), batch_size):
         batch_ids = sample_ids[b_start : b_start + batch_size]
         jobs, idx = [], []
+        miss_by_key: dict[str, dict] = {}
         
         for sid in batch_ids:
             row = samples.loc[sid]
             theta = space.to_theta(row.to_numpy())
+            key = cache.key(theta, experiments) if cache.enabled else f"no-cache-{sid}"
+            cached = cache.get(key) if cache.enabled else None
+            if cached is not None:
+                _record_objective(sid, theta, cached)
+                for exp in experiments:
+                    spawn_manifest_rows.append({
+                        "sample_id": sid,
+                        "exp_id": exp,
+                        "theta_hash": theta_hash(theta),
+                        "status": "evaluation_cached",
+                        "message": key,
+                        "run_dir": "",
+                        "theta_json": json.dumps({k: (v.item() if hasattr(v, "item") else v) for k, v in theta.items()}, sort_keys=True),
+                        **{f"theta_{k}": v for k, v in theta.items()},
+                    })
+                continue
+            rec = miss_by_key.setdefault(key, {"theta": dict(theta), "sample_ids": []})
+            rec["sample_ids"].append(sid)
+
+        miss_keys = list(miss_by_key)
+        for mi, key in enumerate(miss_keys):
+            theta = miss_by_key[key]["theta"]
             for exp in experiments:
                 jobs.append(dict(theta=dict(theta), exp_id=exp, cfg=cfg, crop=crop, param_specs=specs,
                                  run_root=run_root, treatments=treatments[exp], exe=exe))
-                idx.append((sid, exp))
+                idx.append((mi, exp))
 
         # Run this batch
-        results = run_many(jobs, n_workers=n_workers, on_done=_cb if progress else None)
+        results = run_many(jobs, n_workers=n_workers, on_done=_cb if progress and jobs else None) if jobs else []
 
         # Score this batch
-        per_sample: dict = {}
-        for (sid, exp), res, job in zip(idx, results, jobs):
-            per_sample.setdefault(sid, {})[exp] = res
+        per_miss: dict = {}
+        for (mi, exp), res, job in zip(idx, results, jobs):
+            per_miss.setdefault(mi, {})[exp] = res
             theta = dict(getattr(res, "theta", {}) or job["theta"])
             theta_jsonable = {k: (v.item() if hasattr(v, "item") else v) for k, v in theta.items()}
-            spawn_manifest_rows.append({
-                "sample_id": sid,
-                "exp_id": exp,
-                "theta_hash": theta_hash(theta) if theta else "",
-                "status": getattr(res, "status", ""),
-                "message": getattr(res, "message", ""),
-                "run_dir": str(getattr(res, "run_dir", "")),
-                "theta_json": json.dumps(theta_jsonable, sort_keys=True),
-                **{f"theta_{k}": v for k, v in theta.items()},
-            })
+            for sid in miss_by_key[miss_keys[mi]]["sample_ids"]:
+                spawn_manifest_rows.append({
+                    "sample_id": sid,
+                    "exp_id": exp,
+                    "theta_hash": theta_hash(theta) if theta else "",
+                    "status": getattr(res, "status", ""),
+                    "message": getattr(res, "message", ""),
+                    "run_dir": str(getattr(res, "run_dir", "")),
+                    "theta_json": json.dumps(theta_jsonable, sort_keys=True),
+                    **{f"theta_{k}": v for k, v in theta.items()},
+                })
 
-        for sid, rmap in per_sample.items():
+        for mi, rmap in per_miss.items():
+            key = miss_keys[mi]
             o = obj.score(rmap, obs.table, cfg)
-            
-            # Check if this is the best so far
-            if o.score < best_score:
-                best_score = o.score
-                best_obj_res = o
-                best_sid = sid
-
-            rec = {"sample_id": sid, **space.to_theta(samples.loc[sid].to_numpy()),
-                   "score": o.score, "loglik": o.loglik, "n_obs": len(o.residuals)}
-            rows.append(rec)
+            if cache.enabled:
+                cache.put(key, o)
+            for sid in miss_by_key[key]["sample_ids"]:
+                _record_objective(sid, space.to_theta(samples.loc[sid].to_numpy()), o)
             
         # Free memory of this batch
-        del jobs, idx, results, per_sample
+        del jobs, idx, results, per_miss
         gc.collect()
 
     # To satisfy lookups in calibrate() and validate_loeo(), make sure the best
@@ -1020,4 +1094,3 @@ def combined_mode(cfg: dict, *, progress=True) -> dict:
         "calibration": cal_result,
         "assimilation": assim_results
     }
-

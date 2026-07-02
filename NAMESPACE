@@ -33,5 +33,6 @@ S3method(src_quality_filter, default)
 S3method(src_quality_filter, sentinel2_lai)
 
 importFrom(stats, dnorm, dlnorm, pnorm, plnorm, qnorm, runif, rlnorm,
-           rnorm, cor, sd, optim, quantile, var, complete.cases)
+           rnorm, cor, sd, optim, quantile, var, complete.cases,
+           aggregate, approx, predict, setNames)
 importFrom(utils, modifyList, read.csv, write.csv, head, tail)

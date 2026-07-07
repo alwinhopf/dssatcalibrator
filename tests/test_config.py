@@ -1,9 +1,13 @@
 """Tests for config loading and active-parameter enumeration."""
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
 
 from dssatcalibrator import config as cfgmod
+from dssatcalibrator.runner import resolve_cores
+from dssatcalibrator.samplers import sample
+from dssatcalibrator.spaces import ParameterSpace
 
 REPO = Path(__file__).resolve().parents[1]
 HEMP_CFG = REPO / "config_hemp.yaml"
@@ -68,17 +72,95 @@ def test_active_parameters():
     cfg = cfgmod.load_config(HEMP_CFG)
     active = cfgmod.active_parameters(cfg)
     names = {p["name"] for p in active}
-    # updated with additional cultivar and ecotype parameters
-    assert names == {"CSDL", "PPSEN", "EM-FL", "FL-SD", "SD-PM", "LFMAX", "SLAVR", "SIZLF", "WTPSD", "SFDUR", "SDPDV", "PL-EM", "RHGHT"}
+    assert names == {
+        "CSDL", "PPSEN", "EM-FL", "FL-SH", "FL-SD", "SD-PM", "FL-LF",
+        "LFMAX", "SLAVR", "SIZLF", "XFRT", "WTPSD", "SFDUR", "SDPDV",
+        "PODUR", "THRSH", "THVAR", "PL-EM", "EM-V1", "V1-JU", "JU-R0",
+        "PM09", "LNGSH", "FL-VS", "TRIFL", "RWDTH", "RHGHT", "R1PPO",
+        "OPTBI", "SLOBI",
+    }
     for p in active:
         assert p["min"] < p["max"]
         assert p["min"] <= p["start"] <= p["max"], p["name"]
+
+
+def test_cultivar_scoped_parameters_expand_to_configured_cultivars():
+    cfg = deepcopy(cfgmod.load_config(HEMP_CFG))
+    cfg["crops"][0]["calibration_cultivars"] = ["IB0008"]
+    for group, params in cfg["parameters"].items():
+        for spec in params.values():
+            if isinstance(spec, dict):
+                spec["active"] = False
+    cfg["parameters"]["genetic_cultivar"]["EM-FL"].update(
+        {"active": True, "scope": "cultivar"}
+    )
+    space = ParameterSpace.from_config(cfg)
+    assert space.names == ["EM-FL__IB0008"]
+    assert space.specs[0]["base_name"] == "EM-FL"
+    assert space.specs[0]["cultivar"] == "IB0008"
+
+
+def test_group_default_scope_expands_cultivar_parameters():
+    cfg = deepcopy(cfgmod.load_config(HEMP_CFG))
+    cfg["crops"][0]["calibration_cultivars"] = ["IB0008"]
+    cfg["parameter_defaults"] = {"scope_by_group": {"genetic_cultivar": "cultivar"}}
+    for group, params in cfg["parameters"].items():
+        for spec in params.values():
+            if isinstance(spec, dict):
+                spec["active"] = False
+                spec.pop("scope", None)
+    cfg["parameters"]["genetic_cultivar"]["EM-FL"]["active"] = True
+    space = ParameterSpace.from_config(cfg)
+    assert space.names == ["EM-FL__IB0008"]
+
+
+def test_cultivar_scoped_parameters_use_per_cultivar_starts():
+    cfg = deepcopy(cfgmod.load_config(HEMP_CFG))
+    cfg["crops"][0]["calibration_cultivars"] = ["IB0002", "IB0008"]
+    for group, params in cfg["parameters"].items():
+        for spec in params.values():
+            if isinstance(spec, dict):
+                spec["active"] = False
+    cfg["parameters"]["genetic_cultivar"]["EM-FL"].update({
+        "active": True,
+        "scope": "cultivar",
+        "max": 110.0,
+        "start_by_cultivar": {"IB0002": 60.0, "IB0008": 85.0},
+    })
+
+    space = ParameterSpace.from_config(cfg)
+
+    assert space.names == ["EM-FL__IB0002", "EM-FL__IB0008"]
+    assert list(space.start) == [60.0, 85.0]
+
+
+def test_grid_sampler_can_skip_start_row_for_exact_factorial_size():
+    cfg = deepcopy(cfgmod.load_config(HEMP_CFG))
+    cfg["crops"][0]["calibration_cultivars"] = ["IB0008"]
+    for group, params in cfg["parameters"].items():
+        for spec in params.values():
+            if isinstance(spec, dict):
+                spec["active"] = False
+    for name in ("CSDL", "PPSEN"):
+        cfg["parameters"]["genetic_cultivar"][name].update(
+            {"active": True, "scope": "cultivar"}
+        )
+    space = ParameterSpace.from_config(cfg)
+    design = sample(space, n=25, engine="grid", include_start=False)
+    assert len(design) == 25
+    assert design["CSDL__IB0008"].nunique() == 5
+    assert design["PPSEN__IB0008"].nunique() == 5
 
 
 def test_env_override(monkeypatch):
     monkeypatch.setenv("DSSATCAL_NUM_CORES", "5")
     cfg = cfgmod.load_config(HEMP_CFG)
     assert cfg["calibrator"]["num_cores"] == 5
+
+
+def test_zero_num_cores_uses_all_logical_cores(monkeypatch):
+    monkeypatch.setattr("os.cpu_count", lambda: 16)
+    assert resolve_cores(0) == 16
 
 
 def test_resolve_exe():

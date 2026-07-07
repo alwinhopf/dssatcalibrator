@@ -27,6 +27,17 @@ def variable_maps(cfg: dict):
     return ts, sc, {v: k for k, v in ts.items()}, {v: k for k, v in sc.items()}
 
 
+_PHENOLOGY_DATE_TO_DAP = {
+    "EDAT": "EDAP",
+    "EDATE": "EDAP",
+    "ADAT": "ADAP",
+    "MDAT": "MDAP",
+    "HDAT": "HDAP",
+    "R8": "R8AP",
+}
+_PHENOLOGY_DAP_OUTPUTS = {"EDAP", "ADAP", "MDAP", "HDAP", "R8AP"}
+
+
 def unmatched_variables(obs_table: pd.DataFrame, cfg: dict) -> list[str]:
     """DSSAT variables present in the observations but NOT scorable.
 
@@ -40,8 +51,12 @@ def unmatched_variables(obs_table: pd.DataFrame, cfg: dict) -> list[str]:
     known = set(ts.values()) | set(sc.values())
     if obs_table is None or getattr(obs_table, "empty", True) or "variable" not in obs_table:
         return []
-    present = set(obs_table["variable"].dropna().unique())
-    return sorted(present - known)
+    present = {str(v) for v in obs_table["variable"].dropna().unique()}
+    mapped = {
+        v for v in present
+        if _PHENOLOGY_DATE_TO_DAP.get(v) in known
+    }
+    return sorted(present - known - mapped)
 
 
 def metrics(obs, sim) -> dict:
@@ -125,6 +140,91 @@ def _weighted_loss(resid: pd.DataFrame, cfg: dict) -> pd.Series:
     return pd.Series(_standardized_loss(z, cfg), index=resid.index)
 
 
+def _drop_configured_zero_observations(resid: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """Drop exact-zero observations for configured variables before scoring.
+
+    Some FileT variables use ``0`` as a practical placeholder after the measured
+    quantity has become unavailable. That is especially toxic for relative error
+    models because sigma collapses toward zero. Keep this opt-in by variable so
+    valid zeros, such as early grain mass, remain usable.
+    """
+    ocfg = (cfg.get("objective", {}) or {})
+    raw = ocfg.get("ignore_zero_observations", ocfg.get("drop_zero_observations", []))
+    if not raw:
+        return resid
+    drop_all = False
+    atol = 1e-12
+    if isinstance(raw, dict):
+        atol = float(raw.get("atol", raw.get("tolerance", atol)))
+        raw = raw.get("variables", raw.get("user_vars", raw.get("dssat_vars", [])))
+    elif isinstance(raw, bool):
+        drop_all = bool(raw)
+        raw = []
+    names = {str(v) for v in raw}
+    obs = pd.to_numeric(resid["obs"], errors="coerce")
+    zero = np.isclose(obs, 0.0, atol=atol, rtol=0.0)
+    if drop_all:
+        keep = ~zero
+    else:
+        variable_match = resid["user_var"].astype(str).isin(names) | resid["dssat"].astype(str).isin(names)
+        keep = ~(zero & variable_match)
+    return resid.loc[keep].copy()
+
+
+def _planting_date_from_plantgro(pg: pd.DataFrame, treatment: int):
+    if pg is None or pg.empty or "date" not in pg.columns or "DAP" not in pg.columns:
+        return pd.NaT
+    sub = pg[pd.to_numeric(pg.get("treatment"), errors="coerce") == int(treatment)]
+    if sub.empty:
+        return pd.NaT
+    dates = pd.to_datetime(sub["date"], errors="coerce")
+    dap = pd.to_numeric(sub["DAP"], errors="coerce")
+    ok = dates.notna() & dap.notna()
+    if not ok.any():
+        return pd.NaT
+    planted = dates[ok] - pd.to_timedelta(dap[ok], unit="D")
+    return planted.iloc[0] if not planted.empty else pd.NaT
+
+
+def _scalar_observation_mapping(obs_var: str, sc_map: dict, sc_inv: dict) -> tuple[str, str]:
+    """Map observed FileA variable names such as ADAT onto ADAP-style outputs."""
+    obs_var = str(obs_var)
+    if obs_var in sc_map:
+        dssat_var = sc_map[obs_var]
+        return obs_var, dssat_var
+    mapped = _PHENOLOGY_DATE_TO_DAP.get(obs_var)
+    if mapped and mapped in sc_inv:
+        return sc_inv[mapped], mapped
+    if obs_var in sc_inv:
+        return sc_inv[obs_var], obs_var
+    return obs_var, obs_var
+
+
+def _observed_scalar_value(row: pd.Series, dssat_var: str, pg: pd.DataFrame) -> float:
+    if str(row.get("kind")) == "phenology" and dssat_var in _PHENOLOGY_DAP_OUTPUTS:
+        date = pd.to_datetime(row.get("date"), errors="coerce")
+        planted = _planting_date_from_plantgro(pg, int(row["treatment"]))
+        if pd.notna(date) and pd.notna(planted):
+            return float((date.normalize() - planted.normalize()).days)
+    return float(row["value"])
+
+
+def _timeseries_sim_value(pg: pd.DataFrame, treatment: int, date, col: str):
+    sub = pg[pd.to_numeric(pg["treatment"], errors="coerce") == int(treatment)].copy()
+    if sub.empty or col not in sub.columns:
+        return np.nan
+    dates = pd.to_datetime(sub["date"], errors="coerce")
+    target = pd.Timestamp(date)
+    exact = sub[dates == target]
+    if not exact.empty:
+        return exact.iloc[0][col]
+    ok = dates.notna()
+    if ok.any() and target > dates[ok].max():
+        tail = sub.loc[ok].assign(_date=dates[ok]).sort_values("_date").iloc[-1]
+        return tail[col]
+    return np.nan
+
+
 def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     """Assemble the residual table (one row per matched observation)."""
     ts_map, sc_map, ts_inv, sc_inv = variable_maps(cfg)
@@ -165,21 +265,53 @@ def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.Dat
             o = scalar_obs[scalar_obs["exp_id"] == exp]
             if o.empty:
                 continue
-            oavg = o.groupby(["treatment", "variable", "kind"], as_index=False)["value"].mean()
+            pg = getattr(res, "plantgro", None)
+            computed = []
+            for _, rr in o.iterrows():
+                user_var, dssat_var = _scalar_observation_mapping(rr["variable"], sc_map, sc_inv)
+                computed.append({
+                    "treatment": rr["treatment"],
+                    "variable": user_var,
+                    "dssat": dssat_var,
+                    "kind": rr["kind"],
+                    "value": _observed_scalar_value(rr, dssat_var, pg),
+                })
+            oavg = pd.DataFrame(computed)
+            if oavg.empty:
+                continue
+            oavg = oavg.dropna(subset=["value"]).groupby(
+                ["treatment", "variable", "dssat", "kind"], as_index=False
+            )["value"].mean()
             for _, r in oavg.iterrows():
                 user_var = r["variable"]
-                dssat_var = sc_map.get(user_var, user_var)
+                dssat_var = r["dssat"]
+                if dssat_var not in sc_inv:
+                    continue
                 if dssat_var not in set(ev["variable"]):
+                    if pd.isna(r["value"]):
+                        continue
+                    key = (exp, int(r["treatment"]), user_var, r["kind"])
+                    if key in seen_scalar:
+                        continue
+                    rows.append(dict(exp_id=exp, treatment=int(r["treatment"]),
+                                     user_var=user_var, dssat=dssat_var, kind=r["kind"],
+                                     date=pd.NaT, obs=float(r["value"]),
+                                     sim=float(r["value"]) + 1000.0))
+                    seen_scalar.add(key)
                     continue
                 key = (exp, int(r["treatment"]), user_var, r["kind"])
                 if key in seen_scalar:
                     continue
                 sub = ev[(ev["treatment"] == r["treatment"]) & (ev["variable"] == dssat_var)]
-                if sub.empty or pd.isna(sub.iloc[0]["sim"]) or pd.isna(r["value"]):
+                if pd.isna(r["value"]):
                     continue
+                if sub.empty or pd.isna(sub.iloc[0]["sim"]):
+                    sim_value = float(r["value"]) + 1000.0
+                else:
+                    sim_value = float(sub.iloc[0]["sim"])
                 rows.append(dict(exp_id=exp, treatment=int(r["treatment"]),
                                  user_var=user_var, dssat=dssat_var, kind=r["kind"],
-                                 date=pd.NaT, obs=float(r["value"]), sim=float(sub.iloc[0]["sim"])))
+                                 date=pd.NaT, obs=float(r["value"]), sim=sim_value))
                 seen_scalar.add(key)
 
     # time-series from PlantGro matched to FileT/CSV obs
@@ -195,12 +327,11 @@ def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.Dat
             oavg = o.groupby(["treatment", "date", "variable"], as_index=False)["value"].mean()
             for _, r in oavg.iterrows():
                 col = r["variable"]
+                if col not in ts_inv:
+                    continue
                 if col not in pg.columns:
                     continue
-                sub = pg[(pg["treatment"] == r["treatment"]) & (pg["date"] == r["date"])]
-                if sub.empty:
-                    continue
-                simv = sub.iloc[0][col]
+                simv = _timeseries_sim_value(pg, int(r["treatment"]), r["date"], col)
                 if pd.isna(simv):
                     continue
                 rows.append(dict(exp_id=exp, treatment=int(r["treatment"]),
@@ -208,6 +339,9 @@ def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.Dat
                                  date=r["date"], obs=float(r["value"]), sim=float(simv)))
 
     df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+    df = _drop_configured_zero_observations(df, cfg)
     if df.empty:
         return df
 

@@ -4,7 +4,14 @@ from pathlib import Path
 import pytest
 
 from dssatcalibrator.config import load_config, crop_for, active_parameters, resolve_exe
-from dssatcalibrator.spawn import spawn_and_run, parse_treatments, theta_hash
+from dssatcalibrator.spawn import (
+    _filex_overrides_for,
+    _partition_theta,
+    parse_cultivars,
+    parse_treatments,
+    spawn_and_run,
+    theta_hash,
+)
 
 REPO = Path(__file__).resolve().parents[1]
 HEMP_CFG = REPO / "config_hemp.yaml"
@@ -27,10 +34,54 @@ def test_parse_treatments(hemp_dir):
     assert trts == [1, 2, 3, 4]
 
 
+def test_parse_cultivars(hemp_dir):
+    assert parse_cultivars(hemp_dir / "YUKU2101.HMX") == ["IB0008"]
+    assert parse_cultivars(hemp_dir / "CNKU2101.HMX") == ["IB0002"]
+
+
+def test_partition_theta_routes_cultivar_scoped_values():
+    specs = [
+        {
+            "name": "EM-FL__IB0008",
+            "base_name": "EM-FL",
+            "group": "genetic_cultivar",
+            "scope": "cultivar",
+            "cultivar": "IB0008",
+        },
+        {
+            "name": "EM-FL__IB0002",
+            "base_name": "EM-FL",
+            "group": "genetic_cultivar",
+            "scope": "cultivar",
+            "cultivar": "IB0002",
+        },
+    ]
+    theta = {"EM-FL__IB0008": 28.0, "EM-FL__IB0002": 18.0}
+    groups = _partition_theta(theta, specs, exp_id="YUKU2101", cultivars=["IB0008"])
+    assert groups == {"genetic_cultivar_by_cultivar": {"IB0008": {"EM-FL": 28.0}}}
+
+
 def test_theta_hash_supports_filex_code_values():
     assert theta_hash({"irrig_code": "IR004", "x": 1.0}) == "31684502a7"
     assert theta_hash({"x": 1, "irrig_code": "IR004"}) == "31684502a7"
     assert theta_hash({"irrig_code": "IR005", "x": 1.0}) != "31684502a7"
+
+
+def test_filex_overrides_for_experiment():
+    cfg = {
+        "filex_overrides": {
+            "all": [{"section": "FIELDS", "field": "ID_SOIL", "value": "BASE"}],
+            "CNKU2101": [{"section": "FIELDS", "field": "WSTA", "value": "CNKU2101"}],
+        }
+    }
+
+    assert _filex_overrides_for(cfg, "CNKU2101") == [
+        {"section": "FIELDS", "field": "ID_SOIL", "value": "BASE"},
+        {"section": "FIELDS", "field": "WSTA", "value": "CNKU2101"},
+    ]
+    assert _filex_overrides_for(cfg, "YUKU2101") == [
+        {"section": "FIELDS", "field": "ID_SOIL", "value": "BASE"},
+    ]
 
 
 def test_spawn_default_reproduces_smoke(hemp_setup, tmp_path):
@@ -39,8 +90,8 @@ def test_spawn_default_reproduces_smoke(hemp_setup, tmp_path):
                         param_specs=specs, run_root=tmp_path, treatments=[1], exe=Path(exe))
     assert res.status == "success", res.message
     adap = res.evaluate[(res.evaluate.variable == "ADAP") & (res.evaluate.treatment == 1)].iloc[0]
-    # default coefficients reproduce the smoke run (anthesis sim 76 vs measured 75)
-    assert abs(adap["sim"] - 76) <= 1
+    # default coefficients reproduce the installed genotype without a formatting-induced shift
+    assert abs(adap["sim"] - 79) <= 1
     assert adap["meas"] == 75
     # time-series parsed with biomass present
     assert (res.plantgro["CWAD"] > 0).any()

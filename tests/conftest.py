@@ -9,7 +9,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 SMOKE = REPO / "_smoke"
-HEMP = Path("C:/DSSAT48/Hemp")
+HEMP = Path("C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/Hemp")
 
 TARGET_EXPERIMENTS = [
     "CNKU2101", "YUFE2101", "YUFE2201", "YUBA2201",

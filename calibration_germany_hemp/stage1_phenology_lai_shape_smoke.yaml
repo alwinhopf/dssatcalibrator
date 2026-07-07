@@ -1,0 +1,171 @@
+calibrator:
+  name: germany_hemp_stage1_phenology_lai_shape_smoke
+  seed: 42
+  workdir: C:/Users/alwin/Documents/GitHub/dssatcalibrator/calibration_germany_hemp/results/_workdir
+  results_dir: C:/Users/alwin/Documents/GitHub/dssatcalibrator/calibration_germany_hemp/results
+  figures_dir: C:/Users/alwin/Documents/GitHub/dssatcalibrator/calibration_germany_hemp/figures
+  dssat_exe: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/dscsm048_compiled_4.8.2.with_HM_code.exe
+  dssat_dir: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp
+  num_cores: 0
+  cache_spawns: false
+  keep_run_dirs: true
+  batch_size: 4
+  spawn_timeout: 90
+execution:
+  backend: native
+templates:
+  template_dir: ''
+source:
+  hemp_dir: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/Hemp
+  observations: C:/Users/alwin/Documents/GitHub/dssatcalibrator/calibration_germany_hemp/derived/dssatcalibrator_observations_long.csv
+experiments:
+- GEMQ18S1
+- GEMQ18I1
+filex_overrides: {}
+engine:
+  run_mode: experiment
+  timeseries_outputs:
+    biomass: CWAD
+    stem: SWAD
+    height: CHTD
+    LAI: LAID
+  scalar_outputs: {}
+method:
+  preset: B
+  sample:
+    engine: lhs
+    n: 1
+  sensitivity:
+    engine: morris
+    active: false
+    trajectories: 8
+    auto_activate: false
+  select:
+    engine: stepwise_bic
+    active: false
+  surrogate:
+    engine: gp
+    active: false
+  bayesian:
+    engine: none
+  optimizer:
+    engine: cmaes
+    maxiter: 1
+    popsize: 6
+    restarts: 1
+  validation:
+    scheme: none
+  multiobjective:
+    engine: none
+objective:
+  weighting: unified
+  obs_autocorr: true
+  ignore_zero_observations:
+  - height
+  weights:
+    LAI: 1.6
+    height: 0.9
+    biomass: 0.8
+    stem: 0.6
+  error_model:
+    LAI:
+      type: relative
+      value: 0.25
+    height:
+      type: relative
+      value: 0.20
+    biomass:
+      type: relative
+      value: 0.35
+    stem:
+      type: relative
+      value: 0.35
+crops:
+- code: HM
+  model: CRGRO048
+  genotype_stem: HMGRO048
+  cultivar_anchor: DE0001
+  cultivar_anchors:
+  - DE0001
+  - DE0002
+  ecotype: HMDE01
+  filex_ext: HMX
+  stage_scale: cropgro
+  cultivar_ecotypes:
+    DE0001: HMDE01
+    DE0002: HMDE02
+  calibration_cultivars:
+  - DE0001
+  - DE0002
+parameters:
+  genetic_cultivar:
+    CSDL:
+      active: true
+      role: obligatory
+      min: 11.5
+      max: 18.0
+      start: 14.0
+      start_by_cultivar:
+        DE0001: 14.3
+        DE0002: 13.4
+      prior:
+        dist: uniform
+      scope: cultivar
+    PPSEN:
+      active: true
+      role: obligatory
+      min: 0.1
+      max: 1.0
+      start: 0.75
+      start_by_cultivar:
+        DE0001: 0.71
+        DE0002: 0.76
+      prior:
+        dist: uniform
+      scope: cultivar
+    EM-FL:
+      active: true
+      role: obligatory
+      min: 5.0
+      max: 90.0
+      start: 35.0
+      start_by_cultivar:
+        DE0001: 45.0
+        DE0002: 30.0
+      prior:
+        dist: uniform
+      scope: cultivar
+    FL-LF:
+      active: true
+      role: candidate
+      min: 5.0
+      max: 95.0
+      start: 42.0
+      start_by_cultivar:
+        DE0001: 50.0
+        DE0002: 35.0
+      prior:
+        dist: uniform
+      scope: cultivar
+  genetic_ecotype:
+    FL-VS:
+      active: true
+      role: candidate
+      min: 5.0
+      max: 80.0
+      start: 35.0
+      start_by_cultivar:
+        DE0001: 40.0
+        DE0002: 25.0
+      prior:
+        dist: uniform
+      scope: cultivar
+    TRIFL:
+      active: true
+      role: candidate
+      min: 0.1
+      max: 0.6
+      start: 0.30
+      prior:
+        dist: uniform
+      scope: cultivar

@@ -1,5 +1,6 @@
 """Tests for the FileX management and initial conditions writers."""
 import shutil
+import re
 from pathlib import Path
 
 import pytest
@@ -92,6 +93,7 @@ def test_parse_header_boundaries():
     # PPOP ends at 26
     # Exact bounds:
     assert bounds["PPOP"] == (header.index("EDATE") + 5, header.index("PPOP") + 4)
+    assert parse_header_boundaries("@L ID_FIELD WSTA....  ID_SOIL")["WSTA"] == (11, 20)
 
 
 def test_edit_filex_management_and_initial_water(tmp_path):
@@ -220,6 +222,53 @@ def test_edit_filex_generic_sections_rows_codes_and_initial_conditions(tmp_path)
     assert float(_cell(lines, "*IRRIGATION", "@I", "IRVAL", 1)) == 10.0
     assert float(_cell(lines, "*IRRIGATION", "@I", "IRVAL", 2)) == 30.0
     assert float(_cell(lines, "*FERTILIZERS", "@F", "FAMN", 1)) == 45.0
+
+
+def test_edit_filex_fields_station_and_soil_codes(tmp_path):
+    filex = tmp_path / "CNKU2101.HMX"
+    filex.write_text(
+        "\n".join([
+            "*FIELDS",
+            "@L ID_FIELD WSTA....  FLSA  ID_SOIL    FLNAME",
+            " 1 CTRA2101 CTRA2101   -99  IBSB910015 -99",
+        ]) + "\n",
+        encoding="utf-8",
+    )
+
+    edit_filex(
+        filex,
+        {
+            "id_field": {
+                "section": "FIELDS",
+                "field": "ID_FIELD",
+                "value": "CNKU2101",
+                "type": "code",
+                "required": True,
+            },
+            "wsta": {
+                "section": "FIELDS",
+                "field": "WSTA",
+                "value": "CNKU2101",
+                "type": "code",
+                "required": True,
+            },
+            "soil": {
+                "section": "FIELDS",
+                "field": "ID_SOIL",
+                "value": "YUKU2101",
+                "type": "code",
+                "required": True,
+            },
+        },
+        {},
+    )
+
+    lines = filex.read_text(encoding="utf-8").splitlines()
+    assert _cell(lines, "*FIELDS", "@L", "ID_FIELD", 1) == "CNKU2101"
+    assert _cell(lines, "*FIELDS", "@L", "WSTA", 1) == "CNKU2101"
+    assert re.search(r"YUKU2101\s+-99", lines[2])
+    assert "YUKU2101015" not in lines[2]
+    assert "IBSB910015" not in lines[2]
 
 
 def test_edit_filex_required_generic_field_fails(tmp_path):

@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 
 # Manual integration test for pooled calibration against a local DSSAT install.
-# It uses the existing hemp example experiments in C:/DSSAT48/Hemp and does not
+# It uses the existing hemp example experiments in C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/Hemp and does not
 # modify the DSSAT installation; all genotype edits happen in per-spawn run dirs.
 
 source_package <- function() {
@@ -19,7 +19,7 @@ make_pooled_cfg <- function(num_cores = 4L, workdir = "results/_actual_pooled_r_
   cfg$calibrator$cache_spawns <- FALSE
   cfg$calibrator$keep_run_dirs <- keep_run_dirs
   cfg$calibrator$num_cores <- as.integer(num_cores)
-  cfg$source$hemp_dir <- "C:/DSSAT48/Hemp"
+  cfg$source$hemp_dir <- "C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/Hemp"
   cfg$experiments <- as.list(experiments)
   cfg$gating$species <- "free"
 
@@ -68,7 +68,7 @@ stop_if_missing_dssat <- function() {
   missing <- character(0)
   for (exp_id in c("UFCI2101", "UFCI2201", "UFJA2101", "UFJA2201")) {
     for (ext in c("HMX", "HMA", "HMT")) {
-      p <- file.path("C:/DSSAT48/Hemp", sprintf("%s.%s", exp_id, ext))
+      p <- file.path("C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/Hemp", sprintf("%s.%s", exp_id, ext))
       if (!file.exists(p)) missing <- c(missing, p)
     }
   }

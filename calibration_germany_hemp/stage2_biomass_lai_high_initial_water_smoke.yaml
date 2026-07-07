@@ -1,0 +1,289 @@
+calibrator:
+  name: germany_hemp_stage2_biomass_lai_high_initial_water_smoke
+  seed: 8485
+  workdir: C:/Users/alwin/Documents/GitHub/dssatcalibrator/calibration_germany_hemp/results/_workdir_high_initial_water_smoke
+  results_dir: C:/Users/alwin/Documents/GitHub/dssatcalibrator/calibration_germany_hemp/results
+  figures_dir: C:/Users/alwin/Documents/GitHub/dssatcalibrator/calibration_germany_hemp/figures
+  dssat_exe: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/dscsm048_compiled_4.8.2.with_HM_code.exe
+  dssat_dir: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp
+  num_cores: 0
+  cache_spawns: false
+  keep_run_dirs: false
+  batch_size: 8
+  spawn_timeout: 120
+execution:
+  backend: native
+templates:
+  template_dir: ''
+source:
+  hemp_dir: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/Hemp
+  observations: C:/Users/alwin/Documents/GitHub/dssatcalibrator/calibration_germany_hemp/derived/dssatcalibrator_observations_long.csv
+experiments:
+- GEMQ18S1
+- GEMQ18I1
+filex_overrides:
+  all:
+  - section: INITIAL CONDITIONS
+    header_prefix: '@C  ICBL'
+    field: SH2O
+    value: '.240'
+    type: text
+    required: true
+engine:
+  run_mode: experiment
+  timeseries_outputs:
+    biomass: CWAD
+    stem: SWAD
+    height: CHTD
+    LAI: LAID
+  scalar_outputs: {}
+method:
+  preset: B
+  sample:
+    engine: lhs
+    n: 1
+  sensitivity:
+    engine: morris
+    active: false
+    trajectories: 16
+    auto_activate: false
+  select:
+    engine: stepwise_bic
+    active: false
+  surrogate:
+    engine: gp
+    active: false
+  bayesian:
+    engine: none
+  optimizer:
+    engine: cmaes
+    maxiter: 2
+    popsize: 8
+    restarts: 0
+  validation:
+    scheme: none
+  multiobjective:
+    engine: none
+objective:
+  weighting: unified
+  obs_autocorr: true
+  ignore_zero_observations:
+  - height
+  weights:
+    biomass: 1.7
+    stem: 1.0
+    LAI: 1.35
+    height: 0.8
+  error_model:
+    biomass:
+      type: relative
+      value: 0.28
+    stem:
+      type: relative
+      value: 0.3
+    LAI:
+      type: relative
+      value: 0.25
+    height:
+      type: relative
+      value: 0.2
+crops:
+- code: HM
+  model: CRGRO048
+  genotype_stem: HMGRO048
+  cultivar_anchor: DE0001
+  cultivar_anchors:
+  - DE0001
+  - DE0002
+  ecotype: HMDE01
+  filex_ext: HMX
+  stage_scale: cropgro
+  cultivar_ecotypes:
+    DE0001: HMDE01
+    DE0002: HMDE02
+  calibration_cultivars:
+  - DE0001
+  - DE0002
+parameters:
+  genetic_cultivar:
+    CSDL:
+      active: true
+      role: obligatory
+      min: 11.5
+      max: 18.0
+      start: 17.50053465777667
+      start_by_cultivar:
+        DE0001: 17.00106931555334
+        DE0002: 18.0
+      prior:
+        dist: uniform
+      scope: cultivar
+    PPSEN:
+      active: true
+      role: obligatory
+      min: 0.1
+      max: 1.0
+      start: 0.3971516804596813
+      start_by_cultivar:
+        DE0001: 0.5478195887740773
+        DE0002: 0.24648377214528522
+      prior:
+        dist: uniform
+      scope: cultivar
+    EM-FL:
+      active: true
+      role: obligatory
+      min: 5.0
+      max: 105.0
+      start: 34.50676431218071
+      start_by_cultivar:
+        DE0001: 52.60465536212
+        DE0002: 16.408873262241407
+      prior:
+        dist: uniform
+      scope: cultivar
+    FL-SH:
+      active: true
+      role: candidate
+      min: 0.1
+      max: 35.0
+      start: 17.02994217727621
+      prior:
+        dist: uniform
+      scope: cultivar
+      start_by_cultivar:
+        DE0001: 17.450562171483188
+        DE0002: 16.60932218306923
+    FL-SD:
+      active: true
+      role: candidate
+      min: 0.1
+      max: 45.0
+      start: 31.847057603813116
+      prior:
+        dist: uniform
+      scope: cultivar
+      start_by_cultivar:
+        DE0001: 24.125633769544955
+        DE0002: 39.56848143808128
+    SD-PM:
+      active: true
+      role: candidate
+      min: 0.1
+      max: 120.0
+      start: 51.370164900932544
+      start_by_cultivar:
+        DE0001: 96.73902305103111
+        DE0002: 6.001306750833977
+      prior:
+        dist: uniform
+      scope: cultivar
+    FL-LF:
+      active: true
+      role: candidate
+      min: 5.0
+      max: 120.0
+      start: 64.95272132452997
+      start_by_cultivar:
+        DE0001: 93.8677910018046
+        DE0002: 36.037651647255345
+      prior:
+        dist: uniform
+      scope: cultivar
+    LFMAX:
+      active: true
+      role: candidate
+      min: 0.3
+      max: 5.0
+      start: 3.542025192425559
+      prior:
+        dist: uniform
+      scope: cultivar
+      start_by_cultivar:
+        DE0001: 3.912591224700007
+        DE0002: 3.17145916015111
+    SLAVR:
+      active: true
+      role: candidate
+      min: 40.0
+      max: 750.0
+      start: 239.5331886330703
+      prior:
+        dist: uniform
+      scope: cultivar
+      start_by_cultivar:
+        DE0001: 148.9609416804562
+        DE0002: 330.1054355856844
+    SIZLF:
+      active: true
+      role: candidate
+      min: 40.0
+      max: 750.0
+      start: 205.76002874869334
+      prior:
+        dist: uniform
+      scope: cultivar
+      start_by_cultivar:
+        DE0001: 342.08041104202096
+        DE0002: 69.43964645536572
+    XFRT:
+      active: true
+      role: candidate
+      min: 0.02
+      max: 0.9
+      start: 0.5374113276277314
+      start_by_cultivar:
+        DE0001: 0.43649967963900627
+        DE0002: 0.6383229756164565
+      prior:
+        dist: uniform
+      scope: cultivar
+  genetic_ecotype:
+    FL-VS:
+      active: true
+      role: candidate
+      min: 5.0
+      max: 95.0
+      start: 64.9171229852866
+      start_by_cultivar:
+        DE0001: 70.85039985895435
+        DE0002: 58.983846111618845
+      prior:
+        dist: uniform
+      scope: cultivar
+    TRIFL:
+      active: true
+      role: candidate
+      min: 0.1
+      max: 0.6
+      start: 0.4634185041927685
+      prior:
+        dist: uniform
+      scope: cultivar
+      start_by_cultivar:
+        DE0001: 0.47013485633942964
+        DE0002: 0.4567021520461073
+    RWDTH:
+      active: true
+      role: candidate
+      min: 0.5
+      max: 2.2
+      start: 1.403533687290011
+      prior:
+        dist: uniform
+      scope: cultivar
+      start_by_cultivar:
+        DE0001: 1.5204307300095752
+        DE0002: 1.286636644570447
+    RHGHT:
+      active: true
+      role: candidate
+      min: 0.4
+      max: 3.4
+      start: 2.7925374762878867
+      start_by_cultivar:
+        DE0001: 2.8748443530752166
+        DE0002: 2.7102305995005573
+      prior:
+        dist: uniform
+      scope: cultivar

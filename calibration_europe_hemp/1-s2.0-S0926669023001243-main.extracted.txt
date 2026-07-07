@@ -1,0 +1,1741 @@
+Industrial Crops & Products 195 (2023) 116360
+Available online 9 February 2023
+0926-6690/© 2023 The Authors. Published by Elsevier B.V. This is an open access article under the CC BY-NC-ND license ( http://creativecommons.org/licenses/by-
+nc-nd/4.0/).
+Multi-environment assessment of a yellow hemp ( Cannabis sativa L.) 
+cultivar ’ s eco-physiology and productivity under varying levels of 
+nitrogen fertilisation 
+Henri Blandini `eres
+a , *
+, Michele Croci
+a , b
+, Giorgio Impollonia
+a , b
+, Andrea Marcone
+a , c
+, Alan Gay
+d
+, 
+Ana Winters
+d
+, Sarah Palmer
+d
+, Stefano Amaducci
+a , b , c 
+a
+Departement of Sustainable Crop Production, Universit `a Cattolica del Sacro Cuore di Piacenza, via Emilia Parmense, 84, 29122 Piacenza, PC, Italy 
+b
+Remote Sensing and Spatial Analysis Research Center (CRAST), Universit `a Cattolica del Sacro Cuore di Piacenza, via Emilia Parmense, 84, 29122 Piacenza, PC, Italy 
+c
+Centro per l
+′
+Innovazione nell ’ Impiego del Telerilevamento nell ’ Industria Meccanica per l
+′
+Agricoltura di Precisione (Citimap), via Castellarino, 12, 29 122 San Bonico, 
+PC, Italy 
+d
+Institute of Biological, Environmental and Rural Sciences (IBERS), Aberystwyth University, Gogerddan, Aberystwyth SY23 3EE, UK   
+ARTICLE INFO  
+Key words: 
+Yellow hemp 
+Nitrogen 
+Productivity 
+Nitrogen use efficiency 
+Leaf area index 
+Light interception 
+Light absorbance 
+ABSTRACT  
+Yellow stalked cultivars of hemp ( Cannabis sativa L.) were reported to have a superior fibre processability than 
+green cultivars, but the effects of the yellow trait on productivity and ecophysiology of hemp remain unexplored. 
+It is hypothesised that yellow stalked cultivars are characterised by a low Nitrogen Uptake Efficiency. Three field 
+scale experiments involving a yellow cultivar ( ’ Fibror 79 ’ ) and a green one ( ’ Futura 75 ’ ) grown under varying 
+levels of nitrogen fertilisation were conducted in Northern Italy and in Wales, to investigate the effects of the 
+yellow trait on hemp productivity and eco-physiology. The results showed that ’ Fibror 79 ’ displays a slightly 
+lower biomass productivity than ’ Futura 75 ’ under nitrogen-limiting conditions, owing to lower Leaf Area Index 
+and light interception capacity during the early growth phase, and potentially due to a lower radiation use ef -
+ficiency. However, the productivity was not significantly different between cultivars under non-limiting nitrogen 
+conditions. The Nitrogen Uptake Efficiency did not differ between the two cultivars, which failed to support the 
+hypothesis of this work. Instead, Nitrogen Use Efficiency and Nitrogen Utilisation Efficiency were significantly 
+higher for ’ Futura 75 ’ than for ’ Fibror 79 ’ under nitrogen-limiting conditions. ’ Futura 75 ’ appeared better suited 
+than ’ Fibror 79 ’ for dual- and multi-purpose production in Italy, while the reverse was true in Wales. ’ Fibror 79 ’ 
+better suits a strategy of single-use fibre production owing to its higher bast fibre content and fibre yield.   
+1. Introduction 
+Nitrogen is an essential element for plant growth and its intensive use 
+in fertilisers during the second half of the 20th century has led to large 
+increases in crop yields ( Zhang et al., 2015 ). However, the resulting 
+nitrogen losses in the environment have also disturbed its biogeo -
+chemical cycle ( Fowler et al., 2013 ) and have resulted in air and water 
+pollution ( Erisman et al., 2013 ). Furthermore, its fixation through the 
+Haber-Bosch process is energy intensive and leads to high CO
+2 
+emissions 
+( Smith et al., 2020 ). Optimizing nitrogen fertilisation has therefore 
+become a major challenge of modern agriculture. The integration of 
+nitrogen-efficient crops in agricultural systems is a pertinent lever for 
+action for limiting overall nitrogen use, thus minimising the carbon 
+footprint of agriculture and abate the disturbance of the biogeochemical 
+nitrogen cycle. 
+Despite being a C3 crop, hemp ( Cannabis sativa L.) has a relatively 
+low nitrogen demand for biomass or fibre production ( Tang et al., 
+2017a ) resulting from its low structural nitrogen and high leaf Photo -
+synthetic Nitrogen Use Efficiency ( Tang et al., 2017a, 2017b ). Although 
+hemp ’ s acreage has recently risen in the EU ( Eurostat, 2021 ), the 
+development of the hemp sector remains limited by several bottlenecks, 
+such as a lack of dedicated primary transformation centres and limited 
+harvesting mechanisation ( Amaducci et al., 2008 ). In addition, the 
+limited profitability of hemp cropping reduces the willingness of pro -
+ducers to grow it ( Meynard et al., 2013 ). In this regard, cultivating hemp 
+for dual- or multi-purpose production of stems, seeds, and inflorescences 
+* Corresponding author. 
+E-mail address: henri.blandinieres@unicatt.it (H. Blandini `eres).  
+Contents lists available at ScienceDirect 
+Industrial Crops & Products 
+journal homepag e: www.else vier.com/loc ate/indcrop 
+https://doi.org/10.1016/j.indcrop.2023.116360 
+Received 22 November 2022; Received in revised form 11 January 2023; Accepted 29 January 2023   
+Industrial Crops & Products 195 (2023) 116360
+2
+would maximise the economic potential of the crop. The production of 
+high-quality fibre can also increase hemp profitability, although it seems 
+incompatible with dual- and multi-purpose production as the quality of 
+the fibre decreases during seed formation ( Westerhuis et al., 2019 ). 
+Low-quality fibre is generally used for low-value applications such as 
+building materials or paper pulp production ( van der Werf et al., 1994; 
+Crini et al., 2020 ). In contrast, a high-quality fibre can be used as 
+feedstock for producing high added-value applications such as bio-based 
+materials ( Musio et al., 2018 ) or textiles for clothing applications 
+( Vandepitte et al., 2020 ). The development of cultivars producing 
+high-quality fibre is therefore an important target of breeding activities 
+( Salentijn et al., 2015; Thouminot, 2015 ). 
+In this context, a “ yellow ” phenotype appears of interest. Discovered 
+by Hoffmann (1946) , the “ yellow stem ” phenotype (originally referred 
+to as “ Hellstengeligen ” ) arose from a cross between an Italian and a 
+Finnish landrace. Although evidence is scarce, several authors have re -
+ported that yellow-stalked hemp cultivars (YSCs) display a higher stem 
+processability (i.e. fibre extraction efficiency) than conventional green 
+cultivars (CGCs) ( Liberalato, 2003; Toonen et al., 2004; Bennett et al., 
+2006; van den Broeck et al., 2008; Salentijn et al., 2015; Thouminot, 
+2015; Musio et al., 2018 ). Thus, the introgression of this trait is 
+becoming a popular target in hemp breeding programs and has led to a 
+significant number of registered “ yellow ” cultivars such as ’ Carma -
+leonte ’ , ’ Ivory ’ , ’ Kompolti Sg ´argasz ´arú ’ or ’ Chamaeleon ’ . 
+Some of these YSCs were also reported to display a higher ratio of 
+long to total fibre ( Bennett et al., 2006 ), a higher bast fibre content and 
+finer hackled fibre bundles than CGCs ( Musio et al., 2018 ). Berenji et al. 
+(2013) and Thouminot (2015) attributed the easier stem processability 
+of “ yellow lines ” to a reduced efficiency of nitrogen assimilation, but so 
+far this has not been directly confirmed. However, a decreased Nitrogen 
+Uptake Efficiency (NUpE – kg of nitrogen taken up per kg of available 
+soil nitrogen) could explain the yellowness through a relatively low 
+nitrogen content in the biomass and subsequently, through a relatively 
+low chlorophyll content, these two parameters being closely related 
+( Lawlor et al., 2001; Wang et al., 2014 ). Interestingly, negative effects of 
+increasing levels of nitrogen fertilisation on fibre quality traits (e.g. stem 
+processability for fibre extraction) have been reported ( Ehrensing, 1998; 
+Mal ¸ ceva et al., 2011; Legros et al., 2013; Fike, 2016 ) and the hypothesis 
+of a low nitrogen content in YSCs is consistent with both their yellow -
+ness and the high quality parameters of their fibre. 
+However, there is a potential drawback of YSCs as their low NUpE 
+could reduce their productivity, as suggested by Thouminot (2015) . It 
+has been reported in hot and dry conditions that the YSC ’ Ivory ’ pro -
+duced significantly less biomass than the CGC ’ Santhica 27 ’ , but ’ Ivory ’ 
+displayed a faster decline of leaf area index through earlier senescence, 
+and an earlier cessation of stem elongation than ’ Santhica 27 ’ , indi -
+cating that a difference of phenology between the two cultivars has 
+probably driven the difference of productivity between the two cultivars 
+( Herppich et al., 2020 ). In contrast, Cosentino et al. (2013) reported that 
+the YSC ’ Chamaeleon ’ had a similar productivity than the CGCs ’ F ´elina 
+34 ’ , ’ Futura 75 ’ , and ’ F ´edora 17 ’ in an environment in which all four 
+cultivars had a similar phenology. Similarly, the stem productivity of 
+’ Markant ’ (YSC) and ’ F ´edora 17 ’ (CGC) did not differ significantly in 
+France and Italy, where these two cultivars had a similar phenological 
+development ( Tang et al., 2016 ). 
+The combination of the hypotheses of a relatively low NUpE dis -
+played by YSCs and of yield similarities between YSCs and CGCs of 
+similar time of flowering would imply that YSCs are also characterized 
+by a higher Nitrogen Utilisation Efficiency (NUtE – kg of produced 
+biomass per kg of nitrogen taken up), in line with the regularly reported 
+increases of NUtE at decreasing levels of nitrogen availability ( Ortiz- -
+Monasteiro et al., 1997; Le Gouis et al., 2000; Lawlor et al., 2001; 
+Lemaître et al., 2008 ). 
+By comparing two hemp cultivars of similar time of flowering but 
+differing in their phenotype (i.e. a YSC: ’ Fibror 79 ’ – and a CGC: ’ Futura 
+75 ’ ), the first objective of this work is to characterize the relative 
+productivity and the putative differences of Nitrogen Use Efficiency 
+(NUE), NUpE and NUtE between ’ Fibror 79 ’ and ’ Futura 75 ’ , with the 
+hypotheses that ’ Fibror 79 ’ displays similar productivity and NUE, a 
+lower NUpE and a higher NUtE than ’ Futura 75 ’ . A second objective will 
+be to assess the variability of eco-physiological responses to diverse 
+levels of nitrogen fertilisation between these two cultivars to achieve a 
+better understanding of the implications of the yellow trait on hemp ’ s 
+productivity and nitrogen management. 
+2. Materials and methods 
+2.1. Plant material, environments, and experimental layout 
+The experiment was replicated three times: in 2020 and in 2021 at 
+the experimental farm of the Universit `a Cattolica del Sacro Cuore di 
+Piacenza (Northern Italy, 45
+◦
+00
+′
+12
+′
+’ N, 10
+◦
+42
+′
+13
+′
+’ E) and in 2021 at 
+the experimental farm on the Gogerddan Campus of Aberystwyth Uni -
+versity (Wales, 52
+◦
+26
+′
+03
+′
+’ N, 4 
+◦
+01
+′
+04
+′
+’ W). These three environments 
+will thereafter be referred to as PC20, PC21, and AB21, respectively. 
+K ¨oppen-Geiger classification ’ s climate types are Cfa and Cfb for Pia -
+cenza and Aberystwyth, respectively. Two commercial cultivars of hemp 
+( Cannabis sativa L.) were tested in this study: the YSC ’ Fibror 79 ’ and the 
+CGC ’ Futura 75 ’ , both cultivars having been bred and provided by 
+Hemp-it (France). ’ Fibror 79 ’ flowers about four days later than ’ Futura 
+75 ’ (Breeder ’ s description of the cultivars). Sowing was carried out on 
+the 6th and 9th of April in PC20 and PC21, respectively, and on the 27th 
+of April in AB21, with an experimental seed drilling machine (1.5 m 
+wide, seven rows at 21 cm spacing at PC20 and PC21, and 9 rows at 12 
+cm spacing in the centre of a 1.55 m wide plot in AB21). Sowing depth 
+was about 3 cm, and sowing density was of about 45 kg ha
+  1
+, targeting 
+200 viable seeds per square meter based on the one-thousand seed 
+weight and germinability of each seed lot. Four levels of nitrogen were 
+applied: 0, 25, 50, and 100 kg
+N 
+ha
+  1
+, and were provided by hand with 
+ammonium nitrate 26%, within 24 h before sowing in PC20 and PC21, 
+and the 8th of June (about a month after emergence) in AB21. The ni -
+trogen fertilisation was delayed in AB21 to reduce nitrate leaching 
+during a period of important rainfalls that occurred between sowing and 
+early June. The experimental layout was a complete randomised block 
+design with four levels of nitrogen, two cultivars, and four blocks, for a 
+total of 32 plots in each experimental site. Each plot ’ s area was 60 m
+2 
+(6 
+× 10 m) in PC20 and PC21, while it was of 39 m
+2 
+(4.6 × 8.4 m) in AB21. 
+Weather data (average temperature and rainfall) were recorded hourly 
+by a meteorological station situated within 0.5 km from the experi -
+ments. Soil characteristics are displayed in Table 1 and all three envi -
+ronments were stone free. 
+Table 1 
+Soil characteristics measured in the upper 0 – 30 cm depth soil profile. Soil bulk 
+density in PC20 and PC21 was obtained from the study of Maris et al. (2021) 
+which was carried out on the same site, while soil bulk density was retrieved 
+from LUCAS ESDAC topsoil database ( Orgiazzi et al., 2018 ) in AB21. Soil min -
+eral nitrogen was calculated as described in Section 2.2.4 . n.a.: not available.  
+Parameter PC20 PC21 AB21 
+Silt (%)  44.8  44.8 41.7 
+Clay (%)  41.6  41.6 14.8 
+Sand (%)  13.6  13.6 43.5 
+Soil total carbon (%)  1.37  1.63 n.a. 
+Soil total nitrogen (%)  0.17  0.16 n.a. 
+N-NO
+3 
+(mg kg
+  1
+)  15.21  9.28 11.60 
+N-NH
+4 
+(mg kg
+  1
+)  3.33  2.81 5.10 
+Bulk density (kg dm
+  3
+)  1.31  1.31 1.10 
+Soil mineral nitrogen (kg
+N 
+ha
+  1
+)  145.7  95.0 125.0  
+H. Blandini `eres et al.                                                                                                                                                                                                                           
+Industrial Crops & Products 195 (2023) 116360
+3
+2.2. Measurements 
+2.2.1. Emergence date 
+Emergence date was determined as the day on which 50% of the final 
+number of emerged plants had appeared. The number of emerged plants 
+was measured daily from sowing to the moment at which no plant had 
+newly emerged for three consecutive days, on four one-meter lines per 
+cultivar and per environment. Emergence occurred on the 14th and on 
+the 20th of April in PC20 and PC21, respectively, and on the 11th of May 
+in AB21, and required 112 
+◦
+Cd, 88 
+◦
+Cd, and 98 
+◦
+Cd of accumulated 
+thermal time for completion in PC20, PC21, and AB21, respectively, 
+using a base temperature of 1 
+◦
+C. Both cultivars emerged on the same 
+day in all three environments. 
+2.2.2. Biomass productivity 
+Each plot was sampled six times during the growing season (five 
+times in AB21), the sampling times being thereafter referred to as “ S1
+′′
+to 
+“ S6
+′′
+. S1 was set at canopy closure, S5 and S6 were carried out at full- 
+flowering (code 2302 – Mediavilla et al., 1998 ) and at seed maturity 
+(code 2306), respectively. S2, S3, and S4 (only S2 and S3 in AB21) were 
+regularly spaced between S1 and S5. Dates and thermal time accumu -
+lation of each sampling time is reported in Supplementary material S1 . 
+At each sampling time and in each plot, a quadrat of one square metre 
+was placed, keeping a distance of at least one metre from the plot border 
+or from areas that had previously been sampled to avoid border effects. 
+In all three environments, all plants within the quadrat were cut at 
+ground level, counted, and immediately weighed for fresh weight 
+determination of aboveground biomass. Ten representative plants sur -
+rounding the quadrat (or within the quadrat at AB21) were concomi -
+tantly sampled, the leaves were separated from the stems and each 
+fraction was immediately weighed for fresh weight determination. The 
+samples were subsequently oven-dried at 105 
+◦
+C until constant weight 
+for determining the biomass partitioning and the water content of each 
+biomass fraction. The dry biomass weight of the quadrat was estimated 
+from the fresh weight of the plants harvested in the quadrat and from the 
+water content of the samples. Quadrat stem biomass was calculated as 
+the product of the quadrat dry weight (obtained after fitting procedure, 
+see Section 2.3.1 .) and of the stem fraction of the dry biomass, which 
+was estimated from biomass partitioning values of the samples. Total 
+biomass and its components were then converted to t ha
+  1
+. At S6 after 
+drying, inflorescences (leaves, flowers, and seeds) of all plants in each 
+quadrat were manually separated from the stems, and seeds were 
+separated from the threshing residues (leaves and flowers) using 
+experimental threshers (PC20 and PC21: Small Thresher Plot, model 
+2375, Cicoria Company, San Gervasio, Italy; AB21: locally made 
+thresher) to obtain the yield of each fraction. 
+To determine the fibre yield, five representative stems per plot were 
+sampled at full-flowering and seed maturity in all three environments. 
+The stems were dried at room temperature for at least three months. 
+Each stem was cut at 10 and 110 cm from its base to obtain a 100 cm 
+long stem sample which was weighed and processed six times in a lab -
+oratory scale decorticator (Wortmann Maschinenbau GmbH, Bar ß el- 
+Harkebrügge, Germany). After that, bast fibre was manually cleaned to 
+remove attached pieces of shives and weighed. Bast fibre content was 
+calculated as the ratio of the weight of the cleaned bast fibre to that of 
+the stem sample before processing. Fibre yield was obtained by multi -
+plying the stem yield by the average bast fibre content, assuming a 
+uniform bast fibre content along the whole length of the stem. 
+2.2.3. Leaf area index, light interception and light absorbance 
+In PC20 and PC21, light interception measurements were carried out 
+in the quadrat, prior to sampling, under clear sky conditions. When the 
+sun reached the zenith (between 12:00 and 14:00), the Photosyntheti -
+cally Active Radiation (PAR) transmitted by the canopy (PAR
+t
+) was 
+measured five or six times, at ground level, with a ceptometer (AccuPAR 
+LP-80, Decagon Devices, Inc., Pullman, Washington, USA). An 
+externally mounted sensor was used to measure incident PAR (PAR
+i
+). 
+The fraction of PAR transmitted by the canopy ( τ
+0
+) was calculated as the 
+ratio of PAR
+t 
+/ PAR
+i
+. When conditions were cloudy on the date of 
+destructive sampling (which occurred at S3 in both years), measure -
+ments of light interception were delayed to the 9th of July in PC20 and 
+to the 1st of July in PC21. 
+Leaf Area Index (LAI) and Specific Leaf Area (SLA) were determined 
+in PC20 and PC21 during vegetative growth. At samplings S1 to S4, 
+three to five representative plants adjoining the quadrat were sampled. 
+To obtain enough material for subsequent analyses, the number of plants 
+sampled was higher for earlier samples. All leaves were carefully sepa -
+rated from the stems, placed in zip sealed plastic bags, kept flat, and 
+quickly transported to a   18 
+◦
+C freezer where they remained until leaf 
+area determination. All leaves were scanned (EPSON Expression 10,000 
+XL) and leaf area was determined from the scans using R (v 4.1.1., 
+packages ‘EBImage ’ , ‘nnet ’ , ‘NeuralNetTools ’ ). The leaves were subse -
+quently oven-dried at 65 
+◦
+C to constant weight and weighed with a 0.01 
+mg precision scale. SLA (cm
+2 
+mg
+  1
+) was calculated as the ratio of leaves 
+area to their dry weight and LAI (m
+2 
+m
+  2
+) was subsequently estimated 
+according to Eq. 1 . 
+LAI = DW
+Q
+× f
+l
+× SLA × 0 . 1 (1)  
+Where DW
+Q 
+is the quadrat dry weight (g m
+  2
+), f
+l 
+is the leaf fraction of the 
+dry quadrat biomass (estimated from biomass partitioning values of the 
+10 plants samples) and SLA is the Specific Leaf Area (cm
+2 
+mg
+  1
+). 
+In AB21, leaf absorbance between 400 and 700 nm was measured on 
+leaves sampled from each plot at S2 using a Spectroclip (JAZ-TR, Ocean 
+Optics, Oxford, UK). Measurements were made on five leaflets wide 
+enough to accommodate the measuring head whilst avoiding the midrib 
+on two leaves from each of the three upper layers of the canopy 
+(100 – 90%, 90 – 75% and 75 – 60% of canopy height, 0% representing 
+ground level and 100% representing the average canopy height) and 
+averaged for each layer. As leaves in the lower layers of the canopy 
+(60 – 0% of canopy height) were visibly senescing, five measurements per 
+leaf were made on one leaf from each of the darker, mid colour and light- 
+coloured sub layers and averaged for each sub-layer. The classification 
+of leaves ’ colour was realised based on operator ’ s experience. Reflec -
+tance (R%) was standardised against a calibrated Spectralon reference 
+(SRT-99 – 020, Labsphere, Sutton, New Hampshire, USA) after correction 
+for the dark reading. Transmission (T%) was calculated by reference to 
+the absence of a sample and a dark reading. Absorbance (A%) was 
+calculated as 100-T-R. Further details on the method are reported in 
+Supplementary material S2 . 
+2.2.4. Nitrogen use, uptake, and utilisation efficiencies 
+In all three environments at S5, three representative plants per plot 
+were sampled for nitrogen content determination in stems and in -
+florescences (stems, leaves, and flowers in AB21). In Italy, each fraction 
+was oven-dried at 65
+◦
+C to constant weight and ground to particle size 
+< 2 mm using a grindomix (Grindomix GM 200, Retsch, Germany). 
+Nitrogen content of each fraction was measured on samples of about 
+0.5 g of dry matter, using a CN analyser (Vario Max CN Analyzer, Ele -
+mentar Americas Inc., Hanau, Germany). At AB21, samples were freeze 
+dried and fine milled ( < 100 µ m for leaves and flowers < 400 µ m for 
+stems) using a robot mill (IBER, Labman Automation Ltd. Seamer Hill, 
+Stokesley, North Yorkshire, TS9 5NQ, UK) then 2 – 4 mg were precisely 
+weighed and analysed for % nitrogen by weight using a continuous-flow 
+isotope-ratio mass spectrometer (ANCA-SL 20 – 20, Europa Scientific, 
+Crewe, UK). 
+The Nitrogen Use Efficiency (NUE) was calculated as the dry biomass 
+produced at full-flowering per amount of soil available nitrogen and 
+expressed in kg
+DM 
+kg
+N
+  1
+. Soil available nitrogen was calculated as ni -
+trogen supplied by fertilisation plus soil mineral nitrogen ( Gaju et al., 
+2011 ) in the 0 – 60 cm top-soil layer. In Italy, soil mineral nitrogen was 
+estimated from samples taken within 24 h prior to fertilisation in the 0 – 
+H. Blandini `eres et al.                                                                                                                                                                                                                           
+Industrial Crops & Products 195 (2023) 116360
+4
+30 cm topsoil layer, in each plot. Soil samples were kept frozen at 
+  18
+◦
+C prior to analysis, pooled per bloc, and analysed in triplicates for 
+determining the contents of N-NO
+3 
+and N-NH
+4
+, following the methods 
+described in Kaneko et al. (2010) and Rhine et al. (1998) , respectively. 
+In AB21, five cores were taken in the 0 – 10 cm layer, from 10 areas in 
+the experimental field. The five cores were pooled (for each of the ten 
+areas) and the ten frozen soil samples were sent to, and analysed by NRM 
+laboratories (NRM, Coopers Bridge, Braziers Lane, Bracknell, Berkshire 
+RG42 6NS, England) for N-NO
+3 
+and N-NH
+4 
+contents measurements. To 
+determine the total amount of soil mineral nitrogen in the 0 – 60 cm 
+top-soil layer, the concentrations of N-NO
+3 
+and N-NH
+4 
+measured in the 
+soil samples were summed and multiplied by soil bulk density ( Table 1 ). 
+The Nitrogen Uptake Efficiency (NUpE) was calculated as the amount of 
+nitrogen taken up by the crop at S5 per kg of soil available nitrogen and 
+expressed in kg
+N 
+kg
+N
+  1
+. The amount of nitrogen taken up by the crop was 
+calculated by multiplying the biomass of each fraction (stems and 
+leaves) by their respective nitrogen contents and by adding the two 
+terms. The Nitrogen Utilisation Efficiency (NUtE) was calculated as the 
+dry biomass produced per unit of nitrogen taken up at S5 and expressed 
+in kg
+DM 
+kg
+N
+  1
+. NUE, NUpE, and NUtE were measured at full-flowering 
+(S5) rather than at seed maturity (S6) to avoid high variability in re -
+sults due to biomass losses during seed maturation (due to e.g. 
+self-thinning, seed shattering, leaf losses etc.), and because YSCs are 
+here considered of interest for their fibre quality, which is higher at 
+full-flowering than at seed maturity ( Westerhuis et al., 2019 ). 
+2.3. Data processing 
+2.3.1. Biomass dynamics 
+In order to limit the variance induced by inherent in field variability, 
+a Schnute equation ( Schnute, 1981; Barillot et al., 2012 ) was fitted to the 
+aboveground biomass measured in field ( Eq. 2 ) for each plot and in each 
+environment, for a total of ninety-six fittings, using R (v. 4.1.1., package 
+‘nls.multstart ’ ). 
+W ( t ) =
+(
+W
+B
+max
+×
+ 
+1   exp
+(  A × t )
+)
+1   exp
+(  t max × A )
+)
+1
+B
+(2) 
+With W ( t ) being the biomass produced (t ha
+  1
+) as a function of 
+accumulated thermal time t (
+◦
+Cd), using a base temperature of 1
+◦
+C 
+( Tang et al., 2016 ). W
+max 
+is the biomass produced at t = t
+max
+, t
+max 
+being 
+the value of thermal time accumulation between emergence and S6 
+( Supplementary material S1 ), and it was treated as an independent 
+variable that was fixed for each cultivar and each environment of 
+cultivation. A and B are two curvature parameters without biological 
+meaning. Because biomass fittings tended to underestimate the observed 
+biomass productivity in early growth stages, the values of measured 
+biomass at S1 used as an input for the fitting procedure were triplicated 
+to force the fittings to properly describe the whole growing season. The 
+biomass productivity at S5 and S6 was then determined from each fitting 
+using the corresponding set of parameters { W
+max
+; A ; B } and the value of 
+thermal time accumulated at each sampling, and these values were used 
+instead of those measured in field . Each fitting ’ s quality was assessed 
+through the study of the NRMSE (defined as the RMSE normalised by the 
+maximal value of measured biomass of the dataset considered), through 
+the study of the multiple R-squared between measured and fitted values, 
+by assessing normality of distribution of residuals using the 
+Shapiro-Wilk test ( α = 0.05), and by graphical analysis. These quality 
+assessments revealed that two datasets out of ninety-six had an outlier 
+which was removed before re-fitting. Additional fittings using the 
+Schnute function were realised on the data of biomass averaged across 
+all levels of nitrogen for each genotype, and on the data of biomass 
+averaged between both cultivars for each level of nitrogen fertilisation, 
+for the purpose of data presentation (see Section 3.2 .). 
+2.3.2. Light extinction coefficient 
+Light extinction curves were fitted using exponential relationship 
+between τ
+0 
+and LAI ( Eq. 3 ; Meijer et al., 1995 ; Cosentino et al., 2013 ; 
+Tang et al., 2018 ) for each plot in PC20 and PC21. 
+1   τ
+0
+= 1   exp
+(  κ
+l
+× LAI )
+(3) 
+Where LAI is the Leaf Area Index (as described in Section 2.2.3 .), κ
+l 
+is 
+the light extinction coefficient whose value was computed using R (v. 
+4.1.1., package ‘nls.multstart ’ ), and 1   τ
+0 
+is the fraction of PAR inter -
+cepted by the canopy (see Section 2.2.3 .). The quality of the fittings was 
+assessed through the study of the RMSE, of the multiple R squared be -
+tween measured and fitted values of light interception, of the normality 
+of distribution of the residuals, assessed with the Shapiro-Wilk test 
+( α = 0.05), and by visual analysis of the graphs. 
+2.4. Statistical analysis 
+The effects of genotype, nitrogen, and of their interaction on the 
+parameters were assessed by two-way anova. Post-hoc analyses used 
+Tukey ’ s HSD test ( α = 0.05). The assumptions of normality of distribu -
+tion of residuals and of homoscedasticity were assessed with the tests of 
+Shapiro-Wilk and Levene ( α = 0.05), respectively. For each parameter 
+assessed, a maximum of one outlier per environment was removed to 
+comply with these assumptions. The data are presented as means 
+± standard error. All statistical analyses were carried out using R (v. 
+4.1.1., packages ‘agricolae ’ , ‘car ’ ). 
+3. Results 
+3.1. Environmental and crop characteristics 
+Daily mean temperatures ranged from 11.4
+◦
+C (8th of April) to 
+29.3
+◦
+C (1st of August) in PC20, from 6.7
+◦
+C (16th of April) to 28.3
+◦
+C 
+(13th of August) in PC21 ( Fig. 1 ), and from 5.0
+◦
+C (30th of April) to 
+22.4
+◦
+C (22nd of July) in AB21. Rainfall was 295.6 mm in PC20, 
+258.4 mm in PC21, and 456.4 mm in AB21. Overall, rainfall did not 
+compensate for evapotranspiration in Italy and irrigation was carried 
+out four times in PC20 and three times in PC21, providing respectively 
+100 mm and 105 mm of water ( Supplementary material S1 ). No irri -
+gation was performed in AB21. Plant density measured at S1 was 196 
+± 5 plants m
+  2 
+in PC20 and 183 ± 3 plants m
+  2 
+in PC21 and 183 ± 9 
+plants m
+  2 
+in AB21, with no significant differences between genotypes 
+(statistics not shown). In all environments, plant density progressively 
+decreased during the growing season to reach 144 ± 3, 114 ± 3, and 
+142 ± 6 plants m
+  2 
+at seed maturity in PC20, PC21, and AB21, 
+respectively, with no significant differences between genotypes (statis -
+tics not shown). 
+Crops did not suffer from diseases or weeds. Pests (e.g. Chinavia 
+hilaris , Ostrinia nubilalis ) were present in PC20 and PC21, but infestation 
+levels were low and not expected to have any significant effect on 
+aboveground biomass productivity. Crop phenology was similar be -
+tween the two cultivars in all three environments with much greater 
+thermal times accumulated to flowering maturity in PC20 and PC21 
+than in AB21 ( Supplementary material S1 ). ’ Fibror 79 ’ was of a slightly 
+lighter green than ’ Futura 75 ’ after emergence and this difference of 
+colour between the two cultivars tended to increase during the growing 
+season, to become a dark yellow and a dark green at seed maturity for 
+’ Fibror 79 ’ and ’ Futura 75 ’ , respectively ( Supplementary material S3 , 
+Impollonia et al., 2022 ). 
+3.2. Biomass productivity at full-flowering and at seed maturity 
+All fittings of biomass dynamics obtained with Eq. 2 described the 
+measured data of aboveground biomass productivity relatively well. 
+Across all ninety-six fittings, the values of multiple-R squared between 
+H. Blandini `eres et al.                                                                                                                                                                                                                           
+Industrial Crops & Products 195 (2023) 116360
+5
+observed and fitted values of biomass ranged from 0.84 to 0.99, and 
+NRMSE ranged from 0.73% to 12.7% ( Supplementary material S4 ). Nine 
+fittings did not have a normal distribution of residuals, which was 
+mostly caused by outliers at the end of the growing season, as the 
+variability between replicates often increased with age ( Supplementary 
+material S5 ). 
+Across all conditions of genotype, nitrogen fertilisation, harvest time, 
+and environment, aboveground biomass productivity ranged from 7.4 
+± 0.4 t ha
+  1 
+for unfertilised ’ Fibror 79 ’ sampled at full-flowering in 
+PC20, to 14.9 t ha
+  1 
+for ’ Fibror 79 ’ fertilised with 100 kg
+N 
+ha
+  1 
+and 
+sampled at seed maturity in AB21 ( Supplementary material S6 ). 
+Generally, crop productivity was similar between the two cultivars 
+( Fig. 2 ), as the genotype effect was not significant in AB21 and PC21 
+( Table 2 ), and as the difference did not exceed 0.6 t ha
+  1 
+in these two 
+environments at either harvest time ( Table 3 ). However, at PC20, 
+aboveground biomass productivity was significantly affected by geno -
+type both at full-flowering and seed maturity ( Table 2 ), as ’ Futura 75 ’ 
+produced about 1.5 t ha
+  1 
+more than ’ Fibror 79 ’ in either harvest time 
+( Fig. 2 , Table 3 ). Similarly, nitrogen fertilisation had a significant effect 
+on crop productivity in PC20 but not in the other two environments 
+( Fig. 2 , Tables 2 and 3 ), although increasing levels of nitrogen fertil -
+isation tended to lead to biomass increments in AB21, in particular at 
+seed maturity ( Fig. 2 , Table 3 ). The interaction between genotype and 
+nitrogen fertilisation was not significant in any combination of envi -
+ronment and sampling time ( Table 2 ). 
+Stem productivity was not affected by the genotype in either com -
+bination of environment and harvest time but was significantly affected 
+by nitrogen fertilisation at both harvest times in PC20 ( Table 2 ). Over all 
+combinations of genotype, nitrogen fertilisation, environment, and 
+harvest time, it ranged from 5.7 ± 0.4 t ha
+  1 
+at full-flowering in PC20 to 
+10.6 ± 1.3 t ha
+  1 
+at seed maturity in AB21, ( Supplementary material 
+S6 ). 
+Fibre yield ranged from 1.82 ± 0.16 t ha
+  1 
+for ’ Futura 75 ’ fertilised 
+with 25 kg
+N 
+ha
+  1 
+in PC20 at seed maturity, to 3.81 ± 0.71 t ha
+  1 
+for 
+Fig. 1. Daily average temperature (continuous line) and rainfall (blue bars) in the three environments of study between sowing and S6.  
+Fig. 2. Dynamics of aboveground dry biomass as a function of thermal time accumulation (base temperature = 1
+◦
+C) from emergence to seed maturity, for each 
+genotype (top) and each level of nitrogen fertilisation (bottom), in the three environments. Points and error bars are the average ± standard error of the data 
+measured in field (n = 16 for each genotype and n = 8 for each level of nitrogen fertilisation). The continuous lines are the fittings realised on these averaged values 
+using the Schnute function ( Eq. 2 ). GDDE: growing degree day from emergence. 
+H. Blandini `eres et al.                                                                                                                                                                                                                           
+Industrial Crops & Products 195 (2023) 116360
+6
+’ Fibror 79 ’ fertilised with 50 kg
+N 
+ha
+  1 
+in AB21 at seed maturity. Ni -
+trogen fertilisation had a significant effect on fibre yield in PC20 but not 
+in the other two environments ( Table 2 ). ’ Fibror 79 ’ always produced 
+significantly more fibre than ’ Futura 75 ’ ( Table 3 ) except at AB21 at 
+seed maturity when this difference was not significant ( Table 2 ). Over -
+all, the higher fibre yield of ’ Fibror 79 ’ over ’ Futura 75 ’ can mostly be 
+explained by its higher bast fibre content which averaged 36.0 ± 0.2% 
+across all conditions of environment, sampling time and nitrogen fer -
+tilisation, against 28.9 ± 0.2% for ’ Futura 75 ’ ( Supplementary material 
+S7 , n = 480). 
+The biomass of threshing residues was significantly affected by the 
+genotype in PC20 and in AB21, but not in PC21 ( Table 4 ). In PC20, 
+’ Futura 75 ’ produced more threshing residues than ’ Fibror 79 ’ , while 
+the reverse occurred in AB21 ( Table 5 ). 
+Seed productivity was significantly affected by the genotype in PC20 
+and PC21, where ’ Futura 75 ’ produced more seeds than ’ Fibror 79 ’ , but 
+not in AB21 ( Tables 4 and 5 ). Seed productivity was much greater in 
+AB21 (1.65 ± 0.08 t ha
+  1
+) than it was in Italy (0.14 ± 0.01 t ha
+  1 
+and 
+0.32 ± 0.03 t ha
+  1 
+in PC20 and PC21, respectively). Contrary to the 
+total aboveground biomass, seed productivity increased significantly 
+with increasing nitrogen levels in AB21, but not in the other two envi -
+ronments ( Table 4 ). 
+3.3. Leaf Area Index, light interception and light absorbance 
+In PC20 and PC21, across all conditions of genotype and nitrogen 
+fertilisation, LAI increased continuously from S1 to S4 ( Fig. 3 ). The 
+fraction of light transmitted by the canopy decreased during the early 
+growth phase but reached a plateau from S2 and remained relatively 
+stable during the rest of the vegetative growth ( Fig. 3 ). 
+In PC20, ’ Futura 75 ’ had a significantly higher LAI than ’ Fibror 79 ’ 
+during most of the vegetative growth ( Table 6 , Fig. 3 , Supplementary 
+material S8 ). This resulted in a significantly lower fraction of trans -
+mitted PAR through the canopy ( τ
+0
+) by ’ Futura 75 ’ over ’ Fibror 79 ’ at S1 
+but not at later sampling times ( Table 6 , Fig. 3 , Supplementary material 
+S8 ). The effect of nitrogen fertilisation on LAI and τ
+0 
+was significant 
+during the whole vegetative growth ( Table 6 , Fig. 3 , Supplementary 
+materials S8 and S9 ). 
+Table 2 
+p-values of the effects of genotype (G), nitrogen (N) and of their interaction (G × N) on total aboveground biomass productivity, stem productivity and fibre pro -
+ductivity, for each harvest time (full-flowering and seed maturity) and each environment, assessed by two-ways anova. Bold values highlight the significant effects 
+( α = 0.05).  
+Biomass fraction Effect PC20 PC21 AB21 
+Full-flowering Seed maturity Full-flowering Seed maturity Full-flowering Seed maturity 
+Total aboveground biomass G 2.1 e
+¡ 3 
+0.013 0.26 0.35  0.93  0.52 
+N 1.5 e
+¡ 4 
+2.5 e
+¡ 4 
+0.84 0.81  0.10  0.12 
+G × N 0.69 0.90 0.82 0.76  0.81  0.42 
+Stems G 0.15 0.74 0.52 0.30  0.52  0.35 
+N 1.5 e
+¡ 5 
+9.7 e
+¡ 5 
+0.70 0.64  0.39  0.28 
+G × N 0.97 0.82 0.87 0.85  0.85  0.76 
+Fibre G 0.014 7.1 e
+¡ 3 
+2.5 e
+¡ 3 
+1.2 e
+¡ 3  
+0.037  0.093 
+N 6.1 e
+¡ 6 
+3.8 e
+¡ 3 
+0.44 0.43  0.51  0.37 
+G × N 0.75 0.57 0.68 0.86  0.75  0.55  
+Table 3 
+Productivity of total aboveground biomass, stem, and fibre (t ha
+  1
+), at full-flowering and at seed maturity, in all three environments, for each cultivar. Data presented 
+are the mean ± standard error, averaged across all levels of nitrogen fertilisation (n = 16 for each genotype), or between both genotype (n = 8 for each level of 
+nitrogen fertilisation).  
+Biomass fraction Factor Genotype / 
+Nitrogen 
+PC20 PC21 AB21 
+Full- 
+flowering 
+Seed 
+maturity 
+Full- 
+flowering 
+Seed 
+maturity 
+Full- 
+flowering 
+Seed 
+maturity 
+Total aboveground 
+biomass 
+Genotype ’ Fibror 79 ’ 9.4 ± 0.5 9.9 ± 0.6 10.4 ± 0.3 10.8 ± 0.4 11.4 ± 0.4 13.2 ± 0.7 
+’ Futura 75 ’ 10.9 ± 0.5 11.4 ± 0.5 11.0 ± 0.3 11.4 ± 0.4 11.4 ± 0.4 12.6 ± 0.6 
+Nitrogen 
+fertilisation 
+N
+0 
+8.4 ± 0.8 9.0 ± 0.8 10.5 ± 0.6 10.9 ± 0.7 10.8 ± 0.4 11.8 ± 0.6 
+N
+25 
+9.1 ± 0.6 9.5 ± 0.6 10.6 ± 0.4 11.0 ± 0.4 11.4 ± 0.5 12.6 ± 0.6 
+N
+50 
+10.8 ± 0.5 11.4 ± 0.5 10.6 ± 0.4 10.9 ± 0.5 10.7 ± 0.8 12.5 ± 1.4 
+N
+100 
+12.4 ± 0.3 12.9 ± 0.4 11.1 ± 0.5 11.6 ± 0.6 12.7 ± 0.4 14.8 ± 0.8 
+Stem Genotype ’ Fibror 79 ’ 7.3 ± 0.4 7.5 ± 0.5 7.7 ± 0.2 8.1 ± 0.3 8.7 ± 0.4 9.4 ± 0.5 
+’ Futura 75 ’ 8.0 ± 0.4 7.7 ± 0.5 7.9 ± 0.2 8.6 ± 0.3 9.1 ± 0.4 9.7 ± 0.5 
+Nitrogen 
+fertilisation 
+N
+0 
+6.2 ± 0.6 6.1 ± 0.6 7.6 ± 0.4 8.0 ± 0.5 8.6 ± 0.4 9.2 ± 0.6 
+N
+25 
+6.8 ± 0.5 6.5 ± 0.5 7.7 ± 0.3 8.3 ± 0.3 8.9 ± 0.5 9.5 ± 0.6 
+N
+50 
+8.1 ± 0.3 8.1 ± 0.5 7.6 ± 0.3 8.4 ± 0.4 8.4 ± 0.8 9.3 ± 1.0 
+N
+100 
+9.5 ± 0.2 9.8 ± 0.3 8.2 ± 0.4 8.8 ± 0.4 9.7 ± 0.4 10.4 ± 0.6 
+Fibre Genotype ’ Fibror 79 ’ 2.7 ± 0.2 2.6 ± 0.2 2.7 ± 0.1 2.9 ± 0.1 3.1 ± 0.2 3.5 ± 0.2 
+’ Futura 75 ’ 2.3 ± 0.1 2.1 ± 0.1 2.3 ± 0.1 2.4 ± 0.1 2.7 ± 0.1 2.9 ± 0.2 
+Nitrogen 
+fertilisation 
+N
+0 
+2.1 ± 0.2 1.9 ± 0.2 2.4 ± 0.2 2.5 ± 0.2 2.8 ± 0.1 3.2 ± 0.2 
+N
+25 
+2.2 ± 0.2 2.1 ± 0.2 2.5 ± 0.1 2.7 ± 0.1 2.9 ± 0.2 3.1 ± 0.1 
+N
+50 
+2.6 ± 0.1 2.5 ± 0.2 2.4 ± 0.1 2.6 ± 0.2 2.7 ± 0.3 3.1 ± 0.4 
+N
+100 
+3.2 ± 0.1 2.9 ± 0.2 2.6 ± 0.2 2.8 ± 0.1 3.1 ± 0.2 3.4 ± 0.2  
+Table 4 
+p-values of the effects of genotype (G), nitrogen (N) and of their interaction (G ×
+N) on the biomass of threshing residues and seeds, at seed maturity and for each 
+environment, assessed by two-ways anova. Bold values highlight the significant 
+effects ( α = 0.05).  
+Biomass fraction Factor PC20 PC21 AB21 
+Threshing residues G 7.0 e
+¡ 8  
+0.65 7.5 e
+¡ 5 
+N 0.25  0.53 1.9 e
+¡ 3 
+G × N 0.71  0.58 0.58 
+Seeds G 2.9 e
+¡ 7  
+0.012 0.47 
+N 0.13  0.98 6.4e
+¡ 5 
+G × N 0.018  0.88 0.40  
+H. Blandini `eres et al.                                                                                                                                                                                                                           
+Industrial Crops & Products 195 (2023) 116360
+7
+In PC21, both LAI and τ
+0 
+were not significantly different between the 
+two cultivars except τ
+0 
+at S3 when ’ Fibror 79 ’ transmitted more PAR 
+than ’ Futura 75 ’ ( Fig. 3 , Table 6 , Supplementary material S9 ). Nitrogen 
+fertilisation did have significant effects on LAI at S1 but not subse -
+quently ( Table 6 , Fig. 3 ), while it significantly affected τ
+0 
+at S1, S2, and 
+S4 ( Table 6 ), but in an inconsistent manner and in a lesser extent than in 
+PC20. 
+Overall, the fraction of PAR intercepted increased with increasing 
+LAI up to about 2.5 m
+2 
+m
+  2
+, above which it was somewhat variable 
+between 0.8 and 1 ( Fig. 4 ). The light extinction curves were almost 
+identical between both cultivars with averaged κ
+l 
+values of 0.74 ± 0.02 
+Table 5 
+Productivity of threshing residues and seeds (t ha
+  1
+) at seed maturity, in all 
+three environments, for each cultivar and each level of nitrogen fertilisation. 
+Data presented are the mean ± standard error, averaged across all levels of ni -
+trogen fertilisation (n = 16 for each genotype), or between both genotype (n = 8 
+for each level of nitrogen fertilisation).  
+Biomass 
+fraction 
+Factor Cultivar / 
+Nitrogen 
+PC20 PC21 AB21 
+Threshing 
+residues 
+Genotype ’ Fibror 79 ’ 2.3 
+± 0.1 
+2.4 
+± 0.1 
+2.1 
+± 0.1 
+’ Futura 75 ’ 3.6 
+± 0.1 
+2.4 
+± 0.1 
+1.3 
+± 0.1 
+Nitrogen 
+fertilisation 
+N
+0 
+2.7 
+± 0.3 
+2.5 
+± 0.2 
+1.4 
+± 0.1 
+N
+25 
+2.9 
+± 0.3 
+2.4 
+± 0.2 
+1.5 
+± 0.2 
+N
+50 
+3.1 
+± 0.3 
+2.2 
+± 0.2 
+1.5 
+± 0.3 
+N
+100 
+3.0 
+± 0.2 
+2.5 
+± 0.2 
+2.3 
+± 0.2 
+Seeds Genotype ’ Fibror 79 ’ 0.09 
+± 0.01 
+0.24 
+± 0.04 
+1.69 
+± 0.12 
+’ Futura 75 ’ 0.19 
+± 0.01 
+0.41 
+± 0.04 
+1.61 
+± 0.11 
+Nitrogen 
+fertilisation 
+N
+0 
+0.16 
+± 0.03 
+0.35 
+± 0.08 
+1.21 
+± 0.06 
+N
+25 
+0.14 
+± 0.02 
+0.33 
+± 0.06 
+1.55 
+± 0.11 
+N
+50 
+0.14 
+± 0.03 
+0.32 
+± 0.05 
+1.69 
+± 0.13 
+N
+100 
+0.11 
+± 0.01 
+0.30 
+± 0.08 
+2.15 
+± 0.14  
+Fig. 3. Effects of genotype (top) and nitrogen fertilisation (bottom) on the dynamics of LAI (solid lines) and τ
+0 
+(dashed lines) during the vegetative growth, in PC20 
+(left) and PC21 (right). Points and error bars are means and their standard errors (n = 16 for genotype effect, and n = 8 for nitrogen fertilisation effect). GDDE: 
+growing degree day after emergence. 
+Table 6 
+p-values of the effects of genotype (G), nitrogen fertilisation (N) and of their 
+interaction (G × N) on the Leaf Area Index and on the fraction of PAR trans -
+mitted by the canopy ( τ
+0
+) in each environment, for the sampling times S1 to S4 
+(n = 4). Bold values highlight the significant effects ( α = 0.05).  
+Sampling time Factor PC20 PC21 
+LAI τ
+0 
+LAI τ
+0 
+S1 G 3.3 e
+¡ 3 
+4.3 e
+¡ 4  
+0.50 0.93 
+N 3.2 e
+¡ 3 
+6.5 e
+¡ 4  
+0.023 5.7 e
+¡ 3 
+G × N 0.75 0.74  0.84 0.63 
+S2 G 0.18 0.19  0.77 0.064 
+N 2.1 e
+¡ 6 
+3.8 e
+¡ 5  
+0.58 4.7 e
+¡ 4 
+G × N 0.92 1.00  0.14 0.70 
+S3 G 0.022 0.11  0.87 0.013 
+N 7.1 e
+¡ 3 
+1.1 e
+¡ 6  
+0.90 0.66 
+G × N 0.76 0.038  0.52 0.53 
+S4 G 7.6 e
+¡ 4 
+0.80  0.052 0.20 
+N 3.8 e
+¡ 6 
+1.5 e
+¡ 4  
+0.72 0.042 
+G × N 0.096 0.42  0.38 0.23  
+H. Blandini `eres et al.                                                                                                                                                                                                                           
+Industrial Crops & Products 195 (2023) 116360
+8
+for ’ Fibror 79 ’ and 0.76 ± 0.02 for ’ Futura 75 ’ . No clear effect of ni -
+trogen fertilisation could be observed, as averaged κ
+l 
+values were 0.73 
+± 0.03, 0.80 ± 0.05, 0.74 ± 0.02 and 0.75 ± 0.02 for N
+0
+, N
+25
+, N
+50
+, and 
+N
+100
+, respectively. 
+In AB21, PAR absorbance by leaves was the highest in the top layers 
+of the canopy and decreased with the depth in canopy, following a 
+similar pattern for both cultivars. However, the decrease of absorbance 
+with the increasing depth in the canopy appeared more important for 
+’ Fibror 79 ’ than for ’ Futura 75
+′
+( Table 7 ). Indeed, ’ Futura 75 ’ had a 
+slightly but significantly higher PAR absorbance than ’ Fibror 79 ’ , across 
+the top three layers of the canopy but this difference became more 
+important in the lowest layers ( Table 7 ). Overall, nitrogen did not affect 
+the leaf absorbance except in the top and in the bottom layers ( Table 7 ), 
+but these differences across nitrogen treatments showed inconsistent 
+patterns and are not presented. 
+3.4. Nitrogen content and nitrogen use, uptake and utilisation efficiencies 
+Overall, total nitrogen uptake at full-flowering reached similar 
+values in AB21 (92.9 ± 5.6 kg
+N 
+ha
+  1
+) and in PC20 (94.4 ± 5.6 kg
+N 
+ha
+  1
+), but this value increased to 176.8 ± 5.7 kg
+N 
+ha
+  1 
+in PC21. Total 
+nitrogen found in inflorescences was significantly affected by nitrogen in 
+PC20 (p-value = 2.5 e
+  4
+) and in AB21 (p-value = 4.0 e
+  7
+), where 
+increasing levels of nitrogen fertilisation led to increases of total leaf 
+nitrogen, and by genotype (p-value = 9.1 e
+  3
+) in AB21 where ’ Fibror 79 ’ 
+had a higher amount of nitrogen (73.8 ± 4.3 kg
+N 
+ha
+  1
+) than ‘Futura 75
+′
+(60.3 ± 5.9 kg
+N 
+ha
+  1
+). In PC21, none of the factors had a significant 
+effect on total leaf nitrogen. 
+The effects of genotype and nitrogen fertilisation on NUE, NUtE and 
+NUpE varied across the three environments ( Fig. 5 ). In AB21, both NUE 
+and NUtE significantly decreased at increasing levels of nitrogen fertil -
+isation ( Table 8 ) but NUpE was similar at all levels of nitrogen. 
+’ Fibror79 ’ had a significantly higher NUpE (0.59 ± 0.03 kg
+N 
+kg
+N
+  1
+) than 
+’ Futura 75 ’ (0.50 ± 0.02 kg
+N 
+kg
+N
+  1
+), while the reverse was true for NUtE 
+( Table 8 , Fig. 5 , Supplementary material S10 ), a combination which 
+resulted in a similar NUE between the two cultivars. 
+In PC20, ’ Futura 75 ’ also had a significantly higher NUtE (122.5 
+± 6.8 kg
+DM 
+kg
+N
+  1
+) than ’ Fibror79 ’ (103.6 ± 4.1 kg
+DM 
+kg
+N
+  1
+) but NUpE 
+was similar between the two genotypes ( Table 8 ) This resulted in ’ Futura 
+75 ’ having a higher NUE (58.4 ± 2.6 kg
+DM 
+kg
+N
+  1
+) than ’ Fibror79 ’ (50.0 
+± 1.8 kg
+DM 
+kg
+N
+  1
+). The effect of nitrogen fertilisation was not significant 
+on any of the three parameters. 
+In PC21, the effect of genotype was not significant on any of the three 
+parameters, while both NUE and NUpE significantly decreased with 
+increasing levels of nitrogen fertilisation ( Table 8 ). No interaction effect 
+between genotype and nitrogen fertilisation could be observed in any of 
+the three environments ( Table 8 ). 
+4. Discussion 
+The aboveground biomass was in the range of values usually re -
+ported for ’ Futura 75 ’ and ’ Fibror 79 ’ in Italy and the British Isles ( Struik 
+et al., 2000; Cosentino et al., 2013; Finnan and Burke, 2013a, 2013b; 
+Tang et al., 2016; Gr ´egoire et al., 2021 ). Overall, a nitrogen response 
+was not seen in PC21, whilst there was a clear response in PC20. In 
+AB21, the effect of nitrogen was ambiguous: despite a trend for higher 
+biomass at increasing levels of nitrogen fertilisation, particularly at seed 
+maturity ( Fig. 2 ), nitrogen did not have any significant effects on 
+aboveground biomass. The total nitrogen taken up by the crop was very 
+similar between AB21 and PC20 while it was far higher in PC21, sug -
+gesting that the relatively little effect of nitrogen fertilisation on 
+aboveground biomass in AB21 in comparison to that observed in PC20 
+could be explained by specific environmental conditions such as e.g. the 
+relatively low maximum PAR intensity in AB21 as reported by Eriksen 
+and Whitney (1981) and Stagnari et al. (2015) . 
+For both cultivars in AB21, although aboveground biomass was not 
+significantly affected by nitrogen fertilisation, seeds and threshing res -
+idues were very responsive to it ( Supplementary material S6 ). In hemp, 
+the stems were usually reported to display a stronger response to ni -
+trogen fertilisation than the seeds or flowers ( Vera et al., 2004; Finnan 
+and Burke, 2013b; Tang et al., 2017a ), which differ from the results of 
+the present work. The reasons for the bigger response to nitrogen of 
+seeds and threshing residues over stems in this work remain however 
+unclear. 
+Because the levels of soil mineral nitrogen before fertilisation were 
+higher in PC20 and AB21 than in PC21, it is probable that differences of 
+meteorological conditions and of soil characteristics (e.g. soil organic 
+matter) across the three environments have led to a greater minerali -
+sation and availability of nitrogen in PC21 than in the other two envi -
+ronments ( Vagstad et al., 1997 ). This is consistent with the much higher 
+NUpE which exceeded 1.0 kg
+N 
+kg
+N
+  1 
+in PC21, on average double than 
+that in the other sites. These results demonstrate that nitrogen fertil -
+isation requirements of hemp are highly dependent on soil fertility 
+characteristics, in accordance with previous reports ( Ehrensing, 1998; 
+Amaducci et al., 2015; Fike, 2016 ). 
+Nitrate leaching is not expected to have had a strong impact on the 
+experiment in AB21: despite the sandier soil and the more important 
+rainfalls in AB21 than in Italy, nitrogen fertilisation was delayed to a 
+moment when rainfalls were particularly low which coincided with a 
+period of high nitrogen demand for hemp ( Ivonyi et al., 1997 ). The 
+delayed fertilisation is not thought to have significantly impacted this 
+trial ’ s results as Finnan and Burke (2013b) did not report significant 
+effects of a delayed nitrogen fertilisation on biomass productivity be -
+tween a fertilisation realised at sowing and a fertilisation realised 44 
+days after sowing. However, the fact that the fertilisation had to be 
+delayed in AB21 emphasises the importance of limiting nitrogen losses 
+in environments prone to abundant rainfalls, and split applications of 
+nitrogen can be considered as a viable way to do so ( Finnan and Burke, 
+2013b ). 
+Overall, the two cultivars reached comparable levels of biomass 
+production, in particular under non-limiting nitrogen conditions (PC21). 
+This is consistent with other comparisons between yellow and green 
+hemp genotypes of similar flowering date ( Cosentino et al., 2013; Tang 
+et al., 2016 ). Still, the slight but significant difference of productivity 
+observed between the two cultivars in PC20 suggests that ’ Fibror 79 ’ is 
+less productive than ’ Futura 75 ’ under nitrogen limiting conditions, but 
+not under non-limiting nitrogen conditions as this difference was neither 
+observed in PC21, nor in AB21. Because both cultivars displayed the 
+same phenological development, the difference of productivity observed 
+in PC20 can be attributed to a difference in the rate of biomass pro -
+duction, which can partially be explained by differences of LAI during 
+the early growth ( Fig. 3 ). The increased LAI in ’ Futura 75 ’ led to smaller 
+Fig. 4. Light extinction curves (solid lines, Eq. 3, n = 128) fitted to all data 
+points from PC20 or PC21 for ’ Futura 75 ’ and ’ Fibror 79 ’ . 
+H. Blandini `eres et al.                                                                                                                                                                                                                           
+Industrial Crops & Products 195 (2023) 116360
+9
+amounts of light transmitted through the canopy compared with ’ Fibror 
+79 ’ , and therefore to a potentially higher canopy assimilation rate in 
+’ Futura 75 ’ . Increased LAI, leading to increased light interception has 
+been shown to be related to increased canopy carbon assimilation ( Cock 
+et al., 1979; Keating et al., 1982; Mandal and Sinha, 2004 ). In hemp, 
+Meijer et al. (1995) showed that fast LAI growth early in the season 
+increases total PAR intercepted by the crop, and thus is an important 
+driver of productivity. However, later in the season (from S2 onward), 
+although the difference of LAI remained significant between the two 
+cultivars, there were no differences in light transmission. The saturation 
+of canopy absorption by LAI greater than 2.5 m
+2 
+m
+  2 
+( Fig. 4 ), is similar 
+to that reported by Meijer et al. (1995) , but a higher LAI (over 6 m
+2 
+m
+  2
+) 
+was required to achieve saturation in a high solar radiation environment 
+( Cosentino et al., 2013 ). This indicates that the observed difference of 
+LAI between the two cultivars in PC20 might not have been the sole 
+driver of the difference in biomass productivity, as the difference of 
+biomass productivity attained at the end of the season between the two 
+cultivars was not totally determined at S2 (average difference between 
+the two cultivars of 0.97 t ha
+  1 
+and 1.54 t ha
+  1 
+at S2 and S6, respec -
+tively, in PC20). 
+’ Fibror 79 ’ appeared to be characterised by a lower rate of biomass 
+production than ’ Futura 75 ’ under nitrogen-limiting conditions even 
+when both cultivars transmit the same amount of PAR. This implies that 
+’ Fibror 79 ’ is either characterized by a lower radiation use efficiency 
+(RUE) ( de Wit et al., 1978; Lee et al., 2003 ) and/or by a lower leaf light 
+absorption and faster senescence observed here, which could explain in 
+return the slower LAI development in ’ Fibror 79 ’ than in ’ Futura 75 ’ . 
+Leaf absorbance measured in AB21 indeed showed a difference of light 
+absorption between the two cultivars but it did not result in significant 
+differences of biomass productivity in this environment. Impollonia 
+et al. (2022) showed that ’ Fibror 79 ’ was characterised by a lower leaf 
+chlorophyll content than ’ Futura 75 ’ in PC20 and PC21 using leaf 
+samples from the same experiment, which is consistent with the lower 
+absorption found in AB21. By considering that total leaf nitrogen con -
+tent was similar in PC20 and PC21, it can be hypothesised that the two 
+cultivars are characterised by a difference in the balance between (i) the 
+nitrogen allocated to the Rubisco (ribulose-1,5-bisphosphate carbox -
+ylase/oxygenase) which is of prime importance under high light at high 
+photosynthetic rates, and (ii) the nitrogen used in light harvesting 
+components and chlorophyll binding which must be maximised under 
+low light conditions ( Kumar et al., 2002 ). The existing difference of a 
+gradient of light absorption across the relative crop height reported in 
+this work could represent an interesting lever for action to select hemp 
+cultivars adapted to different light environments ( Walker et al., 2018; 
+He et al., 2020 ). 
+This supposed difference of RUE between the two cultivars under 
+nitrogen-limiting conditions cannot be explained by a higher NUpE of 
+’ Futura 75 ’ over that of ’ Fibror 79 ’ . Indeed, NUpE was never lower for 
+’ Fibror 79 ’ than for ’ Futura 75 ’ , which contradicted the statements of 
+Berenji et al. (2013) and Thouminot (2015) and failed to support the 
+hypotheses of the present work. Instead, ’ Futura 75 ’ showed a signifi -
+cantly higher NUtE than ’ Fibror 79 ’ in PC20 and AB21, confirming a 
+trend for ’ Futura 75 ’ to display a slightly higher efficiency of resource 
+utilisation, this difference between the two cultivars being dependant on 
+nitrogen availability and in general, on the growth environment. 
+Overall, ’ Futura 75 ’ appeared to be better suited than ’ Fibror 79 ’ for 
+dual- and multi-purposes production in Italy, as it produced significantly 
+more threshing residues in PC20 and more seeds in both years than 
+’ Fibror 79 ’ . The maximum seed yield reported in Italian environments 
+(0.47 t ha
+  1 
+across all combinations of genotype × nitrogen) was low 
+when compared to previous data; for example, Legros et al. (2013) re -
+ported a mean seed yield of 1.0 t ha
+  1 
+for different cultivars over a 
+twelve-years period. In PC20 and PC21, a high fraction of seed was 
+found to be empty in both years (in-field observation), which might be 
+the consequence of water shortage in PC20 and of high temperatures 
+during the seed filling period, as seed yield is particularly susceptible to 
+these stresses ( Campbell et al., 2019; Bahador and Tadayon, 2020; 
+Baldini et al., 2020; Ferfuia et al., 2021 ). Pests and predation by birds (in 
+both years) and a gale that occurred two days before seed harvest in 
+PC20 might also have contributed to the low seed yield. 
+In Wales instead, ’ Fibror 79 ’ produced more threshing residues and 
+had the same seed productivity as ’ Futura 75 ’ . In this site, seed yield was 
+particularly high (up to 2.23 t ha
+  1
+) compared to seed productivity in 
+Italy. Similar differences of seed yields across four environments in 
+Europe were reported by Tang et al. (2017a) with the cultivar ’ Futura 
+75 ’ , but the highest seed yields were found in Piacenza, contrary to this 
+work. In environments similar to AB21, ’ Fibror 79 ’ might be a 
+better-suited cultivar because of its high production of threshing resi -
+dues, seeds and fibre. ’ Fibror 79 ’ also appears to be a better cultivar for 
+single-use fibre production, as it had significantly higher bast fibre yields 
+than ’ Futura 75 ’ in all three environments. 
+It is impossible to conclude on the fact that the difference observed 
+between the two cultivars are solely due to the genotype that drives the 
+“ yellowness ” , or if these differences were driven by other genetic vari -
+ations between the two cultivars. Three main research axes could allow 
+to better understand the implications of the yellow genotype in hemp: 
+firstly, an assessment of the differences of fibre processability and 
+quality between several yellow and green cultivars could be made, tar -
+geting the most relevant parameters for industrial applications to assess 
+the fibre ’ s commercial value. Secondly, a molecular investigation might 
+be the most suited tool for identifying the genetic driver of the yellow -
+ness and it could allow to determine whether the yellow trait is linked to 
+the high stem processability of YSCs or not. Thirdly, the study and 
+modelling of gas exchanges under varying levels of nitrogen availability, 
+at leaf and canopy scales, should provide a better understanding of the 
+mechanisms underlying the differences of growth rate and light use ef -
+ficiency between green and yellow genotypes. To do so, it could be 
+possible to make use of the existence of a small percentage of plants 
+displaying a green phenotype in the cultivar ’ Fibror 79 ’ (about 1% in the 
+seed lots used in this work). 
+5. Conclusion 
+This work investigated the differences of yield and ecophysiology 
+between a yellow hemp cultivar ( ’ Fibror 79 ’ ) and a green one ( ’ Futura 
+75 ’ ), hypothesising that a low relative nitrogen uptake efficiency was 
+Table 7 
+Leaf absorbance over the 400 – 700 nm range of the two cultivars in AB21, at S2, for each layer of the canopy; and significance of the effects of genotype, nitrogen, and 
+of their interaction on the results obtained. Data presented are the mean ± standard error (n = 16).  
+Canopy layer (% of relative crop height) Absorbance Significance (p-value) 
+’ Futura 75 ’ ’ Fibror 79 ’ Genotype Nitrogen Genotype × Nitrogen 
+100 – 90% 90.5 ± 0.4 88.3 ± 0.5 5.4 e
+¡ 4 
+2.9 e
+¡ 3 
+0.69 
+90 – 75% 90.4 ± 0.4 88.1 ± 0.5 2.2 e
+¡ 3 
+0.19 0.70 
+75 – 60% 89.3 ± 0.5 85.3 ± 0.6 9.7 e
+¡ 5 
+0.84 1.00 
+60 – 0% upper 87.2 ± 0.6 81.4 ± 0.9 5.1 e
+¡ 6 
+0.12 0.18 
+Mid 77.9 ± 1.2 68.8 ± 1.8 1.4 e
+¡ 4 
+0.49 0.07 
+lower 53.3 ± 3.0 36.6 ± 2.0 1.4 e
+¡ 7 
+6.0 e
+¡ 3 
+4.4 e
+¡ 5  
+H. Blandini `eres et al.                                                                                                                                                                                                                           
+Industrial Crops & Products 195 (2023) 116360
+10
+Fig. 5. Effect of genotype (left) and nitrogen fertilisation (right) on NUE (kg of biomass produced per kg of available soil nitrogen in the 0 – 60 cm layer), NUpE (kg of 
+nitrogen taken up by the crop per kg of available soil nitrogen in the 0 – 60 cm layer) and NUtE (kg of biomass produced per kg of nitrogen taken up by the crop), in 
+the three environments of study, measured at full-flowering. Bars and error bars represent the mean and standard error, respectively (n = 16 for genotype effect and 
+n = 8 for nitrogen fertilisation effect). For each parameter and within each environment, different letters indicate significantly different conditions of nitrogen 
+fertilisation after Tukey ’ s HSD procedure ( α = 0.05). 
+H. Blandini `eres et al.                                                                                                                                                                                                                           
+Industrial Crops & Products 195 (2023) 116360
+11
+the cause of the yellow trait. Results obtained failed to support this 
+hypothesis as the Nitrogen Uptake Efficiency was not significantly 
+different between the two cultivars. Instead, the Nitrogen Utilisation 
+Efficiency appeared to be significantly lower in ’ Fibror 79 ’ than in 
+’ Futura 75 ’ at low levels of nitrogen availability, enabling ’ Futura 75 ’ to 
+reach a slightly but significantly higher aboveground biomass than 
+’ Fibror 79 ’ . These differences were at least partially driven by differ -
+ences of growth rate during the vegetative phase, potentially implying a 
+lower rate of carbon assimilation and a lower light use efficiency of 
+’ Fibror 79 ’ over ’ Futura 75 ’ at low levels of nitrogen availability. This 
+work also highlighted that the choice of cultivar for a given harvestable 
+outputs depends on the environment, as ’ Futura 75 ’ is better suited for 
+dual- and multi-purpose productions in Italy, while ’ Fibror 79 ’ appears 
+better suited for dual- and multi-purpose productions in Wales. ’ Fibror 
+79 ’ is also better suited for single-use fibre production because of its 
+higher level of bast fibre content and fibre yield. 
+Funding 
+This study was supported by the Bio-Based Industries Joint Under -
+taking under the European Union ’ s Horizon 2020 Research and Inno -
+vation Programme, grant agreement no. 745012. Aberystwyth 
+University has benefited from financial support from the Welsh Gov -
+ernment ’ s £ 51.2 m SMART Expertise programme. Backed by £ 30 m of 
+EU funds, SMART Expertise supports higher and further education or -
+ganisations across Wales to collaborate with Industry to drive forward 
+research and knowledge transfer and create products, services and 
+technologies for global success. 
+Declaration of Competing Interest 
+The authors declare the following financial interests/personal re -
+lationships which may be considered as potential competing interests: 
+The authors declare the following financial interests/personal relation -
+ships which may be considered as potential competing interests: Stefano 
+Amaducci reports financial support was provided by GRACE. Alan Gay 
+reports financial support was provided by Smart Expertise program from 
+Welsh government. co-author Stefano Amaducci is an associate editor of 
+Industrial Crops and Products. 
+Data Availability 
+Data will be made available on request. 
+Acknowledgements 
+The authors would like to thank Juan-Pablo Levrero-Beer, Giuseppe 
+Barbieri, Beatrice Casati, Federico Capra, Martina Leoni, Angelica Bar -
+one, Edoardo Volpato, Niccolo Miotti, Gianmarco Dardengo, Karen 
+Askew, Debbie Allen and Florian Campagnari for their involvement in 
+field measurements and sample processing and Jason Brook for 
+providing the drone images. 
+Appendix A. Supporting information 
+Supplementary data associated with this article can be found in the 
+online version at doi:10.1016/j.indcrop.2023.116360 . 
+References 
+Amaducci, S., Müssig, J., Zatta, A., Venturi, G., 2008. An innovative production system 
+for hemp fibre for textile destinations: from laboratory results to industrial 
+validation. Int. Conf. Flax Other Bast Plants February, 104 – 117 . 
+Amaducci, S., Scordia, D., Liu, F.H., Zhang, Q., Guo, H., Testa, G., Cosentino, S.L., 2015. 
+Key cultivation techniques for hemp in Europe and China. Ind. Crops Prod. 68, 2 – 16. 
+https://doi.org/10.1016/j.indcrop.2014.06.041 . 
+Bahador, M., Tadayon, M.R., 2020. Investigating of zeolite role in modifying the effect of 
+drought stress in hemp: antioxidant enzymes and oil content. Ind. Crops Prod. 144, 
+112042 https://doi.org/10.1016/j.indcrop.2019.112042 . 
+Baldini, M., Ferfuia, C., Zuliani, F., Danuso, F., 2020. Suitability assessment of different 
+hemp ( Cannabis sativa L.) varieties to the cultivation environment. Ind. Crops Prod. 
+143, 111860 https://doi.org/10.1016/j.indcrop.2019.111860 . 
+Barillot, R., Combes, D., Chevalier, V., Fournier, C., Escobar-Guti ´errez, A.J., 2012. How 
+does pea architecture influence light sharing in virtual wheat – pea mixtures? A 
+simulation study based on pea genotypes with contrasting architectures. AoB Plants 
+pls038. https://doi.org/10.1093/aobpla/pls038 . 
+Bennett, S.J., Snell, R., Wright, D., 2006. Effect of variety, seed rate and time of cutting 
+on fibre yield of dew-retted hemp. Ind. Crops Prod. 24 (1), 79 – 86. https://doi.org/ 
+10.1016/j.indcrop.2006.03.007 . 
+Berenji J., Sikora V., Fournier G. , Beherec O. 2013. Genetics and selection of hemp. In: 
+Bouloc P., Allegret S. & Arnaud L. (Eds.). Hemp: industrial production and uses. 2nd 
+edn. Cabi, Wallingford, 48 – 71. https://doi.org/10.1079/9781845937935.0048. 
+van den Broeck, H.C., Maliepaard, C., Ebskamp, M.J.M., Toonen, M.A.J., Koops, A.J., 
+2008. Differential expression of genes involved in C1 metabolism and lignin 
+biosynthesis in wooden core and bast tissues of fibre hemp ( Cannabis sativa L.). Plant 
+Sci. 174, 205 – 220. https://doi.org/10.1016/j.plantsci.2007.11.008 . 
+Campbell, B.J., Berrada, A.F., Hudalla, C., Amaducci, S., McKay, J.K., 2019. Genotype ×
+environment interactions of industrial hemp cultivars highlight diverse responses to 
+environmental factors. Agrosystems Geosci. Environ. 2 (1), 180057 https://doi.org/ 
+10.2134/age2018.11.0057 . 
+Cock, J.H., Franklin, D., Sandoval, G., Juri, P., 1979. The ideal cassava plant for 
+maximum yield, 271 – 179 Crop Sci. 19 (2). https://doi.org/10.2135/ 
+cropsci1979.0011183 × 001900020025x . 
+Cosentino, S.L., Riggi, E., Testa, G., Scordia, D., Copani, V., 2013. Evaluation of European 
+developed fibre hemp genotypes ( Cannabis sativa L.) in semi-arid Mediterranean 
+environment. Ind. Crops Prod. 50, 312 – 324. https://doi.org/10.1016/j. 
+indcrop.2013.07.059 . 
+Crini, G., Lichtfouse, E., Chanet, G., Morin-Crini, N., 2020. Traditional and new 
+applications of hemp. In: Crini, G., Lichtfouse, E. (Eds.), Sustainable agriculture 
+reviews 42: hemp production and applications. Springer International Publishing, 
+Cham, pp. 37 – 87. https://doi.org/10.1007/978-3-030-41384-2_2 . 
+de Wit C.T., Goudriaan J., van Laar H.H., Penning de Vries F.W. T., Rabbinge R., Van 
+Keulen H., Louwerse W., Sibma L., De Jonge C. 1978. Simulation of assimilation, 
+respiration and transpiration of crops. In de Wit, C.T. (Ed.). Centre for Agricultural 
+Publication and Documentation. Wageningen. 
+Ehrensing, D.T., 1998. Feasibility of industrial hemp production in the United States 
+pacific northwest. Oregon State University. Agricultural Experimental Station . Station 
+Bull. 681, 1 – 46 . 
+Eriksen, F.I., Whitney, A.S., 1981. Effects of light intensity on growth of some tropical 
+forage species. I. Interaction of light intensity and nitrogen fertilization on six forage 
+grasses. Agron. J. 73, 427 – 433. https://doi.org/10.2134/ 
+agronj1981.00021962007300030011x . 
+Erisman, J.W., Galloway, J.N., Seitzinger, S., Bleeker, A., Dise, N.B., Petrescu, A.M.R., 
+Leach, A.M., de Vries, W., 2013. Consequences of human modification of the global 
+nitrogen cycle. Philos. Trans. R. Soc. B Biol. Sci. 368 (1621), 20130116. https://doi. 
+org/10.1098/rstb.2013.0116 . 
+Eurostat. 2021. Statistical office of the European Union, Luxembourg. https://ec.europa. 
+eu/eurostat/web/main/data/database. Accessed on 23rd of September 2022. 
+Ferfuia, C., Zuliani, F., Danuso, F., Piani, B., Cattivello, C., Dorigo, G., Baldini, M., 2021. 
+Performance and stability of different monoecious hemp cultivars in a multi- 
+environments trial in North-Eastern Italy. Agronomy 11 (7), 1424. https://doi.org/ 
+10.3390/agronomy11071424 . 
+Fike, J., 2016. Industrial hemp: renewed opportunities for an ancient crop. Crit. Rev. 
+Plant Sci. 35 (5 – 6), 406 – 424. https://doi.org/10.1080/07352689.2016.1257842 . 
+Finnan, J., Burke, B., 2013a. Potassium fertilization of hemp ( Cannabis sativa ). Ind. Crops 
+Prod. 41 (1), 419 – 422. https://doi.org/10.1016/j.indcrop.2012.04.055 . 
+Finnan, J., Burke, B., 2013b. Nitrogen fertilization to optimize the greenhouse gas 
+balance of hemp crops grown for biomass. Glob. Change Biol. Bioenergy 5, 701 – 712. 
+https://doi.org/10.1111/gcbb.12045 . 
+Fowler, D., Coyle, M., Skiba, U., Sutton, M.A., Cape, J.N., Reis, S., Sheppard, L.J., 
+Jenkins, A., Grizzetti, B., Galloway, J.N., Vitousek, P., Leach, A., Bouwman, A.F., 
+Butterbach-Bahl, K., Dentener, F., Stevenson, D., Amann, M., Voss, M., 2013. The 
+global nitrogen cycle in the twenty-first century. Philos. Trans. R. Soc. B Biol. Sci. 
+368, 20130164. https://doi.org/10.1098/rstb.2013.0164 . 
+Table 8 
+p-values of the effects of genotype (G), nitrogen fertilisation (N) and of their 
+interaction (G × N) on NUE, NUpE, and NUtE in each environment, assessed by 
+two-way anova. Bold values highlight the significant effects ( α = 0.05).  
+Parameter Factor PC20 PC21 AB21 
+NUE G  0.032 0.22 0.86 
+N  0.68 1.2 e
+¡ 8 
+1.7 e
+¡ 5 
+G × N  0.98 0.63 0.79 
+NUpE G  0.94 0.91 0.017 
+N  0.61 1.4 e
+¡ 4 
+0.49 
+G × N  0.77 0.13 0.88 
+NUtE G  0.021 0.55 0.010 
+N  0.19 0.17 2.8 e
+¡ 4 
+G × N  0.41 0.092 0.62  
+H. Blandini `eres et al.                                                                                                                                                                                                                           
+Industrial Crops & Products 195 (2023) 116360
+12
+Gaju, O., Allard, V., Martre, P., Snape, J.W., Heumez, E., LeGouis, J., Moreau, D., 
+Bogard, M., Griffiths, S., Orford, S., Hubbart, S., Foulkes, M.J., 2011. Identification 
+of traits to improve the nitrogen-use efficiency of wheat genotypes. Field Crops Res. 
+123 (2), 139 – 152. https://doi.org/10.1016/j.fcr.2011.05.010 . 
+Gr ´egoire, M., Bar, M., De Luycker, E., Musio, S., Amaducci, S., Gabrion, X., Placet, V., 
+Ouagne, P., 2021. Comparing flax and hemp fibres yield and mechanical properties 
+after scutching/hackling processing. Ind. Crops Prod. 172, 114045 https://doi.org/ 
+10.1016/j.indcrop.2021.114045 . 
+He, J., Zhang, X., Guo, W., Pan, Y., Yao, X., Cheng, T., Zhu, Y., Cao, W., Tian, Y., 2020. 
+Estimation of vertical leaf nitrogen distribution within a rice canopy based on 
+hyperspectral data. Front. Plant Sci. 10, 1802. https://doi.org/10.3389/ 
+fpls.2019.01802 . 
+Herppich, W.B., Gusovius, H.-J., Flemming, I., Drastig, K., 2020. Effects of drought and 
+heat on photosynthetic performance, water use and yield of two selected fiber hemp 
+cultivars at a poor-soil site in Brandenburg (Germany). Agronomy 10 (9), 1361. 
+https://doi.org/10.3390/agronomy10091361 . 
+Hoffmann, W., 1946. Helle Stengel — eine wertvolle mutation des hanfes ( Cannabis 
+sativa L.). Der Züchter 17 (2), 56 – 59. https://doi.org/10.1007/BF00709108 . 
+Impollonia, G., Croci, M., Blandini `eres, H., Marcone, A., Amaducci, S., 2022. Comparison 
+of PROSAIL model inversion methods for estimating leaf chlorophyll content and LAI 
+using UAV imagery for hemp phenotyping. Remote Sens. 14 (22), 5801. https://doi. 
+org/10.3390/rs14225801 . 
+Ivonyi, I., Izsokil, Z., van der Werf, H., M, G, 1997. Influence of nitrogen supply and P 
+and K levels of the soil on dry matter and nutrients accumulation of fiber hemp 
+( Cannabis sativa L.). J. Int. Hemp Assoc. 4, 84 – 89 . 
+Kaneko S., Inagaki M. , Morishita T. 2010. A simple method for the determination of 
+nitrate in potassium chloride extracts from forest soils. 19th Congress of Soil Science, 
+Soil solutions for a Changing World. 1 – 6 August 2010. 
+Keating, B.A., Evenson, J.P., Fukai, S., 1982. Environmental effects on growth and 
+development of cassava ( Manihot esculenta Crantz.) II. Crop growth rate and biomass 
+yield. Field Crops Res. 5, 283 – 292. https://doi.org/10.1016/0378-4290(82)90031- 
+4 . 
+Kumar P.A., Parry M.A.J., Mitchell R.A.C., Ahmad A. , Abrol Y.P. 2002. Photosynthesis 
+and Nitrogen-Use Efficiency. In: Foyer C.H. & Noctor, G. (Eds). Photosynthetic 
+Nitrogen Assimilation and Associated Carbon and Respiratory Metabolism. Advances 
+in Photosynthesis and Respiration, vol 12. Springer, Dordrecht, 23 – 34. https://doi. 
+org/10.1007/0 – 306-48138 – 3_2. 
+Lawlor, D.W., Lemaire, G., Gastal, F., 2001. Nitrogen, plant growth and crop yield. In: 
+Lea, P.J., Morot-Gaudry, J.-F. (Eds.), Plant Nitrogen. Springer, Berlin, Heidelberg, 
+pp. 343 – 367. https://doi.org/10.1007/978-3-662-04064-5_13 . 
+Le Gouis, J., B ´eghin, D., Heumez, E., Pluchard, P., 2000. Genetic differences for nitrogen 
+uptake and nitrogen utilisation efficiencies in winter wheat. Eur. J. Agron. 12 (3), 
+163 – 173. https://doi.org/10.1016/S1161-0301(00)00045-9 . 
+Lee, J.H., Goudriaan, J., Challa, H., 2003. Using the expolinear growth equation for 
+modelling crop growth in year-round cut Chrysanthemum . Ann. Bot. 92 (5), 697 – 708. 
+https://doi.org/10.1093/aob/mcg195 . 
+Legros, S., Picault, S., Cerruti, N., 2013. Factors affecting the yield of industrial hemp - 
+experimental results from France. In: Bouloc, P., Allegret, S., Arnaud, L. (Eds.), 
+Hemp: industrial production and uses, 2nd ed. Cabi, Wallingford, pp. 72 – 97. https:// 
+doi.org/10.1079/9781845937935.0072 . 
+Lemaître, T., Gaufichon, L., Boutet-Mercey, S., Christ, A., Masclaux-Daubresse, C., 2008. 
+Enzymatic and metabolic diagnostic of nitrogen deficiency in Arabidopsis thaliana 
+Wassileskija accession. Plant Cell Physiol. 49 (7), 1056 – 1065. https://doi.org/ 
+10.1093/pcp/pcn081 . 
+Liberalato, D., 2003. Prospect of hemp utilisation in the European textile industry. 
+Agroindustria 2, 147 – 148 . 
+Mal ¸ ceva, M., Vikmane, M., Stramkale, V., 2011. Changes of photosynthesis-related 
+parameters and productivity of Cannabis sativa under different nitrogen supply. 
+Environ. Exp. Biol. 9, 61 – 69 . 
+Mandal, K.G., Sinha, A.C., 2004. Nutrient management effects on light interception, 
+photosynthesis, growth, dry-matter production and yield of indian mustard ( Brassica 
+juncea ). J. Agron. Crop Sci. 190 (2), 119 – 129. https://doi.org/10.1046/j.1439- 
+037X.2003.00083.x . 
+Maris, S.C., Capra, F., Ardenti, F., Boselli, R., Pochintesta, D., Beone, G.M., Tabaglio, V., 
+Fiorini, A., 2021. The interaction between types of cover crop residue and digestate 
+application methods affects ammonia volatilization during maize cropping season. 
+J. Environ. Qual. 50 (2), 504 – 512. https://doi.org/10.1002/jeq2.20205 . 
+Mediavilla, V., Jonquera, M., Schmid-Slembrouck, I., 1998. Decimal code for growth 
+stages of hemp ( Cannabis sativa L.). J. Int. Hemp Assoc. 5 (65), 68 – 74 . 
+Meijer, W.J., van der Werf, H.M., Mathijssen, E.W., van den Brink, P.W., 1995. 
+Constraints to dry matter production in fibre hemp ( Cannabis sativa L.). Eur. J. 
+Agron. 4 (1), 109 – 117. https://doi.org/10.1016/S1161-0301(14)80022-1 . 
+Meynard, J.-M., Mess ´ean, A., Charlier, A., Charrier, F., Far `es, M., Le Bail, M., 
+Magrini, M.-B., 2013. Freins et leviers `a la diversification des cultures. Etude au 
+niveau des exploitations agricoles et des fili `eres. Rapport d
+′
+´etude. INRA 226 . 
+Musio, S., Müssig, J., Amaducci, S., 2018. Optimizing hemp fiber production for high 
+performance composite applications. Front. Plant Sci. 9. https://doi.org/10.3389/ 
+fpls.2018.01702 . 
+Orgiazzi, A., Ballabio, C., Panagos, P., Jones, A., Fern ´andez-Ugalde, O., 2018. LUCAS 
+Soil, the largest expandable soil dataset for Europe: a review. Eur. J. Soil Sci. 69 (1), 
+140 – 153. https://doi.org/10.1111/ejss.12499 . 
+Ortiz-Monasteiro, R., Sayre, K.D., Rajaram, S., McMahon, M., 1997. Genetic progress in 
+wheat yield and nitrogen use efficiency under four nitrogen rates. Crop Sci. 37, 
+898 – 904. https://doi.org/10.2135/cropsci1997.0011183 × 003700030033x . 
+Rhine, E.D., Mulvaney, R.L., Pratt, E.J., Sims, G.K., 1998. Improving the Berthelot 
+reaction for determining ammonium in soil extracts and water. Soil Sci. Soc. Am. J. 
+62 (2), 473 – 480. https://doi.org/10.2136/sssaj1998.03615995006200020026x . 
+Salentijn, E.M.J., Zhang, Q., Amaducci, S., Yang, M., Trindade, L.M., 2015. New 
+developments in fiber hemp ( Cannabis sativa L.) breeding. Ind. Crops Prod. 68, 
+32 – 41. https://doi.org/10.1016/j.indcrop.2014.08.011 . 
+Schnute, J., 1981. A versatile growth model with statistically stable parameters. Can. J. 
+Fish. Aquat. Sci. 38 (9), 1128 – 1153. https://doi.org/10.1139/f81-153 . 
+Smith, C., Hill, A.K., Torrente-Murciano, L., 2020. Current and future role of 
+Haber – Bosch ammonia in a carbon-free energy landscape. Energy Environ. Sci. 13 
+(2), 331 – 344. https://doi.org/10.1039/C9EE02873K . 
+Stagnari, F., Galieni, A., Pisante, M., 2015. Shading and nitrogen management affect 
+quality, safety and yield of greenhouse-grown leaf lettuce. Sci. Hortic. 192, 70 – 79. 
+https://doi.org/10.1016/j.scienta.2015.05.003 . 
+Struik, P.C., Amaducci, S., Bullard, M.J., Stutterheim, N.C., Venturi, G., Cromack, H.T.H., 
+2000. Agronomy of fibre hemp ( Cannabis sativa L.) in Europe. Ind. Crops Prod. 11, 
+107 – 118. https://doi.org/10.1016/S0926-6690(99)00048-5 . 
+Tang, K., Struik, P.C., Yin, X., Thouminot, C., Bjelkov ´a, M., Stramkale, V., Amaducci, S., 
+2016. Comparing hemp ( Cannabis sativa L.) cultivars for dual-purpose production 
+under contrasting environments. Ind. Crops Prod. 87, 33 – 44. https://doi.org/ 
+10.1016/j.indcrop.2016.04.026 . 
+Tang, K., Struik, P.C., Yin, X., Calzolari, D., Musio, S., Thouminot, C., Bjelkov ´a, M., 
+Stramkale, V., Magagnini, G., Amaducci, S., 2017a. A comprehensive study of 
+planting density and nitrogen fertilization effect on dual-purpose hemp ( Cannabis 
+sativa L.) cultivation. Ind. Crops Prod. 107, 427 – 438. https://doi.org/10.1016/j. 
+indcrop.2017.06.033 . 
+Tang, K., Struik, P.C., Amaducci, S., Stomph, T.-J., Yin, X., 2017b. Hemp ( Cannabis sativa 
+L.) leaf photosynthesis in relation to nitrogen content and temperature: implications 
+for hemp as a bio-economically sustainable crop. GCB Bioenergy 9 (10), 1573 – 1587. 
+https://doi.org/10.1111/gcbb.12451 . 
+Tang, K., Fracasso, A., Struik, P.C., Yin, X., Amaducci, S., 2018. Water- and Nitrogen-Use 
+Efficiencies of hemp ( Cannabis sativa L.) based on whole-canopy measurements and 
+modeling. Front. Plant Sci. 9, 1 – 14. https://doi.org/10.3389/fpls.2018.00951 . 
+Thouminot, C., 2015. La s ´election Française du chanvre: panorama et perspectives. 
+Oilseeds fats Crops Lipids 22 (6), D603. https://doi.org/10.1051/ocl/2015044 . 
+Toonen, M.A.J., Maliepaard, C., Reijmers, T.H., van der Voet, H., Mastebroek, H.D., van 
+den Broeck, H.C., Ebskamp, M.J.M., Kessler, W., Kessler, R.W., 2004. Predicting the 
+chemical composition of fibre and core fraction of hemp ( Cannabis sativa L.). 
+Euphytica 140, 39 – 45. https://doi.org/10.1007/s10681-004-4753-z . 
+Vagstad, N., Eggestad, H.O., H ø yås, T.R., 1997. Mineral nitrogen in agricultural soils and 
+nitrogen losses: relation to soil properties, weather conditions, and farm practices. 
+Ambio 26 (5), 266 – 272 . 
+Vandepitte, K., Vasile, S., Vermeire, S., Vanderhoeven, M., Van der Borght, W., Latr ´e, J., 
+De Raeve, A., Troch, V., 2020. Hemp ( Cannabis sativa L.) for high-value textile 
+applications: The effective long fiber yield and quality of different hemp varieties, 
+processed using industrial flax equipment. Ind. Crops Prod. 158, 112969 https://doi. 
+org/10.1016/j.indcrop.2020.112969 . 
+Vera, C.L., Malhi, S.S., Raney, J.P., Wang, Z.H., 2004. The effect of N and P fertilization 
+on growth, seed yield and quality of industrial hemp in the Parkland region of 
+Saskatchewan. Can. J. Plant Sci. 84 (4), 939 – 947. https://doi.org/10.4141/P04-022 . 
+Walker, B.J., Drewry, D.T., Slattery, R.A., VanLoocke, A., Cho, Y.B., Ort, D.R., 2018. 
+Chlorophyll can be reduced in crop canopies with little penalty to photosynthesis. 
+Plant Physiol. 176 (2), 1215 – 1232. https://doi.org/10.1104/pp.17.01401 . 
+Wang, Y., Wang, D., Shi, P., Omasa, K., 2014. Estimating rice chlorophyll content and 
+leaf nitrogen concentration with a digital still color camera under natural light. Plant 
+Methods 10, 36. https://doi.org/10.1186/1746-4811-10-36 . 
+van der Werf, H.M.G., Harsveld van der Veen, J.E., Bouma, A.T.M., ten Cate, M., 1994. 
+Quality of hemp ( Cannabis sativa L.) stems as a raw material for paper. Ind. Crops 
+Prod. 2 (3), 219 – 227. https://doi.org/10.1016/0926-6690(94)90039-6 . 
+Westerhuis, W., van Delden, S.H., van Dam, J.E.G., Pereira Marinho, J.P., Struik, P.C., 
+Stomph, T.J., 2019. Plant weight determines secondary fibre development in fibre 
+hemp ( Cannabis sativa L.). Ind. Crops Prod. 139, 111493 https://doi.org/10.1016/j. 
+indcrop.2019.111493 . 
+Zhang, X., Davidson, E.A., Mauzerall, D.L., Searchinger, T.D., Dumas, P., Shen, Y., 2015. 
+Managing nitrogen for sustainable development. Nature 528 (7580), 51 – 59. https:// 
+doi.org/10.1038/nature15743 . 
+H. Blandini `eres et al.                                                                                                                                                                                                                           

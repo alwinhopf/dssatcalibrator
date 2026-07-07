@@ -29,9 +29,40 @@ SCHEMA = ["exp_id", "treatment", "variable", "kind", "date", "value", "sigma", "
 
 # Columns whose values are DSSAT date codes (YYDDD) rather than magnitudes.
 _DATE_COLS = {
-    "EDAT", "ADAT", "MDAT", "IDAT", "DRAT", "GDAT", "PD1T", "PDFT",
+    "EDAT", "EDATE", "ADAT", "MDAT", "IDAT", "DRAT", "GDAT", "PD1T", "PDFT",
     "R1", "R3", "R5", "R7", "R8", "TSAT", "HDAT",
 }
+
+
+def _infer_year(exp_id: str | None) -> int | None:
+    """Infer calendar year from DSSAT experiment IDs like YUKU2101."""
+    if not exp_id:
+        return None
+    m = re.search(r"(\d{2})\d{2}$", str(exp_id))
+    if not m:
+        return None
+    yy = int(m.group(1))
+    return 2000 + yy if yy < 80 else 1900 + yy
+
+
+def _filea_date(value, exp_id: str | None = None) -> pd.Timestamp:
+    """Convert FileA dates, accepting either YYDDD or experiment-year DOY.
+
+    Most DSSAT FileA dates are YYDDD, but some hemp files encode date columns as
+    bare day-of-year values (for example ADAT=216 in YUBA2101). Use the
+    experiment year for those 1-3 digit values.
+    """
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return pd.NaT
+    if pd.isna(num) or np.isclose(num, MISSING):
+        return pd.NaT
+    if 1 <= num <= 366:
+        year = _infer_year(exp_id)
+        if year is not None:
+            return pd.Timestamp(year=year, month=1, day=1) + pd.Timedelta(days=int(num) - 1)
+    return yyddd_to_date(num)
 
 
 def _read_abt_blocks(path: str | Path) -> list[pd.DataFrame]:
@@ -49,6 +80,20 @@ def _read_abt_blocks(path: str | Path) -> list[pd.DataFrame]:
             blocks.append(pd.DataFrame(norm, columns=header))
         header, rows = None, []
 
+    def clean_header(tokens: list[str]) -> list[str]:
+        out = []
+        seen = set()
+        for i, token in enumerate(tokens):
+            if token in {"", "-99", "-99.0"}:
+                out.append(f"__skip_{i}")
+                continue
+            if token in seen:
+                out.append(f"__skip_dup_{i}")
+                continue
+            seen.add(token)
+            out.append(token)
+        return out
+
     for ln in lines:
         s = ln.rstrip()
         if not s or s.startswith("!"):
@@ -58,7 +103,7 @@ def _read_abt_blocks(path: str | Path) -> list[pd.DataFrame]:
             continue
         if s.lstrip().startswith("@"):
             flush()
-            header = s.lstrip().lstrip("@").split()
+            header = clean_header(s.lstrip().lstrip("@").split())
             # the first header token is the treatment id ("TRNO" / "TRT")
             if header and header[0] in ("TRNO", "TRT", "TR"):
                 header[0] = "TRNO"
@@ -77,13 +122,13 @@ def read_filea(path: str | Path, exp_id: str | None = None) -> pd.DataFrame:
         if "TRNO" not in wide.columns:
             continue
         wide = wide.apply(pd.to_numeric, errors="coerce")
-        for var in [c for c in wide.columns if c != "TRNO"]:
+        for var in [c for c in wide.columns if c != "TRNO" and not str(c).startswith("__skip")]:
             for _, r in wide.iterrows():
                 val = r[var]
                 if pd.isna(val) or np.isclose(val, MISSING):
                     continue
                 if var in _DATE_COLS:
-                    d = yyddd_to_date(val)
+                    d = _filea_date(val, exp_id)
                     out.append((exp_id, int(r["TRNO"]), var, "phenology", d, float(val), np.nan, 1.0))
                 else:
                     out.append((exp_id, int(r["TRNO"]), var, "scalar", pd.NaT, float(val), np.nan, 1.0))
@@ -98,7 +143,7 @@ def read_filet(path: str | Path, exp_id: str | None = None) -> pd.DataFrame:
         if "TRNO" not in wide.columns or "DATE" not in wide.columns:
             continue
         nums = wide.apply(pd.to_numeric, errors="coerce")
-        value_cols = [c for c in wide.columns if c not in ("TRNO", "DATE")]
+        value_cols = [c for c in wide.columns if c not in ("TRNO", "DATE") and not str(c).startswith("__skip")]
         for _, r in nums.iterrows():
             d = yyddd_to_date(r["DATE"])
             if pd.isna(d):

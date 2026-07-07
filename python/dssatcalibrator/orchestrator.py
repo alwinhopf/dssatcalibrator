@@ -38,12 +38,12 @@ def _warn_unmatched(obs, cfg: dict) -> None:
         )
 
 from . import objective as obj
-from .config import active_parameters, crop_for, resolve_exe
+from .config import crop_for, fixed_parameters, resolve_exe
 from .observations import Observations
 from .runner import resolve_cores, run_many
 from .samplers import sample
-from .spaces import ParameterSpace
-from .spawn import parse_treatments, spawn_and_run, theta_hash
+from .spaces import ParameterSpace, expand_parameter_specs
+from .spawn import SpawnResult, parse_treatments, spawn_and_run, theta_hash
 
 
 @dataclass
@@ -65,7 +65,9 @@ def _setup(cfg: dict):
     space = ParameterSpace.from_config(cfg)
     crop = crop_for(cfg, (cfg.get("crops") or [{}])[0].get("code", "HM"))
     exe = resolve_exe(cfg)
-    specs = active_parameters(cfg)
+    fixed_specs = expand_parameter_specs(cfg, fixed_parameters(cfg))
+    active_names = {s["name"] for s in space.specs}
+    specs = space.specs + [s for s in fixed_specs if s["name"] not in active_names]
     hemp_dir = Path(cfg["source"]["hemp_dir"])
     run_root = Path(cfg["calibrator"]["workdir"]) / cfg["calibrator"]["name"]
     run_root.mkdir(parents=True, exist_ok=True)
@@ -84,6 +86,26 @@ def _setup(cfg: dict):
             
     experiments = [e for e in cfg.get("experiments", []) if e in set(obs.experiments())]
     treatments = {e: parse_treatments(hemp_dir / f"{e}.{crop['filex_ext']}") for e in experiments}
+    selected_by_exp = cfg.get("calibration_treatments_by_experiment")
+    selected_treatments = cfg.get("calibration_treatments")
+    if selected_by_exp:
+        filtered = {}
+        for e, available in treatments.items():
+            requested = selected_by_exp.get(e, selected_by_exp.get(str(e)))
+            if requested is None:
+                filtered[e] = list(available)
+                continue
+            if isinstance(requested, (str, int)):
+                requested = [requested]
+            selected_set = {int(t) for t in requested}
+            filtered[e] = [t for t in available if int(t) in selected_set]
+        treatments = filtered
+    elif selected_treatments is not None:
+        selected_set = {int(t) for t in selected_treatments}
+        treatments = {
+            e: [t for t in available if int(t) in selected_set]
+            for e, available in treatments.items()
+        }
 
     # Optional: take planting dates from ingested farm-management rows and set them
     # as a FileX PDATE override (an input, not a calibrated parameter). Opt-in via
@@ -95,16 +117,99 @@ def _setup(cfg: dict):
     return space, crop, exe, specs, run_root, obs, experiments, treatments
 
 
+def _observed_treatments(obs: Observations, exp_id: str, available: list[int]) -> list[int]:
+    table = getattr(obs, "table", pd.DataFrame())
+    if table is None or table.empty or "treatment" not in table.columns:
+        return list(available)
+    rows = table[table["exp_id"].astype(str) == str(exp_id)]
+    vals = sorted({int(v) for v in pd.to_numeric(rows["treatment"], errors="coerce").dropna()})
+    if not vals:
+        return list(available)
+    available_set = set(map(int, available))
+    selected = [v for v in vals if v in available_set]
+    return selected or list(available)
+
+
+def _treatment_units(experiments: list[str], treatments: dict, obs: Observations) -> list[tuple[str, int]]:
+    units = []
+    for exp in experiments:
+        for trt in _observed_treatments(obs, exp, treatments[exp]):
+            units.append((exp, int(trt)))
+    return units
+
+
+def _obs_table_for_units(obs: Observations, units: list[tuple[str, int]]) -> pd.DataFrame:
+    table = getattr(obs, "table", pd.DataFrame())
+    if table is None or table.empty or "exp_id" not in table.columns or "treatment" not in table.columns:
+        return table
+    allowed = {(str(exp), int(trt)) for exp, trt in units}
+    trt = pd.to_numeric(table["treatment"], errors="coerce")
+    mask = [
+        (str(exp), int(t)) in allowed if pd.notna(t) else False
+        for exp, t in zip(table["exp_id"], trt)
+    ]
+    return table.loc[mask].copy()
+
+
+def _concat_frames(frames: list[pd.DataFrame]) -> pd.DataFrame:
+    frames = [f for f in frames if f is not None and not f.empty]
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True, sort=False)
+
+
+def _merge_treatment_results(exp_id: str, results: list[SpawnResult]) -> SpawnResult:
+    ok = [r for r in results if getattr(r, "status", "") in {"success", "cached"}]
+    if not ok:
+        first = results[0] if results else None
+        return SpawnResult(
+            status="error",
+            run_dir=getattr(first, "run_dir", Path("")),
+            theta=getattr(first, "theta", {}),
+            message="; ".join(str(getattr(r, "message", "")) for r in results if getattr(r, "message", "")),
+        )
+    output_keys = sorted({k for r in ok for k in (getattr(r, "outputs", {}) or {}).keys()})
+    outputs = {
+        key: _concat_frames([(getattr(r, "outputs", {}) or {}).get(key) for r in ok])
+        for key in output_keys
+    }
+    bad = [r for r in results if getattr(r, "status", "") not in {"success", "cached"}]
+    message = ""
+    if bad:
+        message = "Partial treatment failures: " + "; ".join(
+            str(getattr(r, "message", "")) for r in bad if getattr(r, "message", "")
+        )
+    status = "success" if any(getattr(r, "status", "") == "success" for r in ok) else "cached"
+    return SpawnResult(
+        status=status,
+        run_dir=getattr(ok[0], "run_dir", Path("")).parent,
+        theta=getattr(ok[0], "theta", {}),
+        plantgro=_concat_frames([getattr(r, "plantgro", pd.DataFrame()) for r in ok]),
+        evaluate=_concat_frames([getattr(r, "evaluate", pd.DataFrame()) for r in ok]),
+        outputs=outputs,
+        message=message,
+    )
+
+
+def _merge_result_map(raw: dict[str, list[SpawnResult]]) -> dict[str, SpawnResult]:
+    return {exp: _merge_treatment_results(exp, results) for exp, results in raw.items()}
+
+
 def _score_theta(theta: dict, experiments, *, cfg, crop, specs, run_root, treatments,
                  exe, obs, n_workers) -> obj.ObjectiveResult:
     jobs, keys = [], []
-    for exp in experiments:
+    spawn_timeout = cfg.get("calibrator", {}).get("spawn_timeout")
+    for exp, trt in _treatment_units(list(experiments), treatments, obs):
         jobs.append(dict(theta=dict(theta), exp_id=exp, cfg=cfg, crop=crop, param_specs=specs,
-                         run_root=run_root, treatments=treatments[exp], exe=exe))
-        keys.append(exp)
+                         run_root=run_root, treatments=[trt], exe=exe,
+                         **({"timeout": int(spawn_timeout)} if spawn_timeout else {})))
+        keys.append((exp, trt))
     results = run_many(jobs, n_workers=n_workers)
-    rmap = {k: r for k, r in zip(keys, results)}
-    return obj.score(rmap, obs.table, cfg)
+    raw: dict[str, list[SpawnResult]] = {}
+    for (exp, _trt), res in zip(keys, results):
+        raw.setdefault(exp, []).append(res)
+    rmap = _merge_result_map(raw)
+    return obj.score(rmap, _obs_table_for_units(obs, keys), cfg)
 
 
 def evaluate_thetas(cfg: dict, thetas: list[dict], *, setup=None, n_workers=None,
@@ -133,14 +238,17 @@ def evaluate_thetas(cfg: dict, thetas: list[dict], *, setup=None, n_workers=None
     space, crop, exe, specs, run_root, obs, experiments, treatments = setup
     if n_workers is None:
         n_workers = resolve_cores(cfg["calibrator"].get("num_cores", 0))
+    spawn_timeout = cfg.get("calibrator", {}).get("spawn_timeout")
 
     jobs, idx = [], []
+    units = _treatment_units(experiments, treatments, obs)
     for ti, theta in enumerate(thetas):
-        for exp in experiments:
+        for exp, trt in units:
             jobs.append(dict(theta=dict(theta), exp_id=exp, cfg=cfg, crop=crop,
                              param_specs=specs, run_root=run_root,
-                             treatments=treatments[exp], exe=exe))
-            idx.append((ti, exp))
+                             treatments=[trt], exe=exe,
+                             **({"timeout": int(spawn_timeout)} if spawn_timeout else {})))
+            idx.append((ti, exp, trt))
 
     total = len(jobs)
     done = {"n": 0}
@@ -153,9 +261,10 @@ def evaluate_thetas(cfg: dict, thetas: list[dict], *, setup=None, n_workers=None
     results = run_many(jobs, n_workers=n_workers, on_done=_cb if progress else None)
 
     per_theta: list[dict] = [{} for _ in thetas]
-    for (ti, exp), res in zip(idx, results):
-        per_theta[ti][exp] = res
-    return [obj.score(rmap, obs.table, cfg) for rmap in per_theta], setup
+    for (ti, exp, _trt), res in zip(idx, results):
+        per_theta[ti].setdefault(exp, []).append(res)
+    obs_table = _obs_table_for_units(obs, units)
+    return [obj.score(_merge_result_map(rmap), obs_table, cfg) for rmap in per_theta], setup
 
 
 def evaluate_design(cfg: dict, samples: pd.DataFrame, *, progress=True):
@@ -164,6 +273,7 @@ def evaluate_design(cfg: dict, samples: pd.DataFrame, *, progress=True):
     n_workers = resolve_cores(cfg["calibrator"].get("num_cores", 0))
 
     batch_size = cfg.get("calibrator", {}).get("batch_size", 50)
+    spawn_timeout = cfg.get("calibrator", {}).get("spawn_timeout")
     sample_ids = list(samples.index)
     
     rows = []
@@ -173,7 +283,8 @@ def evaluate_design(cfg: dict, samples: pd.DataFrame, *, progress=True):
     best_obj_res = None
     best_sid = None
 
-    total_jobs = len(samples) * len(experiments)
+    units = _treatment_units(experiments, treatments, obs)
+    total_jobs = len(samples) * len(units)
     done = {"n": 0}
 
     def _cb(_res):
@@ -188,23 +299,25 @@ def evaluate_design(cfg: dict, samples: pd.DataFrame, *, progress=True):
         for sid in batch_ids:
             row = samples.loc[sid]
             theta = space.to_theta(row.to_numpy())
-            for exp in experiments:
+            for exp, trt in units:
                 jobs.append(dict(theta=dict(theta), exp_id=exp, cfg=cfg, crop=crop, param_specs=specs,
-                                 run_root=run_root, treatments=treatments[exp], exe=exe))
-                idx.append((sid, exp))
+                                 run_root=run_root, treatments=[trt], exe=exe,
+                                 **({"timeout": int(spawn_timeout)} if spawn_timeout else {})))
+                idx.append((sid, exp, trt))
 
         # Run this batch
         results = run_many(jobs, n_workers=n_workers, on_done=_cb if progress else None)
 
         # Score this batch
         per_sample: dict = {}
-        for (sid, exp), res, job in zip(idx, results, jobs):
-            per_sample.setdefault(sid, {})[exp] = res
+        for (sid, exp, trt), res, job in zip(idx, results, jobs):
+            per_sample.setdefault(sid, {}).setdefault(exp, []).append(res)
             theta = dict(getattr(res, "theta", {}) or job["theta"])
             theta_jsonable = {k: (v.item() if hasattr(v, "item") else v) for k, v in theta.items()}
             spawn_manifest_rows.append({
                 "sample_id": sid,
                 "exp_id": exp,
+                "treatment": trt,
                 "theta_hash": theta_hash(theta) if theta else "",
                 "status": getattr(res, "status", ""),
                 "message": getattr(res, "message", ""),
@@ -213,8 +326,9 @@ def evaluate_design(cfg: dict, samples: pd.DataFrame, *, progress=True):
                 **{f"theta_{k}": v for k, v in theta.items()},
             })
 
-        for sid, rmap in per_sample.items():
-            o = obj.score(rmap, obs.table, cfg)
+        obs_table = _obs_table_for_units(obs, units)
+        for sid, rawmap in per_sample.items():
+            o = obj.score(_merge_result_map(rawmap), obs_table, cfg)
             
             # Check if this is the best so far
             if o.score < best_score:
@@ -224,6 +338,25 @@ def evaluate_design(cfg: dict, samples: pd.DataFrame, *, progress=True):
 
             rec = {"sample_id": sid, **space.to_theta(samples.loc[sid].to_numpy()),
                    "score": o.score, "loglik": o.loglik, "n_obs": len(o.residuals)}
+            if getattr(o, "per_exp_var", None) is not None and not o.per_exp_var.empty:
+                for _, metric_row in o.per_exp_var.iterrows():
+                    user_var = str(metric_row["user_var"])
+                    exp_id = str(metric_row["exp_id"])
+                    prefix = f"{user_var}__{exp_id}"
+                    for metric_name in ("RMSE", "nRMSE_pct", "MBE", "d", "EF", "R2"):
+                        if metric_name in metric_row:
+                            rec[f"{prefix}__{metric_name}"] = metric_row[metric_name]
+                    if "MBE" in metric_row:
+                        rec[f"{prefix}__abs_MBE"] = abs(float(metric_row["MBE"]))
+                for user_var, metric_group in o.per_exp_var.groupby("user_var"):
+                    abs_mbe_cols = [
+                        f"{user_var}__{exp_id}__abs_MBE"
+                        for exp_id in metric_group["exp_id"].astype(str)
+                        if f"{user_var}__{exp_id}__abs_MBE" in rec
+                    ]
+                    if abs_mbe_cols:
+                        rec[f"{user_var}__mean_abs_MBE"] = float(np.mean([rec[c] for c in abs_mbe_cols]))
+                        rec[f"{user_var}__max_abs_MBE"] = float(np.max([rec[c] for c in abs_mbe_cols]))
             rows.append(rec)
             
         # Free memory of this batch
@@ -497,9 +630,11 @@ def _estimate_abc_smc(work_cfg, space, setup, method, *, seed, n_workers, extras
 @_register_estimator("glue")
 def _estimate_glue(work_cfg, space, setup, method, *, seed, n_workers, extras, progress):
     from .engines import run_glue
-    n = int(method.get("sample", {}).get("n", 200))
-    engine = method.get("sample", {}).get("engine", "lhs")
-    samples = sample(space, n=n, engine=engine, seed=seed, include_start=True)
+    sample_cfg = method.get("sample", {})
+    n = int(sample_cfg.get("n", 200))
+    engine = sample_cfg.get("engine", "lhs")
+    include_start = bool(sample_cfg.get("include_start", True))
+    samples = sample(space, n=n, engine=engine, seed=seed, include_start=include_start)
     design, obj_results, (space, obs, experiments) = evaluate_design(work_cfg, samples, progress=progress)
     spawn_manifest = design.attrs.get("spawn_manifest")
     glue = run_glue(design, space.names, work_cfg, space=space)
@@ -646,15 +781,21 @@ def _agmip_reweight(cfg: dict, setup, n_workers, seed, progress) -> dict:
 def spawn_results_for(cfg: dict, theta: dict, experiments=None) -> dict:
     """Return {exp_id: SpawnResult} for a theta (cached spawns are instant).
 
-    Used to recover full PlantGro curves for the best fit when plotting.
+    Used to recover full PlantGro curves for the best fit when plotting. Runs
+    multi-treatment experiments as separate treatment spawns, then merges the
+    parsed outputs back by experiment for scoring/report compatibility.
     """
     space, crop, exe, specs, run_root, obs, exps, treatments = _setup(cfg)
     experiments = experiments or exps
-    out = {}
-    for e in experiments:
-        out[e] = spawn_and_run(dict(theta), exp_id=e, cfg=cfg, crop=crop, param_specs=specs,
-                               run_root=run_root, treatments=treatments[e], exe=exe)
-    return out
+    raw: dict[str, list[SpawnResult]] = {}
+    spawn_timeout = cfg.get("calibrator", {}).get("spawn_timeout")
+    for e, trt in _treatment_units(list(experiments), treatments, obs):
+        raw.setdefault(e, []).append(
+            spawn_and_run(dict(theta), exp_id=e, cfg=cfg, crop=crop, param_specs=specs,
+                          run_root=run_root, treatments=[trt], exe=exe,
+                          **({"timeout": int(spawn_timeout)} if spawn_timeout else {}))
+        )
+    return _merge_result_map(raw)
 
 
 def combine_runs(cfg: dict, run_dirs: list[str | Path]) -> CalibrationResult:

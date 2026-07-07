@@ -9,8 +9,29 @@ SCHEMA <- c("exp_id", "treatment", "variable", "kind", "date",
             "value", "sigma", "weight")
 
 # Columns whose values are DSSAT date codes (YYDDD) rather than magnitudes.
-.DATE_COLS <- c("EDAT", "ADAT", "MDAT", "IDAT", "DRAT", "GDAT", "PD1T", "PDFT",
+.DATE_COLS <- c("EDAT", "EDATE", "ADAT", "MDAT", "IDAT", "DRAT", "GDAT", "PD1T", "PDFT",
                 "R1", "R3", "R5", "R7", "R8", "TSAT", "HDAT")
+
+.infer_exp_year <- function(exp_id) {
+  if (is.null(exp_id) || is.na(exp_id)) return(NA_integer_)
+  m <- regexec("(\\d{2})\\d{2}$", as.character(exp_id))
+  hit <- regmatches(as.character(exp_id), m)[[1]]
+  if (length(hit) < 2) return(NA_integer_)
+  yy <- as.integer(hit[2])
+  if (yy < 80) 2000L + yy else 1900L + yy
+}
+
+.filea_date <- function(value, exp_id = NULL) {
+  val <- suppressWarnings(as.numeric(value))
+  if (is.na(val) || abs(val - MISSING) <= 1e-3) return(as.Date(NA))
+  if (val >= 1 && val <= 366) {
+    year <- .infer_exp_year(exp_id)
+    if (!is.na(year)) {
+      return(as.Date(sprintf("%04d-01-01", year)) + as.integer(val) - 1L)
+    }
+  }
+  yyddd_to_date(val)
+}
 
 .empty_schema <- function() {
   data.frame(exp_id = character(0), treatment = integer(0), variable = character(0),
@@ -77,7 +98,7 @@ read_filea <- function(path, exp_id = NULL) {
         if (var %in% .DATE_COLS) {
           out[[length(out) + 1L]] <- data.frame(
             exp_id = exp_id, treatment = as.integer(num$TRNO[i]), variable = var,
-            kind = "phenology", date = yyddd_to_date(val), value = as.numeric(val),
+            kind = "phenology", date = .filea_date(val, exp_id), value = as.numeric(val),
             sigma = NA_real_, weight = 1.0, stringsAsFactors = FALSE)
         } else {
           out[[length(out) + 1L]] <- data.frame(

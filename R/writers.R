@@ -21,16 +21,20 @@
 .fmt_like_token <- function(value, token) {
   width <- nchar(token)
   old <- trimws(token)
-  if (grepl("^-?\\.[0-9]+$", old)) {
-    decimals <- nchar(sub("^-?\\.", "", old))
-    s <- formatC(as.numeric(value), format = "f", digits = decimals)
-    s <- sub("^0\\.", ".", s)
-    s <- sub("^-0\\.", "-.", s)
-    if (nchar(s) <= width) return(sprintf("%*s", width, s))
+
+  old_value <- .parse_cell(old)
+  value <- as.numeric(value)
+  if (!is.na(old_value) && abs(value - old_value) <= max(1e-12, 1e-9 * abs(old_value))) {
+    return(token)
   }
-  if (grepl("\\.", old) && !grepl("[eE]", old)) {
-    decimals <- nchar(sub("^.*\\.", "", old))
+
+  leading_dot <- grepl("^-?\\.[0-9]+$", old)
+  for (decimals in 5:0) {
     s <- formatC(as.numeric(value), format = "f", digits = decimals)
+    if (leading_dot) {
+      s <- sub("^0\\.", ".", s)
+      s <- sub("^-0\\.", "-.", s)
+    }
     if (nchar(s) <= width) return(sprintf("%*s", width, s))
   }
   .fmt(as.numeric(value), width)
@@ -53,6 +57,12 @@
   text <- trimws(as.character(value))
   if (nchar(text) > width) {
     stop(sprintf("FileX text value '%s' does not fit in %d columns.", text, width))
+  }
+  if (force_text && nzchar(old_cell)) {
+    leading <- nchar(old_cell) - nchar(sub("^\\s+", "", old_cell))
+    if (leading > 0L && leading + nchar(text) <= width) {
+      return(paste0(strrep(" ", leading), text, strrep(" ", width - leading - nchar(text))))
+    }
   }
   align_left <- nzchar(old_cell) && identical(sub("\\s+$", "", old_cell), trimws(old_cell))
   if (align_left) sprintf("%-*s", width, text) else sprintf("%*s", width, text)
@@ -140,10 +150,23 @@ parse_header_boundaries <- function(header) {
   for (i in seq_along(sp$tok)) {
     name <- sp$tok[i]
     if (startsWith(name, "@")) name <- substring(name, 2)
+    name <- gsub("^\\.+|\\.+$", "", name)
     start <- if (i > 1L) sp$end0[i - 1L] else 0L
     fmap[[name]] <- c(start, sp$end0[i])
   }
   fmap
+}
+
+.header_next_token_starts <- function(header) {
+  sp <- .token_spans(header)
+  starts <- list()
+  for (i in seq_along(sp$tok)) {
+    name <- sp$tok[i]
+    if (startsWith(name, "@")) name <- substring(name, 2)
+    name <- gsub("^\\.+|\\.+$", "", name)
+    starts[[name]] <- if (i < length(sp$tok)) sp$start0[i + 1L] else sp$end0[i]
+  }
+  starts
 }
 
 .filex_is_data <- function(ln) {
@@ -202,6 +225,7 @@ parse_header_boundaries <- function(header) {
       next
     }
     fmap <- parse_header_boundaries(lines[header_idx])
+    next_starts <- .header_next_token_starts(lines[header_idx])
     b <- fmap[[field]]; lo <- b[1]; hi <- b[2]
     last_end <- max(vapply(fmap, function(x) x[2], numeric(1)))
     matched <- FALSE
@@ -218,7 +242,17 @@ parse_header_boundaries <- function(header) {
         if (is.na(trt_val) || trt_val != as.integer(treatment)) next
       }
       chars <- .chars(.ljust(ln, last_end))
-      old_cell <- paste(chars[(lo + 1L):hi], collapse = "")
+      cell_hi <- hi
+      next_start <- next_starts[[field]] %||% hi
+      extended_hi <- if (next_start > hi) next_start - 1L else hi
+      if (force_text && extended_hi > hi) {
+        spill <- paste(chars[(hi + 1L):extended_hi], collapse = "")
+        if (nzchar(trimws(spill)) || nchar(trimws(as.character(raw_value))) > hi - lo) {
+          cell_hi <- extended_hi
+          chars <- .chars(.ljust(paste(chars, collapse = ""), cell_hi))
+        }
+      }
+      old_cell <- paste(chars[(lo + 1L):cell_hi], collapse = "")
       old <- .parse_cell(old_cell)
       if (op == "set") {
         new_val <- raw_value
@@ -233,7 +267,7 @@ parse_header_boundaries <- function(header) {
         else stop(sprintf("Unsupported FileX operation '%s' for field '%s'.", op, field))
       }
       if (isTRUE(upd$clip_01)) new_val <- min(max(as.numeric(new_val), 0.0), 1.0)
-      chars <- .splice(chars, lo, hi, .fmt_filex_value(new_val, hi - lo, old_cell, force_text = force_text))
+      chars <- .splice(chars, lo, cell_hi, .fmt_filex_value(new_val, cell_hi - lo, old_cell, force_text = force_text))
       lines[i] <- paste(chars, collapse = "")
       matched <- TRUE
     }
@@ -265,7 +299,8 @@ parse_header_boundaries <- function(header) {
   for (name in names(fmap)) {
     if (name %in% names(updates)) {
       b <- fmap[[name]]
-      chars <- .splice(chars, b[1], b[2], .fmt(as.numeric(updates[[name]]), b[2] - b[1]))
+      old_cell <- paste(chars[(b[1] + 1L):b[2]], collapse = "")
+      chars <- .splice(chars, b[1], b[2], .fmt_like_token(as.numeric(updates[[name]]), old_cell))
     }
   }
   lines[idx] <- paste(chars, collapse = "")

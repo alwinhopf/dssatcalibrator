@@ -16,6 +16,7 @@ def test_make_report_writes_manifest_and_objective_breakdown(tmp_path, monkeypat
         "plot_obs_vs_sim_by_category",
         "plot_fit_bars",
         "plot_timeseries",
+        "plot_experiment_diagnostics",
     ):
         monkeypatch.setattr(viz, name, lambda *args, **kwargs: None)
 
@@ -80,6 +81,7 @@ def test_make_report_falls_back_to_best_spawn_manifest(tmp_path, monkeypatch):
         "plot_obs_vs_sim_by_category",
         "plot_fit_bars",
         "plot_timeseries",
+        "plot_experiment_diagnostics",
     ):
         monkeypatch.setattr(viz, name, lambda *args, **kwargs: None)
 
@@ -111,3 +113,61 @@ def test_make_report_falls_back_to_best_spawn_manifest(tmp_path, monkeypatch):
     assert manifest["status"].tolist() == ["success", "success"]
     assert {"theta_hash", "theta_json", "theta_P1"} <= set(manifest.columns)
     assert (tmp_path / "manifest.json").exists()
+
+
+def test_plot_experiment_diagnostics_writes_panel(tmp_path):
+    dates = pd.date_range("2021-06-01", periods=3)
+    plantgro = pd.DataFrame({
+        "date": dates,
+        "treatment": [1, 1, 1],
+        "DAP": [1, 2, 3],
+        "LAID": [0.2, 0.5, 0.8],
+        "CHTD": [0.1, 0.2, 0.3],
+        "CWAD": [10.0, 25.0, 40.0],
+        "SWAD": [4.0, 10.0, 16.0],
+        "LWAD": [3.0, 8.0, 12.0],
+        "RWAD": [1.0, 2.0, 3.0],
+        "GWAD": [0.0, 0.0, 1.0],
+        "WSPD": [1.0, 0.9, 0.8],
+        "NSTD": [1.0, 1.0, 0.9],
+    })
+    extra_long = pd.DataFrame({
+        "source_file": ["Weather.OUT", "Weather.OUT", "Weather.OUT", "SoilWat.OUT", "SoilNi.OUT", "PlantN.OUT"],
+        "treatment": [1, 1, 1, 1, 1, 1],
+        "date": [dates[0], dates[0], dates[0], dates[1], dates[1], dates[2]],
+        "variable": ["TMIN", "TMAX", "SRAD", "SWTD", "NIAD", "LN%D"],
+        "value": [20.0, 30.0, 18.5, 120.0, 10.0, 3.2],
+    })
+    obs = pd.DataFrame({
+        "exp_id": ["E1", "E1", "E1"],
+        "treatment": [1, 1, 1],
+        "variable": ["LAID", "CWAD", "LN%D"],
+        "kind": ["timeseries", "timeseries", "timeseries"],
+        "date": [dates[1], dates[2], dates[2]],
+        "value": [0.45, 42.0, 3.1],
+        "sigma": [float("nan")] * 3,
+        "weight": [1.0] * 3,
+    })
+    result = SimpleNamespace(
+        cfg={"engine": {"timeseries_outputs": {"LAI": "LAID", "biomass": "CWAD"}}},
+        obs=SimpleNamespace(table=obs),
+    )
+    spawn = SimpleNamespace(
+        status="success",
+        plantgro=plantgro,
+        evaluate=pd.DataFrame({
+            "treatment": [1],
+            "run": [1],
+            "variable": ["ADAP"],
+            "sim": [42.0],
+            "meas": [40.0],
+        }),
+        outputs={"long": extra_long},
+    )
+
+    paths = viz.plot_experiment_diagnostics(result, {"E1": spawn}, tmp_path)
+
+    assert len(paths) == 1
+    assert paths[0].name == "fig_experiment_E1_T1_3x3.png"
+    assert paths[0].exists()
+    assert paths[0].stat().st_size > 0

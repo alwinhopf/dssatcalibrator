@@ -166,6 +166,10 @@ def _cma_es(space, score_pop, *, seed=42, maxiter=None, popsize=None, progress=F
     def to_theta(x_unit):
         return space.to_theta(low + np.clip(x_unit, 0.0, 1.0) * span)
 
+    # Always evaluate the configured start vector once. CMA-ES samples around
+    # that point, but its first population does not necessarily include it.
+    score_pop([to_theta(mean)])
+
     for gen in range(n_gen):
         # Sample lambda candidates: y ~ N(0, C), x = mean + sigma*y (in unit box).
         z = rng.standard_normal((lam, n))

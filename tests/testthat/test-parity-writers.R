@@ -192,6 +192,33 @@ test_that("edit_filex supports generic FileX sections, row selectors, codes, and
   expect_equal(as.numeric(.test_cell(lines, "*FERTILIZERS", "@F", "FAMN", 1L)), 45.0)
 })
 
+test_that("edit_filex clears long FIELDS code values", {
+  f <- tempfile(fileext = ".HMX")
+  writeLines(c(
+    "*FIELDS",
+    "@L ID_FIELD WSTA....  FLSA  ID_SOIL    FLNAME",
+    " 1 CTRA2101 CTRA2101   -99  IBSB910015 -99"
+  ), f)
+  edit_filex(
+    f,
+    list(
+      id_field = list(section = "FIELDS", field = "ID_FIELD", value = "CNKU2101",
+                      type = "code", required = TRUE),
+      wsta = list(section = "FIELDS", field = "WSTA", value = "CNKU2101",
+                  type = "code", required = TRUE),
+      soil = list(section = "FIELDS", field = "ID_SOIL", value = "YUKU2101",
+                  type = "code", required = TRUE)
+    ),
+    list()
+  )
+  lines <- readLines(f, warn = FALSE)
+  expect_equal(.test_cell(lines, "*FIELDS", "@L", "ID_FIELD", 1L), "CNKU2101")
+  expect_equal(.test_cell(lines, "*FIELDS", "@L", "WSTA", 1L), "CNKU2101")
+  expect_true(grepl("YUKU2101\\s+-99", lines[3]))
+  expect_false(grepl("YUKU2101015", lines[3], fixed = TRUE))
+  expect_false(grepl("IBSB910015", lines[3], fixed = TRUE))
+})
+
 test_that("edit_filex required generic fields fail loudly", {
   f <- tempfile(fileext = ".HMX")
   .write_synthetic_filex(f)

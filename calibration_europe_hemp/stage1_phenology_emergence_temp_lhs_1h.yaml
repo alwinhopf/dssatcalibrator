@@ -1,0 +1,540 @@
+calibrator:
+  name: europe_hemp_stage1_phenology_emergence_temp_lhs_1h
+  seed: 42
+  workdir: results/_workdir_phenology_emergence_temp_lhs_1h
+  results_dir: results/europe_hemp_calibration
+  figures_dir: figures/europe_hemp_calibration
+  dssat_exe: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/dscsm048_compiled_4.8.2.with_HM_code.exe
+  dssat_dir: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp
+  num_cores: 0
+  cache_spawns: false
+  keep_run_dirs: false
+  batch_size: 12
+  spawn_timeout: 60
+execution:
+  backend: native
+templates:
+  template_dir: ''
+source:
+  hemp_dir: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/Hemp
+  observations: dssat
+experiments:
+- ITPI2001
+- ITPI2101
+- UKAB2101
+filex_overrides: {}
+engine:
+  run_mode: experiment
+  timeseries_outputs: {}
+  scalar_outputs:
+    emergence: EDAP
+    anthesis: ADAP
+method:
+  preset: C
+  sample:
+    engine: lhs
+    n: 512
+  sensitivity:
+    engine: morris
+    active: false
+    trajectories: 12
+    auto_activate: false
+  select:
+    engine: stepwise_bic
+    active: false
+  surrogate:
+    engine: gp
+    active: false
+    n_train: 64
+    top_k: 10
+  bayesian:
+    engine: glue
+  optimizer:
+    engine: none
+    maxiter: 1
+    popsize: 1
+    restarts: 1
+  validation:
+    scheme: none
+  multiobjective:
+    engine: none
+objective:
+  weighting: unified
+  obs_autocorr: false
+  weights:
+    emergence: 2.0
+    anthesis: 1.0
+  error_model:
+    emergence:
+      type: absolute
+      value: 2
+    anthesis:
+      type: absolute
+      value: 3
+crops:
+- code: HM
+  model: CRGRO048
+  genotype_stem: HMGRO048
+  cultivar_anchor: IB0007
+  cultivar_anchors:
+  - IB0007
+  ecotype: HM0005
+  filex_ext: HMX
+  stage_scale: cropgro
+  cultivar_ecotypes:
+    IB0007: HM0005
+  calibration_cultivars:
+  - IB0007
+parameters:
+  genetic_cultivar:
+    CSDL:
+      active: true
+      role: obligatory
+      min: 8.0
+      max: 24.0
+      start: 14.3
+      prior:
+        dist: uniform
+      scope: cultivar
+    PPSEN:
+      active: true
+      role: obligatory
+      min: 0.0
+      max: 2.0
+      start: 0.7126
+      prior:
+        dist: uniform
+      scope: cultivar
+    EM-FL:
+      active: true
+      role: obligatory
+      min: 1.0
+      max: 140.0
+      start: 30.0
+      prior:
+        dist: uniform
+      scope: cultivar
+    FL-SH:
+      active: false
+      role: candidate
+      min: 0.1
+      max: 25.0
+      start: 10.0
+      prior:
+        dist: uniform
+      scope: cultivar
+    FL-SD:
+      active: false
+      role: candidate
+      min: 0.1
+      max: 35.0
+      start: 15.0
+      prior:
+        dist: uniform
+      scope: cultivar
+    SD-PM:
+      active: false
+      role: candidate
+      min: 0.1
+      max: 90.0
+      start: 45.0
+      prior:
+        dist: uniform
+      scope: cultivar
+    FL-LF:
+      active: false
+      role: candidate
+      min: 5.0
+      max: 80.0
+      start: 40.0
+      prior:
+        dist: uniform
+    LFMAX:
+      active: false
+      role: candidate
+      min: 0.3
+      max: 2.5
+      start: 1.4
+      prior:
+        dist: uniform
+    SLAVR:
+      active: false
+      role: candidate
+      min: 50.0
+      max: 550.0
+      start: 250.0
+      prior:
+        dist: uniform
+    SIZLF:
+      active: false
+      role: candidate
+      min: 50.0
+      max: 550.0
+      start: 250.0
+      prior:
+        dist: uniform
+    XFRT:
+      active: false
+      role: candidate
+      min: 0.05
+      max: 0.95
+      start: 0.6
+      prior:
+        dist: uniform
+    WTPSD:
+      active: false
+      role: candidate
+      min: 0.01
+      max: 1.2
+      start: 0.035
+      prior:
+        dist: uniform
+    SFDUR:
+      active: false
+      role: candidate
+      min: 5.0
+      max: 60.0
+      start: 20.0
+      prior:
+        dist: uniform
+    SDPDV:
+      active: false
+      role: candidate
+      min: 1.0
+      max: 100.0
+      start: 1.0
+      prior:
+        dist: uniform
+    PODUR:
+      active: false
+      role: candidate
+      min: 1.0
+      max: 60.0
+      start: 30.0
+      prior:
+        dist: uniform
+    THRSH:
+      active: false
+      role: candidate
+      min: 50.0
+      max: 95.0
+      start: 80.0
+      prior:
+        dist: uniform
+    SDPRO:
+      active: false
+      min: 0.1
+      max: 0.5
+      start: 0.256
+    SDLIP:
+      active: false
+      min: 0.02
+      max: 0.55
+      start: 0.319
+  genetic_ecotype:
+    THVAR:
+      active: true
+      min: 0.0
+      max: 0.3
+      start: 0.0
+      prior:
+        dist: uniform
+      scope: cultivar
+    PL-EM:
+      active: true
+      min: 0.1
+      max: 25.0
+      start: 1.5
+      prior:
+        dist: uniform
+      scope: cultivar
+    EM-V1:
+      active: true
+      min: 0.1
+      max: 20.0
+      start: 3.0
+      prior:
+        dist: uniform
+      scope: cultivar
+    V1-JU:
+      active: true
+      min: 0.0
+      max: 50.0
+      start: 0.0
+      prior:
+        dist: uniform
+      scope: cultivar
+    JU-R0:
+      active: true
+      min: 0.0
+      max: 80.0
+      start: 3.0
+      prior:
+        dist: uniform
+      scope: cultivar
+    PM09:
+      active: false
+      min: 0.2
+      max: 1.0
+      start: 0.8
+      prior:
+        dist: uniform
+    LNGSH:
+      active: false
+      min: 1.0
+      max: 15.0
+      start: 5.0
+      prior:
+        dist: uniform
+    R7-R8:
+      active: false
+      min: 0.1
+      max: 40.0
+      start: 20.0
+    FL-VS:
+      active: false
+      min: 10.0
+      max: 80.0
+      start: 50.0
+      prior:
+        dist: uniform
+    TRIFL:
+      active: false
+      min: 0.1
+      max: 0.6
+      start: 0.25
+      prior:
+        dist: uniform
+    RWDTH:
+      active: false
+      min: 0.5
+      max: 2.0
+      start: 1.0
+      prior:
+        dist: uniform
+    RHGHT:
+      active: false
+      min: 0.4
+      max: 3.0
+      start: 1.5
+      prior:
+        dist: uniform
+    R1PPO:
+      active: true
+      min: 0.0
+      max: 3.0
+      start: 0.504
+      prior:
+        dist: uniform
+      scope: cultivar
+    OPTBI:
+      active: true
+      min: 0.0
+      max: 35.0
+      start: 20.0
+      prior:
+        dist: uniform
+      scope: cultivar
+    SLOBI:
+      active: true
+      min: 0.0
+      max: 0.2
+      start: 0.035
+      prior:
+        dist: uniform
+      scope: cultivar
+  genetic_species:
+    VEG_TB:
+      active: true
+      min: 0.0
+      max: 6.0
+      start: 3.0
+      spe_key: VEGETATIVE DEVELOPMENT
+      spe_index: 0
+      prior:
+        dist: uniform
+    VEG_TO1:
+      active: true
+      min: 12.0
+      max: 24.0
+      start: 24.0
+      spe_key: VEGETATIVE DEVELOPMENT
+      spe_index: 1
+      prior:
+        dist: uniform
+    VEG_TO2:
+      active: true
+      min: 25.0
+      max: 34.0
+      start: 29.0
+      spe_key: VEGETATIVE DEVELOPMENT
+      spe_index: 2
+      prior:
+        dist: uniform
+    VEG_TM:
+      active: true
+      min: 35.0
+      max: 45.0
+      start: 40.0
+      spe_key: VEGETATIVE DEVELOPMENT
+      spe_index: 3
+      prior:
+        dist: uniform
+  management:
+    plant_population:
+      active: false
+      min: 2
+      max: 100
+      start: 25
+      dssat: PPOP
+      unit: plants/m2
+    row_spacing:
+      active: false
+      min: 20
+      max: 100
+      start: 50
+      dssat: PLRS
+      unit: cm
+    planting_depth:
+      active: false
+      min: 1.0
+      max: 6.0
+      start: 2.5
+      dssat: PLDP
+      unit: cm
+  initial_conditions:
+    initial_soil_water_mult:
+      active: false
+      min: 0.6
+      max: 1.4
+      start: 1.0
+  soil:
+    soil_water_holding_mult:
+      active: false
+      min: 0.8
+      max: 1.2
+      start: 1.0
+      dssat: SDUL
+      op: mult
+      unit: x
+    lower_limit_mult:
+      active: false
+      min: 0.8
+      max: 1.2
+      start: 1.0
+      dssat: SLLL
+      op: mult
+      unit: x
+    root_growth_factor_mult:
+      active: false
+      min: 0.5
+      max: 1.5
+      start: 1.0
+      dssat: SRGF
+      op: mult
+      unit: x
+    soil_fertility_factor:
+      active: false
+      min: 0.5
+      max: 1.0
+      start: 1.0
+      dssat: SLPF
+      op: set
+      unit: 0-1
+  weather:
+    radiation_mult:
+      active: false
+      min: 0.9
+      max: 1.1
+      start: 1.0
+      dssat: SRAD
+      op: mult
+      unit: x
+    tmax_offset:
+      active: false
+      min: -2.0
+      max: 2.0
+      start: 0.0
+      dssat: TMAX
+      op: false
+      unit: degC
+    tmin_offset:
+      active: false
+      min: -2.0
+      max: 2.0
+      start: 0.0
+      dssat: TMIN
+      op: false
+      unit: degC
+    rainfall_mult:
+      active: false
+      min: 0.7
+      max: 1.3
+      start: 1.0
+      dssat: RAIN
+      op: mult
+      unit: x
+observation_sources:
+  field_measurements:
+    active: false
+    hemp_dir: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/Hemp
+    crop_ext: HM
+  sentinel2_lai:
+    active: false
+    data_path: obs/sentinel2_lai.csv
+    error_model:
+      base_rmse: 0.7
+      saturation_lai: 4.0
+  uav_multispectral:
+    active: false
+    data_path: obs/uav.csv
+fusion:
+  conflict_resolution: inverse_variance
+  source_priority:
+  - field_measurements
+  - uav_multispectral
+  - sentinel2_lai
+  - modis_lai
+assimilation:
+  active: false
+  mode: recalibration
+  allow_uncoupled: false
+  recalibration:
+    engine: glue
+    recal_sample_size: 100
+    warm_start: true
+    update_frequency: on_observation
+  enkf:
+    n_ensemble: 50
+    inflation: 1.05
+    state_variables:
+    - LAID
+    - CWAD
+  forcing:
+    min_confidence: 0.8
+    smoothing: true
+forecast:
+  active: false
+  variables:
+  - LAID
+  n_ensemble: 30
+  anchor_continuity: true
+  decay_days: 21
+weather:
+  provider: file
+  dssatutils_provider: nasapower
+  gap_fill: none
+  horizon: 0
+  cache_dir: weather_cache
+soil:
+  provider: file
+  source: ssurgo
+  cache_dir: soil_cache
+management_options:
+  use_source_planting_date: false
+gating:
+  cultivar: free
+  ecotype: gated
+  species: free
+diagnostics:
+  active: false

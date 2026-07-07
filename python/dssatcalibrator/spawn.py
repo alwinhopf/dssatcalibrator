@@ -59,6 +59,30 @@ def parse_treatments(filex_path: str | Path) -> list[int]:
     return trts or [1]
 
 
+def parse_cultivars(filex_path: str | Path) -> list[str]:
+    """Return cultivar codes listed in a FileX ``*CULTIVARS`` section."""
+    lines = Path(filex_path).read_text(errors="replace").splitlines()
+    try:
+        start = next(i for i, ln in enumerate(lines) if ln.startswith("*CULTIVARS"))
+    except StopIteration:
+        return []
+    header = None
+    out = []
+    for ln in lines[start + 1:]:
+        if ln.startswith("*"):
+            break
+        if ln.lstrip().startswith("@"):
+            header = ln.lstrip().lstrip("@").split()
+            continue
+        if header and re.match(r"\s*\d", ln):
+            values = ln.split()
+            row = dict(zip(header, values))
+            code = row.get("INGENO") or row.get("CULTIVAR") or row.get("VAR#")
+            if code and code not in out:
+                out.append(code)
+    return out
+
+
 def write_dssbatch(run_dir: Path, filex_name: str, treatments: list[int]) -> Path:
     """Write a DSSAT ``B``-mode batch file listing the requested treatments."""
     header = ("$BATCH(CALIB)\n!\n@FILEX" + " " * 86 +
@@ -104,6 +128,34 @@ def _normalize_treatments(treatments: list[int], backend: str) -> list[int]:
     if not out:
         raise ValueError("No valid treatments selected.")
     return out
+
+
+def _treatment_run_key(treatments: list[int] | None) -> str | None:
+    if treatments is None:
+        return None
+    vals = sorted({int(t) for t in treatments})
+    if not vals:
+        return None
+    return "T" + "-".join(str(t) for t in vals)
+
+
+def _stamp_single_treatment(outputs: dict[str, pd.DataFrame], treatments: list[int] | None) -> dict[str, pd.DataFrame]:
+    vals = sorted({int(t) for t in treatments or []})
+    if len(vals) != 1:
+        return outputs
+    trt = vals[0]
+    stamped = {}
+    for key, df in (outputs or {}).items():
+        if isinstance(df, pd.DataFrame) and not df.empty:
+            out = df.copy()
+            if "treatment" in out.columns:
+                out["treatment"] = pd.to_numeric(out["treatment"], errors="coerce").fillna(trt).astype("Int64")
+            else:
+                out["treatment"] = trt
+            stamped[key] = out
+        else:
+            stamped[key] = df
+    return stamped
 
 
 def _write_batch(run_dir: Path, filex_name: str, treatments: list[int], backend: str) -> Path:
@@ -154,6 +206,30 @@ def _run_backend_dssat(run_dir: Path, exe: Path, crop: dict,
     return ""
 
 
+def _rewrite_dssat_profile_paths(run_dir: Path, root: Path) -> None:
+    """Point copied DSSAT profile files at the configured DSSAT root."""
+    drive = root.drive.upper()
+    tail = str(root.resolve())[len(root.drive):].replace("/", "\\")
+    if not drive or not tail:
+        return
+    dssat_profile_root = f"{drive} {tail}"
+    windows_root = f"{drive}{tail}"
+    replacements = {
+        "C: \\DSSAT48": dssat_profile_root,
+        "C:\\DSSAT48": windows_root,
+        "c: \\DSSAT48": dssat_profile_root,
+        "c:\\DSSAT48": windows_root,
+    }
+    for name in ("DSSATPRO.L48", "DSSATPRO.V48", "DSSATPRO.v48"):
+        path = run_dir / name
+        if not path.exists():
+            continue
+        text = path.read_text(errors="replace")
+        for old, new in replacements.items():
+            text = text.replace(old, new)
+        path.write_text(text, encoding="utf-8")
+
+
 def _weather_window(cfg: dict) -> tuple[pd.Timestamp, pd.Timestamp]:
     wcfg = cfg.get("weather", {}) or {}
     start = wcfg.get("start") or wcfg.get("start_date")
@@ -177,47 +253,103 @@ class SpawnResult:
     theta: dict
     plantgro: pd.DataFrame = field(default_factory=pd.DataFrame)
     evaluate: pd.DataFrame = field(default_factory=pd.DataFrame)
+    outputs: dict[str, pd.DataFrame] = field(default_factory=dict)
     message: str = ""
 
 
-def _spec_applies_to_exp(spec: dict, exp_id: str | None) -> bool:
-    if spec.get("scope") != "experiment":
-        return True
-    return exp_id is None or str(spec.get("exp_id")) == str(exp_id)
+def _spec_applies(spec: dict, exp_id: str | None, cultivars: list[str] | None = None) -> bool:
+    scope = spec.get("scope")
+    if scope == "experiment":
+        return exp_id is None or str(spec.get("exp_id")) == str(exp_id)
+    if scope == "cultivar":
+        return cultivars is None or str(spec.get("cultivar")) in set(map(str, cultivars))
+    return True
 
 
-def _effective_theta(theta: dict, param_specs: list[dict], exp_id: str | None = None) -> dict[str, float]:
+def _effective_theta(
+    theta: dict,
+    param_specs: list[dict],
+    exp_id: str | None = None,
+    cultivars: list[str] | None = None,
+) -> dict[str, float]:
     """Return the coefficient/value pairs that actually affect one spawn."""
     out: dict[str, float] = {}
     matched = set()
     for spec in param_specs:
         name = spec["name"]
-        if name not in theta or not _spec_applies_to_exp(spec, exp_id):
+        if not _spec_applies(spec, exp_id, cultivars):
+            continue
+        if name in theta:
+            value = theta[name]
+        elif spec.get("fixed", False):
+            value = spec.get("start")
+        else:
+            continue
+        if value is None:
             continue
         base = spec.get("base_name", name)
-        out[base] = theta[name]
+        if spec.get("scope") == "cultivar":
+            base = f"{base}__{spec.get('cultivar')}"
+        out[base] = value
         matched.add(name)
     if not matched:
-        return dict(theta)
+        return {} if param_specs else dict(theta)
     return out
 
 
-def _partition_theta(theta: dict, param_specs: list[dict], exp_id: str | None = None) -> dict[str, dict]:
+def _partition_theta(
+    theta: dict,
+    param_specs: list[dict],
+    exp_id: str | None = None,
+    cultivars: list[str] | None = None,
+) -> dict[str, dict]:
     """Split a flat theta into per-group update dicts using the param specs."""
     groups: dict[str, dict] = {}
     matched = set()
     for spec in param_specs:
         name = spec["name"]
-        if name not in theta or not _spec_applies_to_exp(spec, exp_id):
+        if not _spec_applies(spec, exp_id, cultivars):
+            continue
+        if name in theta:
+            value = theta[name]
+        elif spec.get("fixed", False):
+            value = spec.get("start")
+        else:
+            continue
+        if value is None:
             continue
         g = spec.get("group", "genetic_cultivar")
         base = spec.get("base_name", name)
-        groups.setdefault(g, {})[base] = theta[name]
+        if spec.get("scope") == "cultivar":
+            anchor = str(spec.get("cultivar"))
+            groups.setdefault(f"{g}_by_cultivar", {}).setdefault(anchor, {})[base] = value
+        else:
+            groups.setdefault(g, {})[base] = value
         matched.add(name)
-    if not matched:
+    if not matched and not param_specs:
         for name, val in theta.items():
             groups.setdefault("genetic_cultivar", {})[name] = val
     return groups
+
+
+def _cultivar_ecotype_map(crop: dict) -> dict[str, str]:
+    mapping = {str(k): str(v) for k, v in (crop.get("cultivar_ecotypes") or {}).items()}
+    if crop.get("cultivar_anchor") and crop.get("ecotype"):
+        mapping.setdefault(str(crop["cultivar_anchor"]), str(crop["ecotype"]))
+    return mapping
+
+
+def _filex_overrides_for(cfg: dict, exp_id: str) -> list[dict]:
+    """Return generic FileX section updates configured for one experiment."""
+    block = cfg.get("filex_overrides", {}) or {}
+    updates = []
+    for rec in block.get("all", []) or []:
+        if isinstance(rec, dict):
+            updates.append(dict(rec))
+    for rec in block.get(exp_id, []) or []:
+        if isinstance(rec, dict):
+            updates.append(dict(rec))
+    return updates
 
 
 def spawn_and_run(
@@ -240,16 +372,26 @@ def spawn_and_run(
     stem = crop["genotype_stem"]
     ext = crop["filex_ext"]          # FileX extension, e.g. "HMX"
     code = crop["code"]              # crop code for observed files, e.g. "HM" -> .HMA/.HMT
+    filex_name = f"{exp_id}.{ext}"
+    source_filex = hemp_dir / filex_name
+    exp_cultivars = parse_cultivars(source_filex)
 
-    effective_theta = _effective_theta(theta, param_specs, exp_id)
-    run_dir = run_root / exp_id / f"s_{theta_hash(effective_theta)}"
+    effective_theta = _effective_theta(theta, param_specs, exp_id, exp_cultivars)
+    treatment_key = _treatment_run_key(treatments)
+    run_dir = run_root / exp_id
+    if treatment_key:
+        run_dir = run_dir / treatment_key
+    run_dir = run_dir / f"s_{theta_hash(effective_theta)}"
     pg_path = run_dir / "PlantGro.OUT"
 
     if cfg["calibrator"].get("cache_spawns", True) and pg_path.exists() and pg_path.stat().st_size > 0:
+        outputs = dssat_io.collect_run_outputs(run_dir)
+        outputs = _stamp_single_treatment(outputs, treatments)
         return SpawnResult(
             status="cached", run_dir=run_dir, theta=theta,
-            plantgro=dssat_io.parse_plantgro(pg_path),
-            evaluate=dssat_io.parse_evaluate(run_dir / "Evaluate.OUT"),
+            plantgro=outputs.get("plantgro", dssat_io.parse_plantgro(pg_path)),
+            evaluate=outputs.get("evaluate", dssat_io.parse_evaluate(run_dir / "Evaluate.OUT")),
+            outputs=outputs,
         )
 
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -263,6 +405,7 @@ def spawn_and_run(
         src = dssat_paths["root"] / pro
         if src.exists():
             shutil.copy(src, run_dir / pro)
+    _rewrite_dssat_profile_paths(run_dir, dssat_paths["root"])
 
     # genotype files (edit a local copy)
     for e in ("CUL", "ECO", "SPE"):
@@ -271,24 +414,39 @@ def spawn_and_run(
             shutil.copy(src, run_dir / f"{stem}.{e}")
 
     # base FileX + observed files (FileA/FileT for Evaluate.OUT)
-    filex_name = f"{exp_id}.{ext}"
-    shutil.copy(hemp_dir / filex_name, run_dir / filex_name)
+    shutil.copy(source_filex, run_dir / filex_name)
+    filex_overrides = _filex_overrides_for(cfg, exp_id)
+    if filex_overrides:
+        from .writers import edit_filex
+        edit_filex(run_dir / filex_name, {}, {}, section_updates=filex_overrides)
     for obs_ext in (f"{code}A", f"{code}T"):   # observed files use the crop CODE (e.g. .HMA/.HMT)
         src = hemp_dir / f"{exp_id}.{obs_ext}"
         if src.exists():
             shutil.copy(src, run_dir / f"{exp_id}.{obs_ext}")
 
     # apply parameter perturbations
-    groups = _partition_theta(theta, param_specs, exp_id)
+    groups = _partition_theta(theta, param_specs, exp_id, exp_cultivars)
     cul_updates = {}
     for g in GENETIC_GROUPS:
         cul_updates.update(groups.get(g, {}))
     if cul_updates:
-        edit_cultivar(run_dir / f"{stem}.CUL", crop["cultivar_anchor"], cul_updates)
+        anchors = crop.get("cultivar_anchors") or [crop["cultivar_anchor"]]
+        for anchor in anchors:
+            edit_cultivar(run_dir / f"{stem}.CUL", anchor, cul_updates)
+    for anchor, updates in groups.get("genetic_cultivar_by_cultivar", {}).items():
+        edit_cultivar(run_dir / f"{stem}.CUL", anchor, updates)
 
     eco_updates = groups.get("genetic_ecotype", {})
     if eco_updates:
         edit_ecotype(run_dir / f"{stem}.ECO", crop["ecotype"], eco_updates)
+    cultivar_ecotypes = _cultivar_ecotype_map(crop)
+    for anchor, updates in groups.get("genetic_ecotype_by_cultivar", {}).items():
+        eco_anchor = cultivar_ecotypes.get(anchor)
+        if eco_anchor is None:
+            raise ValueError(
+                f"No ecotype mapping for cultivar '{anchor}'. Add crops[].cultivar_ecotypes."
+            )
+        edit_ecotype(run_dir / f"{stem}.ECO", eco_anchor, updates)
 
     # species (.SPE) coefficients — gated: only written when gating.species == "free"
     # (physiology-defining; for new-species adaptation from an analog template).
@@ -297,18 +455,20 @@ def spawn_and_run(
         from .writers import edit_species
         spe_file = run_dir / f"{stem}.SPE"
         if spe_file.exists():
-            updates = {}
             for name, val in spe_updates.items():
                 spec = next((s for s in param_specs if s.get("base_name", s["name"]) == name), None)
                 key = (spec or {}).get("spe_key", name)
                 if spec and ("spe_index" in spec or "token_index" in spec):
-                    updates[key] = {
+                    update = {
                         "value": val,
                         "index": int(spec.get("spe_index", spec.get("token_index", 0))),
                     }
                 else:
-                    updates[key] = val
-            edit_species(spe_file, updates)
+                    update = val
+                # Apply one species edit at a time so several calibrated
+                # parameters can target different numeric tokens on the same
+                # .SPE line via the same spe_key.
+                edit_species(spe_file, {key: update})
 
     # edit management and initial conditions in FileX
     mgt_updates = groups.get("management", {})
@@ -499,6 +659,8 @@ def spawn_and_run(
 
     pg = dssat_io.parse_plantgro(pg_path)
     ev = dssat_io.parse_evaluate(run_dir / "Evaluate.OUT")
+    outputs = dssat_io.collect_run_outputs(run_dir)
+    outputs = _stamp_single_treatment(outputs, treatments)
 
     if not cfg["calibrator"].get("keep_run_dirs", False):
         if not cfg["calibrator"].get("cache_spawns", True):
@@ -509,4 +671,4 @@ def spawn_and_run(
                 if f.name not in ("PlantGro.OUT", "Evaluate.OUT", "Summary.OUT"):
                     f.unlink(missing_ok=True)
 
-    return SpawnResult(status="success", run_dir=run_dir, theta=theta, plantgro=pg, evaluate=ev)
+    return SpawnResult(status="success", run_dir=run_dir, theta=theta, plantgro=pg, evaluate=ev, outputs=outputs)

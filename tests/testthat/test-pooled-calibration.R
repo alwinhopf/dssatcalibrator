@@ -54,6 +54,21 @@ test_that("spawn partition uses only values for the current experiment", {
   expect_equal(e2_groups$genetic_ecotype, list(ECOP = 199))
 })
 
+test_that("FileX overrides merge global and experiment records", {
+  spawn_env <- environment(spawn_and_run)
+  filex_overrides_for <- get(".filex_overrides_for", envir = spawn_env)
+  cfg <- list(filex_overrides = list(
+    all = list(list(section = "FIELDS", field = "ID_SOIL", value = "BASE")),
+    CNKU2101 = list(list(section = "FIELDS", field = "WSTA", value = "CNKU2101"))
+  ))
+
+  cnku <- filex_overrides_for(cfg, "CNKU2101")
+  expect_equal(length(cnku), 2L)
+  expect_equal(cnku[[1]]$field, "ID_SOIL")
+  expect_equal(cnku[[2]]$field, "WSTA")
+  expect_equal(length(filex_overrides_for(cfg, "YUKU2101")), 1L)
+})
+
 test_that("validate_config accepts parameter scope and rejects unknown scope", {
   cfg <- pooled_cfg()
   expect_identical(validate_config(cfg), invisible(cfg))

@@ -1,203 +1,431 @@
-# =============================================================================
-# config_hemp.yaml — calibrate the CROPGRO-Hemp (HMGRO048) model for the
-# Yunnan/China hemp cultivar trials. Cultivar anchor IB0008 "YUNMA8".
-#
-# Coefficient start values, P/G/N calibration classes and the cultivar spread
-# used to set bounds are taken from C:/DSSAT48/Genotype/HMGRO048.CUL.
-#   P = phenology, G = growth (both calibrated), N = not used for calibration.
-# Precedence: environment (DSSATCAL_*) > this file > built-in defaults.
-# =============================================================================
-
 calibrator:
-  # Unique name for this calibration run. Organizer for all output/figures directories.
-  name: "hemp_yunnan_2021_2022_glue"
-  
-  # Random seed for LHS sampling, MCMC particle mutation, and reproducibility.
+  name: hemp_yunnan_2021_2022_glue
   seed: 42
-  
-  # Directory where temporary DSSAT spawn workspaces are created.
-  workdir: "results/_workdir"
-  
-  # Directory where output data tables (best parameters, fit metrics) are saved.
-  results_dir: "results"
-  
-  # Directory where output visualizations and plots (posterior curves, timeseries) are saved.
-  figures_dir: "figures"
-  
-  # Path to the compiled DSSAT executable containing the Hemp crop module.
-  dssat_exe: "C:/DSSAT48/dscsm048_compiled_4.8.2.with_HM_code.exe"
-  
-  # Path to the root DSSAT installation directory (contains Soil, Weather, Genotype).
-  dssat_dir: "C:/DSSAT48"
-  
-  # Number of parallel workers/cores to run DSSAT spawns. 0 = (physical cores - 2).
+  workdir: results/_workdir
+  results_dir: results
+  figures_dir: figures
+  dssat_exe: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/dscsm048_compiled_4.8.2.with_HM_code.exe
+  dssat_dir: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp
   num_cores: 0
-  
-  # Whether to cache spawns with identical parameter settings to avoid redundant DSSAT executions.
   cache_spawns: false
-  
-  # Whether to keep the temporary DSSAT workspace folders after execution (false = cleanup to save disk space).
   keep_run_dirs: false
-
-# --- Source settings: where experimental layouts and observations are read ---
 source:
-  # Directory containing .HMX experimental files, .HMA final season, and .HMT timeseries files.
-  hemp_dir: "C:/DSSAT48/Hemp"
-  
-  # Observation reader source mode. 'dssat' parses FileA/FileT. Can also point to a long CSV file path.
-  observations: "dssat"
-
-# Subset of active experiments to calibrate against (excluded YUBA2201 automatically due to no observations).
+  hemp_dir: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/Hemp
+  observations: dssat
 experiments:
-  - CNKU2101    # Yunnan CNKU 2021: FileT observations (timeseries biomass/height)
-  - YUFE2101    # Yunnan YUFE 2021: FileA (harvest) + FileT observations
-  - YUFE2201    # Yunnan YUFE 2022: FileA (harvest) + FileT observations
-  - YUBA2101    # Yunnan YUBA 2021: FileA observations only
-  - YUKU2101    # Yunnan YUKU 2021: FileA + FileT observations
-  - YUKU2201    # Yunnan YUKU 2022: FileA + FileT observations
-
-# --- Output maps: variables to score, extracted from DSSAT output files ---
+- CNKU2101
+- YUFE2101
+- YUFE2201
+- YUBA2101
+- YUKU2101
+- YUKU2201
 engine:
-  # DSSAT run mode. 'experiment' runs DSSAT in batch mode using treatment specifications.
-  run_mode: "experiment"
-  
-  # Daily timeseries outputs to parse from PlantGro.OUT (maps user-variable to DSSAT column header).
+  run_mode: experiment
   timeseries_outputs:
-    biomass: "CWAD"     # Tops dry weight (kg/ha)
-    leaf:    "LWAD"     # Leaf dry weight (kg/ha)
-    stem:    "SWAD"     # Stem dry weight (kg/ha)
-    grain:   "GWAD"     # Seed dry weight (kg/ha)
-    height:  "CHTD"     # Canopy height (m)
-    LAI:     "LAID"     # Leaf Area Index (m2/m2)
-    
-  # End-of-season final scalar outputs to parse from Evaluate.OUT.
+    biomass: CWAD
+    leaf: LWAD
+    stem: SWAD
+    grain: GWAD
+    height: CHTD
+    LAI: LAID
   scalar_outputs:
-    anthesis: "ADAP"    # Days from planting to anthesis (days)
-    emergence: "EDAP"   # Days from planting to emergence (days)
-    maturity: "MDAP"    # Days from planting to physiological maturity (days)
-    grain_yield: "HWAM" # Harvest product yield at maturity (dry weight, kg/ha)
-    biomass_maturity: "CWAM" # Tops weight at maturity (kg/ha)
-    max_LAI: "LAIX"      # Maximum Leaf Area Index
-    canopy_height: "CHTA" # Canopy height at maturity (m)
-
-# --- Calibration algorithm and sampling settings ---
+    anthesis: ADAP
+    emergence: EDAP
+    maturity: MDAP
+    grain_yield: HWAM
+    biomass_maturity: CWAM
+    max_LAI: LAIX
+    canopy_height: CHTA
 method:
-  # Workflow preset: 'A' = SMC Particle Filter, 'C' = GLUE (Generalized Likelihood Uncertainty Estimation).
-  preset: "C"
-  
-  # Initial sampler settings:
-  #   engine: sampler type ('lhs' = Latin Hypercube, 'sobol' = Sobol, 'montecarlo' = random, 'grid' = factorial).
-  #   n: number of sample design points to generate.
-  sample: { engine: "lhs", n: 250 }
-  
-  # Bayesian calibration settings:
-  #   engine: bayesian engine ('glue' or 'smc_pf').
-  #   n_particles: particle count for SMC-PF.
-  #   ess_frac: effective sample size fraction threshold. Resampling triggers when ESS drops below (ess_frac * N).
-  #   move_kernel: MCMC mutation kernel ('adaptive' scales proposal SD to ensemble spread, 'fixed' uses constant scale).
-  #   kernel_floor: minimum proposal SD (fraction of parameter range) to combat particle impoverishment.
-  #   behavioural_quantile: quantile defining 'behavioural' fits (e.g. 0.1 = top 10% best scores are kept).
-  bayesian: { engine: "glue", behavioural_quantile: 0.1 }
-              
-  # Cross-validation strategy. 'loeo' = Leave-One-Environment-Out, 'year' = Leave-One-Year-Out, 'none' = calibrate all.
-  validation: { scheme: "loeo" }
-  
-  # Multi-objective Pareto front optimization settings. 'nsga2' = NSGA-II, 'none' = single unified objective.
-  multiobjective: { engine: "none" }
-
-# --- Objective/Loss function scoring setup ---
+  preset: C
+  sample:
+    engine: lhs
+    n: 250
+  bayesian:
+    engine: glue
+    behavioural_quantile: 0.1
+  validation:
+    scheme: loeo
+  multiobjective:
+    engine: none
 objective:
-  # Normalization strategy for multi-variable weighting.
-  #   unified: uses weights defined below directly.
-  #   sigma: divides residuals by observation error (sigma).
-  #   count_scale: weights variables inversely to their number of observations.
-  weighting: "unified"
-  
-  # Importance weight multiplier per variable.
-  weights: { biomass: 1.0, grain_yield: 1.0, anthesis: 1.0, height: 0.5, LAI: 1.0 }
-  
-  # Error models defining measurement uncertainty (sigma) for likelihood calculation.
-  #   type: 'relative' (fraction of observed value) or 'absolute' (fixed value in units).
+  weighting: unified
+  weights:
+    biomass: 1.0
+    grain_yield: 1.0
+    anthesis: 1.0
+    height: 0.5
+    LAI: 1.0
   error_model:
-    biomass:     { type: relative, value: 0.20 }
-    grain_yield: { type: relative, value: 0.15 }
-    height:      { type: relative, value: 0.15 }
-    LAI:         { type: relative, value: 0.20 }
-    anthesis:    { type: absolute, value: 3 }   # +/- 3 days uncertainty
-    maturity:    { type: absolute, value: 5 }   # +/- 5 days uncertainty
-
-# --- Crop and Model metadata block ---
+    biomass:
+      type: relative
+      value: 0.2
+    grain_yield:
+      type: relative
+      value: 0.15
+    height:
+      type: relative
+      value: 0.15
+    LAI:
+      type: relative
+      value: 0.2
+    anthesis:
+      type: absolute
+      value: 3
+    maturity:
+      type: absolute
+      value: 5
 crops:
-  - code: "HM"                  # 2-letter crop code (e.g., HM = Hemp)
-    model: "CRGRO048"           # Model argument passed to DSSAT executable
-    genotype_stem: "HMGRO048"   # File stem name for .CUL / .ECO / .SPE genotype database files
-    cultivar_anchor: "IB0008"   # Cultivar code row to calibrate in the .CUL file (e.g., YUNMA8)
-    ecotype: "HM0003"           # Ecotype code row to calibrate in the .ECO file (e.g., HYBRID HEMP China)
-    filex_ext: "HMX"            # FileX file extension
-    stage_scale: "cropgro"      # Phenology stage tracking scheme
-
-# =============================================================================
-# PARAMETERS — cultivar coefficients (HMGRO048.CUL columns), then management /
-# initial conditions. active=true enters calibration; start = IB0008 value.
-# role: obligatory (phenology drivers) | candidate (growth) for the AgMIP
-# stepwise selector (future work) — informative now.
-# =============================================================================
+- code: HM
+  model: CRGRO048
+  genotype_stem: HMGRO048
+  cultivar_anchor: IB0008
+  cultivar_anchors:
+  - IB0001
+  - IB0002
+  - IB0008
+  ecotype: HM0003
+  filex_ext: HMX
+  stage_scale: cropgro
+  cultivar_ecotypes:
+    IB0001: HM0001
+    IB0002: HM0002
+    IB0008: HM0003
 parameters:
-
   genetic_cultivar:
-    # -- Phenology (class P) -> active, obligatory ----------------------------
-    # NOTE: ranges widened 2026-06-13 where the optimum pressed against a bound in a
-    # pilot run (FL-SD min, SD-PM max) and to give the under-simulating growth
-    # coefficients head-room. Sanity-check these against hemp literature before a
-    # production run — wide uniform priors only widen the search, they don't bias it.
-    "CSDL":  { active: true,  role: obligatory, min: 11.5, max: 18.0, start: 12.8, prior: {dist: uniform} }
-    "PPSEN": { active: true,  role: obligatory, min: 0.1, max: 1.0, start: 0.9,  prior: {dist: uniform} }
-    "EM-FL": { active: true,  role: obligatory, min: 10.0, max: 60.0, start: 30.0,  prior: {dist: uniform} }
-    "FL-SD": { active: true,  role: obligatory, min: 1.0,  max: 30.0, start: 15.0,  prior: {dist: uniform} }
-    "SD-PM": { active: true,  role: obligatory, min: 5.0,  max: 90.0, start: 50.0,  prior: {dist: uniform} }
-    # -- Growth (class G) -> active, candidate --------------------------------
-    "LFMAX": { active: true,  role: candidate,  min: 0.3, max: 2.5, start: 1.4,  prior: {dist: uniform} }
-    "SLAVR": { active: true,  role: candidate,  min: 50.0, max: 500.0, start: 250.0, prior: {dist: uniform} }
-    "SIZLF": { active: true,  role: candidate,  min: 50.0, max: 500.0, start: 250.0, prior: {dist: uniform} }
-    "WTPSD": { active: true,  role: candidate,  min: 0.01, max: 1.2, start: 0.035, prior: {dist: uniform} }
-    "SFDUR": { active: true,  role: candidate,  min: 10.0, max: 45.0, start: 20.0,  prior: {dist: uniform} }
-    "SDPDV": { active: true,  role: candidate,  min: 1.0,  max: 100.0, start: 1.0,   prior: {dist: uniform} }
-    # -- Not used for calibration (class N) -> declared, dormant --------------
-    "FL-SH": { active: false, min: 1.0,  max: 25.0, start: 10.0 }
-    "FL-LF": { active: false, min: 5.0,  max: 100.0, start: 40.0 }
-    "XFRT":  { active: false, min: 0.05, max: 0.98, start: 0.6 }
-    "PODUR": { active: false, min: 3.0,  max: 60.0, start: 30.0 }
-    "THRSH": { active: false, min: 50.0, max: 95.0, start: 80.0 }
-    "SDPRO": { active: false, min: 0.1, max: 0.5, start: 0.256 }
-    "SDLIP": { active: false, min: 0.02, max: 0.55, start: 0.319 }
-
+    CSDL:
+      active: true
+      role: obligatory
+      min: 11.5
+      max: 18.0
+      start: 12.8
+      prior:
+        dist: uniform
+    PPSEN:
+      active: true
+      role: obligatory
+      min: 0.1
+      max: 1.0
+      start: 0.9
+      prior:
+        dist: uniform
+    EM-FL:
+      active: true
+      role: obligatory
+      min: 5.0
+      max: 75.0
+      start: 30.0
+      prior:
+        dist: uniform
+    FL-SH:
+      active: true
+      role: candidate
+      min: 0.1
+      max: 25.0
+      start: 10.0
+      prior:
+        dist: uniform
+    FL-SD:
+      active: true
+      role: candidate
+      min: 0.1
+      max: 35.0
+      start: 15.0
+      prior:
+        dist: uniform
+    SD-PM:
+      active: true
+      role: candidate
+      min: 0.1
+      max: 90.0
+      start: 50.0
+      prior:
+        dist: uniform
+    FL-LF:
+      active: true
+      role: candidate
+      min: 5.0
+      max: 80.0
+      start: 40.0
+      prior:
+        dist: uniform
+    LFMAX:
+      active: true
+      role: candidate
+      min: 0.3
+      max: 2.5
+      start: 1.4
+      prior:
+        dist: uniform
+    SLAVR:
+      active: true
+      role: candidate
+      min: 50.0
+      max: 550.0
+      start: 250.0
+      prior:
+        dist: uniform
+    SIZLF:
+      active: true
+      role: candidate
+      min: 50.0
+      max: 550.0
+      start: 250.0
+      prior:
+        dist: uniform
+    XFRT:
+      active: true
+      role: candidate
+      min: 0.05
+      max: 0.95
+      start: 0.6
+      prior:
+        dist: uniform
+    WTPSD:
+      active: true
+      role: candidate
+      min: 0.01
+      max: 1.2
+      start: 0.035
+      prior:
+        dist: uniform
+    SFDUR:
+      active: true
+      role: candidate
+      min: 5.0
+      max: 60.0
+      start: 20.0
+      prior:
+        dist: uniform
+    SDPDV:
+      active: true
+      role: candidate
+      min: 1.0
+      max: 100.0
+      start: 1.0
+      prior:
+        dist: uniform
+    PODUR:
+      active: true
+      role: candidate
+      min: 1.0
+      max: 60.0
+      start: 30.0
+      prior:
+        dist: uniform
+    THRSH:
+      active: true
+      role: candidate
+      min: 50.0
+      max: 95.0
+      start: 80.0
+      prior:
+        dist: uniform
+    SDPRO:
+      active: false
+      min: 0.1
+      max: 0.5
+      start: 0.256
+    SDLIP:
+      active: false
+      min: 0.02
+      max: 0.55
+      start: 0.319
   genetic_ecotype:
-    "PL-EM": { active: true,  min: 1.0,  max: 8.0,  start: 4.0,  prior: {dist: uniform} }
-    "RHGHT": { active: true,  min: 0.4,  max: 3.0,  start: 1.5,  prior: {dist: uniform} }
-
-  # -- Management (treatment-defined here -> dormant; available to vary) -------
+    THVAR:
+      active: true
+      min: 0.0
+      max: 0.08
+      start: 0.0
+      prior:
+        dist: uniform
+    PL-EM:
+      active: true
+      min: 0.5
+      max: 10.0
+      start: 4.0
+      prior:
+        dist: uniform
+    EM-V1:
+      active: true
+      min: 1.0
+      max: 8.0
+      start: 3.0
+      prior:
+        dist: uniform
+    V1-JU:
+      active: true
+      min: 0.0
+      max: 20.0
+      start: 0.0
+      prior:
+        dist: uniform
+    JU-R0:
+      active: true
+      min: 0.0
+      max: 20.0
+      start: 1.0
+      prior:
+        dist: uniform
+    PM09:
+      active: true
+      min: 0.2
+      max: 1.0
+      start: 0.8
+      prior:
+        dist: uniform
+    LNGSH:
+      active: true
+      min: 1.0
+      max: 15.0
+      start: 5.0
+      prior:
+        dist: uniform
+    R7-R8:
+      active: false
+      min: 0.1
+      max: 40.0
+      start: 20.0
+    FL-VS:
+      active: true
+      min: 10.0
+      max: 80.0
+      start: 50.0
+      prior:
+        dist: uniform
+    TRIFL:
+      active: true
+      min: 0.1
+      max: 0.6
+      start: 0.25
+      prior:
+        dist: uniform
+    RWDTH:
+      active: true
+      min: 0.5
+      max: 2.0
+      start: 1.0
+      prior:
+        dist: uniform
+    RHGHT:
+      active: true
+      min: 0.4
+      max: 3.0
+      start: 1.5
+      prior:
+        dist: uniform
+    R1PPO:
+      active: true
+      min: 0.0
+      max: 1.2
+      start: 0.504
+      prior:
+        dist: uniform
+    OPTBI:
+      active: true
+      min: 10.0
+      max: 28.0
+      start: 20.0
+      prior:
+        dist: uniform
+    SLOBI:
+      active: true
+      min: 0.0
+      max: 0.08
+      start: 0.035
+      prior:
+        dist: uniform
   management:
-    plant_population: { active: false, min: 2,   max: 100, start: 25, dssat: PPOP, unit: "plants/m2" }
-    row_spacing:      { active: false, min: 20,  max: 100, start: 50, dssat: PLRS, unit: cm }
-    planting_depth:   { active: false, min: 1.0, max: 6.0, start: 2.5, dssat: PLDP, unit: cm }
-
-  # -- Initial conditions (dormant by default) --------------------------------
+    plant_population:
+      active: false
+      min: 2
+      max: 100
+      start: 25
+      dssat: PPOP
+      unit: plants/m2
+    row_spacing:
+      active: false
+      min: 20
+      max: 100
+      start: 50
+      dssat: PLRS
+      unit: cm
+    planting_depth:
+      active: false
+      min: 1.0
+      max: 6.0
+      start: 2.5
+      dssat: PLDP
+      unit: cm
   initial_conditions:
-    initial_soil_water_mult: { active: false, min: 0.6, max: 1.4, start: 1.0 }
-
-  # -- Soil (.SOL profile; dormant). op: mult => multiply every layer of the
-  #    DSSAT column; op: set => set the profile-level scalar. ----------------
+    initial_soil_water_mult:
+      active: false
+      min: 0.6
+      max: 1.4
+      start: 1.0
   soil:
-    soil_water_holding_mult: { active: false, min: 0.8, max: 1.2, start: 1.0, dssat: SDUL, op: mult, unit: "x" }
-    lower_limit_mult:        { active: false, min: 0.8, max: 1.2, start: 1.0, dssat: SLLL, op: mult, unit: "x" }
-    root_growth_factor_mult: { active: false, min: 0.5, max: 1.5, start: 1.0, dssat: SRGF, op: mult, unit: "x" }
-    soil_fertility_factor:   { active: false, min: 0.5, max: 1.0, start: 1.0, dssat: SLPF, op: set,  unit: "0-1" }
-
-  # -- Weather (.WTH; dormant). op: mult => factor; op: off => additive offset.
-  #    Primarily for input-uncertainty / bias-correction studies, not classic
-  #    genetic calibration. ---------------------------------------------------
+    soil_water_holding_mult:
+      active: false
+      min: 0.8
+      max: 1.2
+      start: 1.0
+      dssat: SDUL
+      op: mult
+      unit: x
+    lower_limit_mult:
+      active: false
+      min: 0.8
+      max: 1.2
+      start: 1.0
+      dssat: SLLL
+      op: mult
+      unit: x
+    root_growth_factor_mult:
+      active: false
+      min: 0.5
+      max: 1.5
+      start: 1.0
+      dssat: SRGF
+      op: mult
+      unit: x
+    soil_fertility_factor:
+      active: false
+      min: 0.5
+      max: 1.0
+      start: 1.0
+      dssat: SLPF
+      op: set
+      unit: 0-1
   weather:
-    radiation_mult: { active: false, min: 0.9, max: 1.1, start: 1.0, dssat: SRAD, op: mult, unit: "x" }
-    tmax_offset:    { active: false, min: -2.0, max: 2.0, start: 0.0, dssat: TMAX, op: off,  unit: "degC" }
-    tmin_offset:    { active: false, min: -2.0, max: 2.0, start: 0.0, dssat: TMIN, op: off,  unit: "degC" }
-    rainfall_mult:  { active: false, min: 0.7, max: 1.3, start: 1.0, dssat: RAIN, op: mult, unit: "x" }
+    radiation_mult:
+      active: false
+      min: 0.9
+      max: 1.1
+      start: 1.0
+      dssat: SRAD
+      op: mult
+      unit: x
+    tmax_offset:
+      active: false
+      min: -2.0
+      max: 2.0
+      start: 0.0
+      dssat: TMAX
+      op: false
+      unit: degC
+    tmin_offset:
+      active: false
+      min: -2.0
+      max: 2.0
+      start: 0.0
+      dssat: TMIN
+      op: false
+      unit: degC
+    rainfall_mult:
+      active: false
+      min: 0.7
+      max: 1.3
+      start: 1.0
+      dssat: RAIN
+      op: mult
+      unit: x

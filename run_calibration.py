@@ -204,7 +204,11 @@ def main():
     print(f"\nData tables -> {outdir.resolve()}")
     print(f"Figures     -> {figdir.resolve()}")
     for k, p in paths.items():
-        print(f"  {k}: {_display_path(p)}")
+        if isinstance(p, (list, tuple)):
+            for item in p:
+                print(f"  {k}: {_display_path(item)}")
+        else:
+            print(f"  {k}: {_display_path(p)}")
 
     # clean up temporary work directories if configured
     if not cfg["calibrator"].get("keep_run_dirs", False):

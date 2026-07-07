@@ -30,10 +30,10 @@ from .spawn import SpawnResult, spawn_and_run
 
 def resolve_cores(num_cores: int) -> int:
     """How many workers to use. ``num_cores > 0`` is taken as-is; ``0`` (or less)
-    means "leave 2 logical cores free for the rest of the machine"."""
+    means all logical cores."""
     if num_cores and num_cores > 0:
         return num_cores
-    return max(1, (os.cpu_count() or 2) - 2)
+    return max(1, os.cpu_count() or 1)
 
 
 def run_many(

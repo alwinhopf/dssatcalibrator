@@ -29,22 +29,32 @@ def _fmt(value: float, width: int) -> str:
 
 
 def _fmt_like_token(value: float, token: str) -> str:
-    """Format a scalar like an existing DSSAT token, preserving leading-dot decimals."""
+    """Format a scalar for a DSSAT cell without needless churn for unchanged cells.
+
+    If the numeric value is unchanged, return the original token byte-for-byte.
+    Otherwise, use the highest decimal precision that fits the fixed-width cell.
+    For leading-dot source tokens (common in ``.SPE`` files), keep that compact
+    style so small decimals retain useful precision in narrow fields.
+    """
     width = len(token)
     old = token.strip()
-    if re.match(r"^-?\.\d+$", old):
-        decimals = len(old.split(".", 1)[1])
+
+    old_value = _parse(old)
+    value = float(value)
+    if old_value is not None and abs(value - old_value) <= max(1e-12, 1e-9 * abs(old_value)):
+        return token
+
+    leading_dot = bool(re.match(r"^-?\.\d+$", old))
+    reserve_leading_blank = bool(token[:1].isspace())
+    numeric_width = width - 1 if reserve_leading_blank and width > 1 else width
+    for decimals in range(5, -1, -1):
         s = f"{value:.{decimals}f}"
-        if s.startswith("0."):
-            s = s[1:]
-        elif s.startswith("-0."):
-            s = "-." + s.split(".", 1)[1]
-        if len(s) <= width:
-            return s.rjust(width)
-    if "." in old and "e" not in old.lower():
-        decimals = len(old.rsplit(".", 1)[1])
-        s = f"{value:.{decimals}f}"
-        if len(s) <= width:
+        if leading_dot or (reserve_leading_blank and abs(value) < 1.0):
+            if s.startswith("0."):
+                s = s[1:]
+            elif s.startswith("-0."):
+                s = "-." + s.split(".", 1)[1]
+        if len(s) <= numeric_width:
             return s.rjust(width)
     return _fmt(value, width)
 
@@ -74,6 +84,10 @@ def _fmt_filex_value(value, width: int, old_cell: str = "", *, force_text: bool 
     text = str(value).strip()
     if len(text) > width:
         raise ValueError(f"FileX text value '{text}' does not fit in {width} columns.")
+    if force_text and old_cell:
+        leading = len(old_cell) - len(old_cell.lstrip())
+        if leading > 0 and leading + len(text) <= width:
+            return (" " * leading) + text + (" " * (width - leading - len(text)))
     align = "left" if old_cell and old_cell.rstrip() == old_cell.strip() else "right"
     return text.ljust(width) if align == "left" else text.rjust(width)
 
@@ -125,7 +139,8 @@ def edit_cultivar(cul_path: str | Path, anchor_code: str, updates: dict[str, flo
     chars = list(line)
     for name, (lo, hi) in fmap.items():
         if name in updates:
-            chars[lo:hi] = list(_fmt(float(updates[name]), hi - lo))
+            old_cell = "".join(chars[lo:hi])
+            chars[lo:hi] = list(_fmt_like_token(float(updates[name]), old_cell))
     lines[target_idx] = "".join(chars)
     cul_path.write_text("\n".join(lines) + "\n")
 
@@ -150,14 +165,22 @@ def parse_header_boundaries(header: str) -> dict[str, tuple[int, int]]:
     tokens = list(re.finditer(r"\S+", header))
     fmap = {}
     for i, t in enumerate(tokens):
-        name = t.group()
-        if name.startswith("@"):
-            name = name[1:]
+        name = t.group().lstrip("@").strip(".")
         # start position is the end of the previous token (or 0)
         start = tokens[i - 1].end() if i > 0 else 0
         end = t.end()
         fmap[name] = (start, end)
     return fmap
+
+
+def _header_next_token_starts(header: str) -> dict[str, int]:
+    """Return the next header-token start column for each normalized field name."""
+    tokens = list(re.finditer(r"\S+", header))
+    starts = {}
+    for i, t in enumerate(tokens):
+        name = t.group().lstrip("@").strip(".")
+        starts[name] = tokens[i + 1].start() if i + 1 < len(tokens) else t.end()
+    return starts
 
 
 def _is_data_line(line: str) -> bool:
@@ -219,6 +242,7 @@ def _apply_filex_section_updates(lines: list[str], updates: list[dict]) -> None:
             continue
 
         fmap = parse_header_boundaries(lines[header_idx])
+        next_starts = _header_next_token_starts(lines[header_idx])
         lo, hi = fmap[field]
         last_end = max(hi2 for _, hi2 in fmap.values())
         matched = False
@@ -240,7 +264,15 @@ def _apply_filex_section_updates(lines: list[str], updates: list[dict]) -> None:
                 except ValueError:
                     continue
             chars = list(ln.ljust(last_end))
-            old_cell = "".join(chars[lo:hi])
+            cell_hi = hi
+            next_start = next_starts.get(field, hi)
+            extended_hi = next_start - 1 if next_start > hi else hi
+            if force_text and extended_hi > hi:
+                spill = "".join(chars[hi:extended_hi])
+                if spill.strip() or len(str(raw_value).strip()) > hi - lo:
+                    cell_hi = extended_hi
+                    chars = list("".join(chars).ljust(cell_hi))
+            old_cell = "".join(chars[lo:cell_hi])
             old = _parse(old_cell)
             if op == "set":
                 new = raw_value
@@ -258,7 +290,7 @@ def _apply_filex_section_updates(lines: list[str], updates: list[dict]) -> None:
                     raise ValueError(f"Unsupported FileX operation '{op}' for field '{field}'.")
             if bool(upd.get("clip_01", False)):
                 new = min(max(float(new), 0.0), 1.0)
-            chars[lo:hi] = list(_fmt_filex_value(new, hi - lo, old_cell, force_text=force_text))
+            chars[lo:cell_hi] = list(_fmt_filex_value(new, cell_hi - lo, old_cell, force_text=force_text))
             lines[i] = "".join(chars)
             matched = True
         if upd.get("required", False) and not matched:
@@ -646,7 +678,8 @@ def edit_ecotype(eco_path: str | Path, anchor_code: str, updates: dict[str, floa
     chars = list(line)
     for name, (lo, hi) in fmap.items():
         if name in updates:
-            chars[lo:hi] = list(_fmt(float(updates[name]), hi - lo))
+            old_cell = "".join(chars[lo:hi])
+            chars[lo:hi] = list(_fmt_like_token(float(updates[name]), old_cell))
     lines[target_idx] = "".join(chars)
     eco_path.write_text("\n".join(lines) + "\n")
 

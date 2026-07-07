@@ -358,6 +358,7 @@ After a run, `results/<name>/` holds the **tables** and `figures/<name>/` holds 
 |---|---|
 | `fig_obs_vs_sim*` | points on the 1:1 line = good fit |
 | `fig_timeseries` | model curves should track the measured points |
+| `fig_experiment_<EXP>_T<TRT>_3x3` | one diagnostic panel per calibrated treatment: LAI, stages, canopy size, biomass, stress, soil, weather, and tissue N when DSSAT outputs/observations are available |
 | `fig_param_posteriors` | narrow posterior (vs flat prior) = well-identified parameter |
 | `fig_fit_bars` | low nRMSE%, high Willmott d per variable |
 | `fig_sensitivity` | which parameters matter most |
@@ -425,7 +426,7 @@ entry is an adapter that reads one kind of data:
 
 ```yaml
 observation_sources:
-  field_measurements: { active: true,  hemp_dir: "C:/DSSAT48/Hemp", crop_ext: "HM" }
+  field_measurements: { active: true,  hemp_dir: "C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/Hemp", crop_ext: "HM" }
   sentinel2_lai:      { active: true,  data_path: "obs/sentinel2_lai.csv" }
   uav_multispectral:  { active: false, data_path: "obs/uav.csv" }
 

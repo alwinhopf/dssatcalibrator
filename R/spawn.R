@@ -135,6 +135,20 @@ normalize_treatments <- function(treatments, backend = "native") {
   groups
 }
 
+.filex_overrides_for <- function(cfg, exp_id) {
+  block <- .cfg_get(cfg, "filex_overrides", list())
+  updates <- list()
+  add_updates <- function(records) {
+    if (is.null(records)) return()
+    for (rec in records) {
+      if (is.list(rec)) updates[[paste0("override_", length(updates) + 1L)]] <<- rec
+    }
+  }
+  add_updates(.cfg_get(block, "all", list()))
+  add_updates(.cfg_get(block, exp_id, list()))
+  updates
+}
+
 # Native DSSAT subprocess. Returns "" on success, else an error/timeout message.
 .run_native_dssat <- function(run_dir, exe, model, timeout) {
   old <- setwd(run_dir); on.exit(setwd(old), add = TRUE)
@@ -196,6 +210,10 @@ spawn_and_run <- function(theta, exp_id, cfg, crop, param_specs, run_root,
 
   filex_name <- sprintf("%s.%s", exp_id, ext)
   file.copy(file.path(hemp_dir, filex_name), file.path(run_dir, filex_name), overwrite = TRUE)
+  filex_overrides <- .filex_overrides_for(cfg, exp_id)
+  if (length(filex_overrides) > 0) {
+    edit_filex(file.path(run_dir, filex_name), filex_overrides, list())
+  }
   for (obs_ext in c(sprintf("%sA", code), sprintf("%sT", code))) {
     src <- file.path(hemp_dir, sprintf("%s.%s", exp_id, obs_ext))
     if (file.exists(src)) file.copy(src, file.path(run_dir, sprintf("%s.%s", exp_id, obs_ext)), overwrite = TRUE)

@@ -1,0 +1,615 @@
+calibrator:
+  name: china_hemp_stage3_all_observed
+  seed: 42
+  workdir: results/_workdir
+  results_dir: results/china_hemp_calibration
+  figures_dir: figures/china_hemp_calibration
+  dssat_exe: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/dscsm048_compiled_4.8.2.with_HM_code.exe
+  dssat_dir: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp
+  num_cores: 0
+  cache_spawns: false
+  keep_run_dirs: false
+  batch_size: 25
+execution:
+  backend: native
+templates:
+  template_dir: ''
+source:
+  hemp_dir: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/Hemp
+  observations: dssat
+experiments:
+- CNKU2101
+- YUBA2101
+- YUFE2101
+- YUFE2201
+- YUKU2101
+- YUKU2201
+filex_overrides:
+  CNKU2101:
+  - section: FIELDS
+    field: ID_FIELD
+    value: CNKU2101
+    type: code
+    required: true
+  - section: FIELDS
+    field: WSTA
+    value: CNKU2101
+    type: code
+    required: true
+  - section: FIELDS
+    field: ID_SOIL
+    value: YUKU2101
+    type: code
+    required: true
+engine:
+  run_mode: experiment
+  timeseries_outputs:
+    CHTD: CHTD
+    CNAD: CNAD
+    CWAD: CWAD
+    CWID: CWID
+    G#AD: G#AD
+    GN%D: GN%D
+    GNAD: GNAD
+    GWAD: GWAD
+    GWGD: GWGD
+    HIAD: HIAD
+    HIPD: HIPD
+    L#SD: L#SD
+    LAID: LAID
+    LI%N: LI%N
+    LN%D: LN%D
+    LNAD: LNAD
+    LWAD: LWAD
+    NFXD: NFXD
+    NWAD: NWAD
+    P#AD: P#AD
+    PWAD: PWAD
+    SH%D: SH%D
+    SHAD: SHAD
+    SHND: SHND
+    SLAD: SLAD
+    SN%D: SN%D
+    SNAD: SNAD
+    SNHD: SNHD
+    SWAD: SWAD
+    VNAD: VNAD
+    node_stage: L#SD
+    biomass: CWAD
+    leaf: LWAD
+    stem: SWAD
+    grain: GWAD
+    height: CHTD
+    width: CWID
+    LAI: LAID
+  scalar_outputs:
+    emergence: EDAP
+    anthesis: ADAP
+method:
+  preset: C
+  sample:
+    engine: lhs
+    n: 640
+  sensitivity:
+    engine: morris
+    active: false
+    trajectories: 12
+    auto_activate: false
+  select:
+    engine: stepwise_bic
+    active: false
+  surrogate:
+    engine: gp
+    active: false
+    n_train: 64
+    top_k: 10
+  bayesian:
+    engine: glue
+    behavioural_quantile: 0.1
+  optimizer:
+    engine: none
+    restarts: 4
+    popsize: 15
+  validation:
+    scheme: none
+  multiobjective:
+    engine: none
+objective:
+  weighting: unified
+  obs_autocorr: true
+  ignore_zero_observations:
+  - width
+  weights:
+    CHTD: 0.25
+    CNAD: 0.25
+    CWAD: 0.25
+    CWID: 0.25
+    G#AD: 0.25
+    GN%D: 0.25
+    GNAD: 0.25
+    GWAD: 0.25
+    GWGD: 0.25
+    HIAD: 0.25
+    HIPD: 0.25
+    L#SD: 0.25
+    LAID: 0.25
+    LI%N: 0.25
+    LN%D: 0.25
+    LNAD: 0.25
+    LWAD: 0.25
+    NFXD: 0.25
+    NWAD: 0.25
+    P#AD: 0.25
+    PWAD: 0.25
+    SH%D: 0.25
+    SHAD: 0.25
+    SHND: 0.25
+    SLAD: 0.25
+    SN%D: 0.25
+    SNAD: 0.25
+    SNHD: 0.25
+    SWAD: 0.25
+    VNAD: 0.25
+    node_stage: 0.8
+    biomass: 1.0
+    leaf: 0.7
+    stem: 0.7
+    grain: 0.8
+    height: 0.8
+    width: 0.8
+    LAI: 0.8
+    emergence: 1.0
+    anthesis: 1.0
+  error_model:
+    biomass:
+      type: relative
+      value: 0.2
+    grain_yield:
+      type: relative
+      value: 0.15
+    height:
+      type: relative
+      value: 0.15
+    width:
+      type: relative
+      value: 0.15
+    node_stage:
+      type: absolute
+      value: 1.0
+    LAI:
+      type: relative
+      value: 0.2
+    emergence:
+      type: absolute
+      value: 3
+    anthesis:
+      type: absolute
+      value: 3
+    maturity:
+      type: absolute
+      value: 5
+parameter_defaults:
+  scope_by_group:
+    genetic_cultivar: cultivar
+    genetic_ecotype: cultivar
+crops:
+- code: HM
+  model: CRGRO048
+  genotype_stem: HMGRO048
+  cultivar_anchor: IB0008
+  cultivar_anchors:
+  - IB0001
+  - IB0002
+  - IB0008
+  ecotype: HM0003
+  filex_ext: HMX
+  stage_scale: cropgro
+  cultivar_ecotypes:
+    IB0001: HM0001
+    IB0002: HM0002
+    IB0008: HM0003
+  calibration_cultivars:
+  - IB0002
+  - IB0008
+parameters:
+  genetic_cultivar:
+    CSDL:
+      active: true
+      role: obligatory
+      min: 11.5
+      max: 18.0
+      start: 12.8
+      prior:
+        dist: uniform
+    PPSEN:
+      active: true
+      role: obligatory
+      min: 0.1
+      max: 1.0
+      start: 0.9
+      prior:
+        dist: uniform
+    EM-FL:
+      active: true
+      role: obligatory
+      min: 5.0
+      max: 110.0
+      start: 30.0
+      prior:
+        dist: uniform
+    FL-SH:
+      active: true
+      role: candidate
+      min: 0.1
+      max: 25.0
+      start: 10.0
+      prior:
+        dist: uniform
+    FL-SD:
+      active: true
+      role: candidate
+      min: 0.1
+      max: 35.0
+      start: 15.0
+      prior:
+        dist: uniform
+    SD-PM:
+      active: true
+      role: candidate
+      min: 0.1
+      max: 90.0
+      start: 50.0
+      prior:
+        dist: uniform
+    FL-LF:
+      active: true
+      role: candidate
+      min: 5.0
+      max: 80.0
+      start: 40.0
+      prior:
+        dist: uniform
+    LFMAX:
+      active: true
+      role: candidate
+      min: 0.3
+      max: 2.5
+      start: 1.4
+      prior:
+        dist: uniform
+    SLAVR:
+      active: true
+      role: candidate
+      min: 50.0
+      max: 550.0
+      start: 250.0
+      prior:
+        dist: uniform
+    SIZLF:
+      active: true
+      role: candidate
+      min: 50.0
+      max: 550.0
+      start: 250.0
+      prior:
+        dist: uniform
+    XFRT:
+      active: true
+      role: candidate
+      min: 0.05
+      max: 0.95
+      start: 0.6
+      prior:
+        dist: uniform
+    WTPSD:
+      active: true
+      role: candidate
+      min: 0.01
+      max: 1.2
+      start: 0.035
+      prior:
+        dist: uniform
+    SFDUR:
+      active: true
+      role: candidate
+      min: 5.0
+      max: 60.0
+      start: 20.0
+      prior:
+        dist: uniform
+    SDPDV:
+      active: true
+      role: candidate
+      min: 1.0
+      max: 100.0
+      start: 1.0
+      prior:
+        dist: uniform
+    PODUR:
+      active: true
+      role: candidate
+      min: 1.0
+      max: 60.0
+      start: 30.0
+      prior:
+        dist: uniform
+    THRSH:
+      active: true
+      role: candidate
+      min: 50.0
+      max: 95.0
+      start: 80.0
+      prior:
+        dist: uniform
+    SDPRO:
+      active: false
+      min: 0.1
+      max: 0.5
+      start: 0.256
+    SDLIP:
+      active: false
+      min: 0.02
+      max: 0.55
+      start: 0.319
+  genetic_ecotype:
+    THVAR:
+      active: true
+      min: 0.0
+      max: 0.08
+      start: 0.0
+      prior:
+        dist: uniform
+    PL-EM:
+      active: true
+      min: 3.0
+      max: 7.0
+      start: 4.0
+      prior:
+        dist: uniform
+    EM-V1:
+      active: true
+      min: 1.0
+      max: 8.0
+      start: 3.0
+      prior:
+        dist: uniform
+    V1-JU:
+      active: true
+      min: 0.0
+      max: 30.0
+      start: 0.0
+      prior:
+        dist: uniform
+    JU-R0:
+      active: true
+      min: 0.0
+      max: 35.0
+      start: 1.0
+      prior:
+        dist: uniform
+    PM09:
+      active: true
+      min: 0.2
+      max: 1.0
+      start: 0.8
+      prior:
+        dist: uniform
+    LNGSH:
+      active: true
+      min: 1.0
+      max: 15.0
+      start: 5.0
+      prior:
+        dist: uniform
+    R7-R8:
+      active: false
+      min: 0.1
+      max: 40.0
+      start: 20.0
+    FL-VS:
+      active: true
+      min: 10.0
+      max: 80.0
+      start: 50.0
+      prior:
+        dist: uniform
+    TRIFL:
+      active: true
+      min: 0.1
+      max: 0.6
+      start: 0.25
+      prior:
+        dist: uniform
+    RWDTH:
+      active: true
+      min: 0.5
+      max: 2.0
+      start: 1.0
+      prior:
+        dist: uniform
+    RHGHT:
+      active: true
+      min: 0.4
+      max: 3.0
+      start: 1.5
+      prior:
+        dist: uniform
+    R1PPO:
+      active: true
+      min: 0.0
+      max: 1.2
+      start: 0.504
+      prior:
+        dist: uniform
+    OPTBI:
+      active: true
+      min: 10.0
+      max: 28.0
+      start: 20.0
+      prior:
+        dist: uniform
+    SLOBI:
+      active: true
+      min: 0.0
+      max: 0.08
+      start: 0.035
+      prior:
+        dist: uniform
+  management:
+    plant_population:
+      active: false
+      min: 2
+      max: 100
+      start: 25
+      dssat: PPOP
+      unit: plants/m2
+    row_spacing:
+      active: false
+      min: 20
+      max: 100
+      start: 50
+      dssat: PLRS
+      unit: cm
+    planting_depth:
+      active: false
+      min: 1.0
+      max: 6.0
+      start: 2.5
+      dssat: PLDP
+      unit: cm
+  initial_conditions:
+    initial_soil_water_mult:
+      active: false
+      min: 0.6
+      max: 1.4
+      start: 1.0
+  soil:
+    soil_water_holding_mult:
+      active: false
+      min: 0.8
+      max: 1.2
+      start: 1.0
+      dssat: SDUL
+      op: mult
+      unit: x
+    lower_limit_mult:
+      active: false
+      min: 0.8
+      max: 1.2
+      start: 1.0
+      dssat: SLLL
+      op: mult
+      unit: x
+    root_growth_factor_mult:
+      active: false
+      min: 0.5
+      max: 1.5
+      start: 1.0
+      dssat: SRGF
+      op: mult
+      unit: x
+    soil_fertility_factor:
+      active: false
+      min: 0.5
+      max: 1.0
+      start: 1.0
+      dssat: SLPF
+      op: set
+      unit: 0-1
+  weather:
+    radiation_mult:
+      active: false
+      min: 0.9
+      max: 1.1
+      start: 1.0
+      dssat: SRAD
+      op: mult
+      unit: x
+    tmax_offset:
+      active: false
+      min: -2.0
+      max: 2.0
+      start: 0.0
+      dssat: TMAX
+      op: false
+      unit: degC
+    tmin_offset:
+      active: false
+      min: -2.0
+      max: 2.0
+      start: 0.0
+      dssat: TMIN
+      op: false
+      unit: degC
+    rainfall_mult:
+      active: false
+      min: 0.7
+      max: 1.3
+      start: 1.0
+      dssat: RAIN
+      op: mult
+      unit: x
+observation_sources:
+  field_measurements:
+    active: false
+    hemp_dir: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/Hemp
+    crop_ext: HM
+  sentinel2_lai:
+    active: false
+    data_path: obs/sentinel2_lai.csv
+    error_model:
+      base_rmse: 0.7
+      saturation_lai: 4.0
+  uav_multispectral:
+    active: false
+    data_path: obs/uav.csv
+fusion:
+  conflict_resolution: inverse_variance
+  source_priority:
+  - field_measurements
+  - uav_multispectral
+  - sentinel2_lai
+  - modis_lai
+assimilation:
+  active: false
+  mode: recalibration
+  allow_uncoupled: false
+  recalibration:
+    engine: glue
+    recal_sample_size: 100
+    warm_start: true
+    update_frequency: on_observation
+  enkf:
+    n_ensemble: 50
+    inflation: 1.05
+    state_variables:
+    - LAID
+    - CWAD
+  forcing:
+    min_confidence: 0.8
+    smoothing: true
+forecast:
+  active: false
+  variables:
+  - LAID
+  n_ensemble: 30
+  anchor_continuity: true
+  decay_days: 21
+weather:
+  provider: file
+  dssatutils_provider: nasapower
+  gap_fill: none
+  horizon: 0
+  cache_dir: weather_cache
+soil:
+  provider: file
+  source: ssurgo
+  cache_dir: soil_cache
+management_options:
+  use_source_planting_date: false
+gating:
+  cultivar: free
+  ecotype: gated
+  species: blocked
+diagnostics:
+  active: false

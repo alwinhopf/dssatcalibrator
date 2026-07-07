@@ -38,7 +38,8 @@ DEFAULTS: dict[str, Any] = {
     },
     "objective": {"weighting": "unified", "weights": {}, "error_model": {},
                   "likelihood": {"type": "gaussian"},
-                  "model_discrepancy": {}},
+                  "model_discrepancy": {},
+                  "ignore_zero_observations": []},
     "parameters": {},
     "crops": [],
     "experiments": [],
@@ -170,6 +171,8 @@ PARAMETER_SCOPES = {
     "global", "shared", "pooled", "pool",
     "experiment", "experiments", "per_experiment", "per-experiment",
     "experiment_specific", "experiment-specific", "local",
+    "cultivar", "cultivars", "per_cultivar", "per-cultivar",
+    "cultivar_specific", "cultivar-specific",
 }
 
 
@@ -285,6 +288,27 @@ def active_parameters(cfg: dict) -> list[dict]:
             if not isinstance(spec, dict) or not spec.get("active", False):
                 continue
             rec = {"group": group, "name": name}
+            rec.update(spec)
+            out.append(rec)
+    return out
+
+
+def fixed_parameters(cfg: dict) -> list[dict]:
+    """Flatten specs marked ``fixed: true`` but not active.
+
+    Fixed parameters are written into every DSSAT spawn using their configured
+    ``start`` value, but they are not optimizer dimensions. This is useful for
+    staged workflows: e.g. apply a calibrated phenology baseline before fitting
+    biomass parameters.
+    """
+    out = []
+    for group, params in (cfg.get("parameters") or {}).items():
+        if not isinstance(params, dict):
+            continue
+        for name, spec in params.items():
+            if not isinstance(spec, dict) or spec.get("active", False) or not spec.get("fixed", False):
+                continue
+            rec = {"group": group, "name": name, "active": False}
             rec.update(spec)
             out.append(rec)
     return out

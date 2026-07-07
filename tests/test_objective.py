@@ -32,7 +32,7 @@ def _result(adap_sim, hwam_sim, cwad_sim):
         "sim": [adap_sim, hwam_sim], "meas": [75.0, 1000.0],
     })
     pg = pd.DataFrame({
-        "treatment": [1, 1], "date": DATES, "CWAD": cwad_sim,
+        "treatment": [1, 1], "date": DATES, "DAP": [75, 93], "CWAD": cwad_sim,
     })
     return SimpleNamespace(evaluate=ev, plantgro=pg)
 
@@ -59,6 +59,58 @@ def test_build_residuals_both_paths():
     assert len(resid) == 4
     assert set(resid["user_var"]) == {"anthesis", "grain_yield", "biomass"}
     assert "phenology" in set(resid["kind"]) and "timeseries" in set(resid["kind"])
+
+
+def test_filea_phenology_date_maps_to_dap_output():
+    obs = pd.DataFrame([
+        ("E1", 1, "ADAT", "phenology", DATES[0], 21260.0, np.nan, 1.0),
+    ], columns=SCHEMA)
+
+    resid = obj.build_residuals({"E1": _result(75.0, 1000.0, [5000.0, 8000.0])}, obs, CFG)
+
+    anthesis = resid[resid["user_var"] == "anthesis"].iloc[0]
+    assert anthesis["dssat"] == "ADAP"
+    assert anthesis["obs"] == 75.0
+    assert anthesis["sim"] == 75.0
+
+
+def test_late_timeseries_obs_uses_last_simulated_value():
+    ev = pd.DataFrame({
+        "treatment": [1, 1], "variable": ["ADAP", "HWAM"],
+        "sim": [75.0, 1000.0], "meas": [75.0, 1000.0],
+    })
+    pg = pd.DataFrame({
+        "treatment": [1], "date": [DATES[0]], "DAP": [75], "CWAD": [5000.0],
+    })
+    results = {"E1": SimpleNamespace(evaluate=ev, plantgro=pg)}
+
+    resid = obj.build_residuals(results, _obs(), CFG)
+
+    biomass = resid[resid["user_var"] == "biomass"].sort_values("date")
+    assert len(biomass) == 2
+    assert biomass.iloc[-1]["date"] == DATES[1]
+    assert biomass.iloc[-1]["sim"] == 5000.0
+    assert biomass.iloc[-1]["obs"] == 8000.0
+
+
+def test_configured_zero_observations_are_ignored():
+    obs = pd.DataFrame([
+        ("E1", 1, "CWAD", "timeseries", DATES[0], 0.0, np.nan, 1.0),
+        ("E1", 1, "CWAD", "timeseries", DATES[1], 8000.0, np.nan, 1.0),
+    ], columns=SCHEMA)
+    cfg = {
+        **CFG,
+        "objective": {
+            **CFG["objective"],
+            "ignore_zero_observations": ["biomass"],
+        },
+    }
+
+    resid = obj.build_residuals({"E1": _result(75.0, 1000.0, [5000.0, 8000.0])}, obs, cfg)
+
+    biomass = resid[resid["user_var"] == "biomass"]
+    assert len(biomass) == 1
+    assert biomass.iloc[0]["obs"] == 8000.0
 
 
 def test_perfect_fit_scores_zero():

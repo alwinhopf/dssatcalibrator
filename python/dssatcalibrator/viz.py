@@ -24,7 +24,10 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
+from .config import crop_for, resolve_dssat_paths
 from .spawn import theta_hash
+from .weather import read_wth
+from .writers import parse_fields
 
 _ACCENT = "#534AB7"
 _OBS = "#D85A30"
@@ -229,6 +232,423 @@ def plot_timeseries(result, best_spawns, path):
     plt.close(fig)
 
 
+_EXPERIMENT_PANEL_SPECS = [
+    {
+        "title": "Leaf area index",
+        "series": [("LAID", "LAI")],
+    },
+    {
+        "title": "Growth stages",
+        "stage": True,
+    },
+    {
+        "title": "Canopy height and width",
+        "series": [("CHTD", "height"), ("CWID", "width")],
+    },
+    {
+        "title": "Total aboveground biomass",
+        "series": [("CWAD", "aboveground")],
+    },
+    {
+        "title": "Organ biomass",
+        "series": [("SWAD", "stem"), ("LWAD", "leaf"), ("RWAD", "root"), ("GWAD", "grain")],
+    },
+    {
+        "title": "Water and nitrogen stress",
+        "series": [
+            ("WSPD", "water photo"), ("WSDD", "water dev"), ("WSGD", "water growth"),
+            ("NSTD", "N stress"), ("NSPD", "N photo"), ("NSGD", "N growth"),
+        ],
+    },
+    {
+        "title": "Soil water and nitrogen",
+        "soil": True,
+    },
+    {
+        "title": "Weather",
+        "series": [("TMIN", "tmin"), ("TMAX", "tmax"), ("SRAD", "solar radiation")],
+        "sources": ["Weather.OUT", "WTH"],
+        "daily_average": True,
+    },
+    {
+        "title": "Tissue nitrogen concentration",
+        "series": [("LN%D", "leaf N%"), ("SN%D", "stem N%"), ("RN%D", "root N%"), ("GN%D", "grain N%")],
+        "sources": ["PlantN.OUT", "PlantGro.OUT"],
+    },
+]
+
+
+def _obs_aliases(result) -> dict[str, set[str]]:
+    aliases: dict[str, set[str]] = {}
+    engine = result.cfg.get("engine", {}) if hasattr(result, "cfg") else {}
+    for block in ("timeseries_outputs", "scalar_outputs"):
+        for user_var, dssat_var in (engine.get(block, {}) or {}).items():
+            aliases.setdefault(str(dssat_var), set()).add(str(user_var))
+            aliases.setdefault(str(user_var), set()).add(str(dssat_var))
+    return aliases
+
+
+def _obs_for_variable(obs: pd.DataFrame, exp_id: str, variable: str,
+                      aliases: dict[str, set[str]], treatment: int | None = None) -> pd.DataFrame:
+    if obs is None or obs.empty:
+        return pd.DataFrame()
+    wanted = {variable, *aliases.get(variable, set())}
+    out = obs[(obs["exp_id"].astype(str) == str(exp_id)) & (obs["variable"].astype(str).isin(wanted))].copy()
+    if treatment is not None and "treatment" in out.columns:
+        out = out[pd.to_numeric(out["treatment"], errors="coerce") == int(treatment)]
+    if "date" in out.columns:
+        out["date"] = pd.to_datetime(out["date"], errors="coerce")
+    return out
+
+
+def _combined_output_long(spawn) -> pd.DataFrame:
+    outputs = getattr(spawn, "outputs", None) or {}
+    frames = []
+    long = outputs.get("long") if isinstance(outputs, dict) else None
+    if long is not None and not long.empty:
+        frames.append(long.copy())
+    pg = getattr(spawn, "plantgro", pd.DataFrame())
+    if pg is not None and not pg.empty:
+        value_cols = [
+            c for c in pg.columns
+            if c not in {"run", "treatment", "date"} and pd.api.types.is_numeric_dtype(pg[c])
+        ]
+        if value_cols:
+            id_vars = [c for c in ("run", "treatment", "date", "DAP") if c in pg.columns]
+            pgl = pg.melt(id_vars=id_vars, value_vars=value_cols,
+                          var_name="variable", value_name="value")
+            pgl["source_file"] = "PlantGro.OUT"
+            frames.append(pgl)
+    if not frames:
+        return pd.DataFrame(columns=["source_file", "treatment", "date", "DAP", "variable", "value"])
+    out = pd.concat(frames, ignore_index=True, sort=False)
+    if "date" in out.columns:
+        out["date"] = pd.to_datetime(out["date"], errors="coerce")
+    if "treatment" in out.columns:
+        out["treatment"] = pd.to_numeric(out["treatment"], errors="coerce").astype("Int64")
+    out["value"] = pd.to_numeric(out["value"], errors="coerce")
+    return out.dropna(subset=["value"])
+
+
+def _filex_override_value(cfg: dict, exp_id: str, section: str, field: str):
+    for rec in (cfg.get("filex_overrides", {}) or {}).get(str(exp_id), []) or []:
+        if not isinstance(rec, dict):
+            continue
+        if str(rec.get("section", "")).upper() == section.upper() and str(rec.get("field", "")).upper() == field.upper():
+            return rec.get("value")
+    return None
+
+
+def _weather_station_for(result, exp_id: str) -> str | None:
+    cfg = getattr(result, "cfg", {}) or {}
+    override = _filex_override_value(cfg, exp_id, "FIELDS", "WSTA")
+    if override:
+        return str(override)
+    try:
+        crop = crop_for(cfg, (cfg.get("crops") or [{}])[0].get("code", "HM"))
+        filex = Path(cfg["source"]["hemp_dir"]) / f"{exp_id}.{crop['filex_ext']}"
+        return parse_fields(filex).get("wsta")
+    except Exception:
+        return None
+
+
+def _weather_fallback_long(result, exp_id: str, sim_long: pd.DataFrame) -> pd.DataFrame:
+    station = _weather_station_for(result, exp_id)
+    if not station:
+        return pd.DataFrame()
+    try:
+        wth = resolve_dssat_paths(result.cfg)["weather"] / f"{station}.WTH"
+        df = read_wth(wth)
+    except Exception:
+        return pd.DataFrame()
+    if df.empty:
+        return pd.DataFrame()
+    if sim_long is not None and not sim_long.empty and "date" in sim_long.columns:
+        dates = pd.to_datetime(sim_long["date"], errors="coerce").dropna()
+        if not dates.empty:
+            df = df[(df["date"] >= dates.min()) & (df["date"] <= dates.max())]
+    value_cols = [c for c in ("TMIN", "TMAX", "SRAD") if c in df.columns]
+    if not value_cols:
+        return pd.DataFrame()
+    out = df.melt(id_vars=["date"], value_vars=value_cols, var_name="variable", value_name="value")
+    out["source_file"] = "WTH"
+    out["value"] = pd.to_numeric(out["value"], errors="coerce")
+    return out.dropna(subset=["value"])
+
+
+def _treatments_for_plot(sim_long: pd.DataFrame, obs: pd.DataFrame, exp_id: str) -> list[int | None]:
+    values = []
+    if sim_long is not None and not sim_long.empty and "treatment" in sim_long.columns:
+        values.extend(sim_long["treatment"].dropna().tolist())
+    if obs is not None and not obs.empty and "treatment" in obs.columns:
+        o = obs[obs["exp_id"].astype(str) == str(exp_id)]
+        values.extend(o["treatment"].dropna().tolist())
+    out = sorted({int(v) for v in values if pd.notna(v)})
+    return out or [None]
+
+
+def _filter_treatment(df: pd.DataFrame, treatment: int | None) -> pd.DataFrame:
+    if treatment is None or df is None or df.empty or "treatment" not in df.columns:
+        return df
+    return df[pd.to_numeric(df["treatment"], errors="coerce") == int(treatment)].copy()
+
+
+def _daily_series(g: pd.DataFrame, spec: dict) -> pd.DataFrame:
+    if g.empty or not spec.get("daily_average"):
+        return g
+    if "date" not in g.columns or not g["date"].notna().any():
+        return g
+    group_cols = ["date"]
+    if "variable" in g.columns:
+        group_cols.append("variable")
+    return g.groupby(group_cols, as_index=False)["value"].mean()
+
+
+def _soil_water_nitrogen_frame(sim_long: pd.DataFrame) -> pd.DataFrame:
+    if sim_long is None or sim_long.empty:
+        return pd.DataFrame(columns=["date", "variable", "value"])
+    frames = []
+    source = sim_long.get("source_file", pd.Series("", index=sim_long.index)).astype(str)
+
+    water = sim_long[
+        source.isin(["SoilWat.OUT", "SoilWater.OUT"]) &
+        sim_long["variable"].astype(str).isin(["SWTD", "SW"])
+    ].copy()
+    if not water.empty:
+        water["variable"] = water["variable"].astype(str).map({"SWTD": "soil water", "SW": "soil water"})
+        frames.append(water.groupby(["date", "variable"], as_index=False)["value"].mean())
+
+    n = sim_long[
+        source.isin(["SoilNi.OUT"]) &
+        sim_long["variable"].astype(str).isin([
+            "NIAD", "NITD", "NHTD", "NO3", "NH4", "SNO3", "SNH4",
+            *[f"NT{i}D" for i in range(1, 21)],
+        ])
+    ].copy()
+    if not n.empty:
+        n["date"] = pd.to_datetime(n["date"], errors="coerce")
+        n = n.dropna(subset=["date"])
+        n = n.groupby(["date", "variable"], as_index=False)["value"].sum()
+        wide = n.pivot_table(index="date", columns="variable", values="value", aggfunc="sum")
+        if "NIAD" in wide.columns:
+            total = wide["NIAD"].fillna(0.0)
+            found = True
+        else:
+            total = pd.Series(0.0, index=wide.index)
+            found = False
+            for col in ("NITD", "NHTD", "NO3", "SNO3", "NH4", "SNH4"):
+                if col in wide.columns:
+                    total = total.add(wide[col].fillna(0.0), fill_value=0.0)
+                    found = True
+            if not found:
+                layer_cols = [c for c in wide.columns if str(c).startswith("NT") and str(c).endswith("D")]
+                for col in layer_cols:
+                    total = total.add(wide[col].fillna(0.0), fill_value=0.0)
+                    found = True
+        if found:
+            frames.append(pd.DataFrame({
+                "date": total.index,
+                "variable": "plant available N",
+                "value": total.to_numpy(dtype=float),
+            }))
+
+    if not frames:
+        return pd.DataFrame(columns=["date", "variable", "value"])
+    return pd.concat(frames, ignore_index=True, sort=False).dropna(subset=["date", "value"])
+
+
+def _plot_series_panel(ax, sim_long: pd.DataFrame, obs: pd.DataFrame, exp_id: str,
+                       spec: dict, aliases: dict[str, set[str]], color_offset: int = 0,
+                       treatment: int | None = None) -> bool:
+    cmap = plt.get_cmap("tab10")
+    plotted = False
+    sources = set(spec.get("sources") or [])
+    for i, (var, label) in enumerate(spec.get("series", [])):
+        color = cmap((i + color_offset) % 10)
+        g = sim_long[sim_long["variable"].astype(str) == var].copy()
+        if sources and "source_file" in g.columns:
+            g = g[g["source_file"].isin(sources)]
+        if not g.empty:
+            g = _daily_series(g, spec)
+            xcol = "date" if "date" in g.columns and g["date"].notna().any() else "DAP"
+            groups = g.groupby("treatment", dropna=False) if "treatment" in g.columns else [(None, g)]
+            for _trt, gg in groups:
+                gg = gg.sort_values(xcol)
+                ax.plot(gg[xcol], gg["value"], color=color, lw=1.2, alpha=0.75, label=f"sim {label}")
+                plotted = True
+        o = _obs_for_variable(obs, exp_id, var, aliases, treatment=treatment)
+        if not o.empty:
+            ox = o["date"] if o["date"].notna().any() else pd.to_numeric(o.get("value"), errors="coerce")
+            if o["date"].notna().any():
+                ax.scatter(ox, o["value"], color=color, edgecolor="black", linewidth=0.35,
+                           s=22, marker="o", label=f"obs {label}", zorder=5)
+                plotted = True
+    ax.set_title(spec["title"], fontsize=9, fontweight="bold")
+    ax.tick_params(axis="x", labelrotation=30, labelsize=7)
+    if plotted:
+        handles, labels = ax.get_legend_handles_labels()
+        dedup = {}
+        for h, l in zip(handles, labels):
+            dedup.setdefault(l, h)
+        ax.legend(dedup.values(), dedup.keys(), fontsize=6, frameon=False, loc="best")
+    else:
+        ax.text(0.5, 0.5, "not available", ha="center", va="center",
+                transform=ax.transAxes, color="#888780", fontsize=9)
+        ax.set_xticks([])
+        ax.set_yticks([])
+    return plotted
+
+
+def _plot_soil_panel(ax, sim_long: pd.DataFrame, treatment: int | None = None) -> bool:
+    cmap = plt.get_cmap("tab10")
+    plotted = False
+    soil = _soil_water_nitrogen_frame(sim_long)
+    for i, label in enumerate(["soil water", "plant available N"]):
+        g = soil[soil["variable"] == label].copy()
+        if g.empty:
+            continue
+        g = g.sort_values("date")
+        ax.plot(g["date"], g["value"], color=cmap(i), lw=1.2, alpha=0.8, label=f"sim {label}")
+        plotted = True
+    ax.set_title("Soil water and nitrogen", fontsize=9, fontweight="bold")
+    ax.tick_params(axis="x", labelrotation=30, labelsize=7)
+    if plotted:
+        ax.legend(fontsize=6, frameon=False, loc="best")
+    else:
+        ax.text(0.5, 0.5, "not available", ha="center", va="center",
+                transform=ax.transAxes, color="#888780", fontsize=9)
+        ax.set_xticks([])
+        ax.set_yticks([])
+    return plotted
+
+
+def _planting_date_from_plantgro(pg: pd.DataFrame, treatment: int | None):
+    if treatment is None or pg is None or pg.empty or "date" not in pg.columns or "DAP" not in pg.columns:
+        return pd.NaT
+    sub = _filter_treatment(pg, treatment)
+    if sub.empty:
+        return pd.NaT
+    dates = pd.to_datetime(sub["date"], errors="coerce")
+    dap = pd.to_numeric(sub["DAP"], errors="coerce")
+    ok = dates.notna() & dap.notna()
+    if not ok.any():
+        return pd.NaT
+    planted = dates[ok] - pd.to_timedelta(dap[ok], unit="D")
+    return planted.iloc[0] if not planted.empty else pd.NaT
+
+
+def _stage_observed_dap(rows: pd.DataFrame, pg: pd.DataFrame, treatment: int | None) -> pd.Series:
+    if rows.empty:
+        return pd.Series(dtype=float)
+    planted = _planting_date_from_plantgro(pg, treatment)
+    vals = []
+    for _, row in rows.iterrows():
+        date = pd.to_datetime(row.get("date"), errors="coerce")
+        if pd.notna(date) and pd.notna(planted):
+            vals.append(float((date.normalize() - planted.normalize()).days))
+            continue
+        raw = pd.to_numeric(row.get("value"), errors="coerce")
+        if pd.notna(raw) and raw < 1000:
+            vals.append(float(raw))
+    return pd.Series(vals, dtype=float)
+
+
+def _plot_stage_panel(ax, result, spawn, exp_id: str, treatment: int | None = None) -> bool:
+    stage_defs = [
+        ("EDAP", {"EDAT", "EDATE"}, "emergence"),
+        ("ADAP", {"ADAT"}, "anthesis"),
+        ("MDAP", {"MDAT"}, "maturity"),
+        ("HDAP", {"HDAT"}, "harvest"),
+    ]
+    ylabels = []
+    plotted = False
+    ev = getattr(spawn, "evaluate", pd.DataFrame())
+    obs = result.obs.table if hasattr(result, "obs") else pd.DataFrame()
+    cmap = plt.get_cmap("tab10")
+    pg = getattr(spawn, "plantgro", pd.DataFrame())
+    for yi, (dap_var, date_vars, label) in enumerate(stage_defs):
+        ylabels.append(label)
+        if ev is not None and not ev.empty:
+            g = ev[ev["variable"].astype(str) == dap_var]
+            g = _filter_treatment(g, treatment)
+            if not g.empty:
+                vals = pd.to_numeric(g["sim"], errors="coerce").dropna()
+                if not vals.empty:
+                    ax.scatter(vals, [yi] * len(vals), marker="x", color=cmap(0), s=36,
+                               label="simulated" if yi == 0 else None)
+                    plotted = True
+        if obs is not None and not obs.empty:
+            o = obs[(obs["exp_id"].astype(str) == str(exp_id)) &
+                    (obs["variable"].astype(str).isin(set(date_vars) | {dap_var, label}))].copy()
+            o = _filter_treatment(o, treatment)
+            if not o.empty:
+                vals = _stage_observed_dap(o, pg, treatment).dropna()
+                if not vals.empty:
+                    ax.scatter(vals, [yi] * len(vals), marker="o", color=cmap(1),
+                               edgecolor="black", linewidth=0.35, s=28,
+                               label="observed" if yi == 0 else None)
+                    plotted = True
+    ax.set_title("Growth stages", fontsize=9, fontweight="bold")
+    ax.set_xlabel("days after planting")
+    ax.set_yticks(range(len(ylabels)))
+    ax.set_yticklabels(ylabels, fontsize=7)
+    if plotted:
+        handles, labels = ax.get_legend_handles_labels()
+        labels_seen = {}
+        for h, l in zip(handles, labels):
+            if l:
+                labels_seen.setdefault(l, h)
+        ax.legend(labels_seen.values(), labels_seen.keys(), fontsize=6, frameon=False, loc="best")
+    else:
+        ax.text(0.5, 0.5, "not available", ha="center", va="center",
+                transform=ax.transAxes, color="#888780", fontsize=9)
+    return plotted
+
+
+def plot_experiment_diagnostics(result, best_spawns, figdir) -> list[Path]:
+    """Write one 3x3 diagnostic time-series panel per calibrated treatment.
+
+    Panels cover LAI, stages, canopy dimensions, total/organ biomass, stress,
+    soil water/nitrogen, weather, and tissue nitrogen when the corresponding
+    DSSAT outputs/observations are available.
+    """
+    if not best_spawns:
+        return []
+    figdir = Path(figdir)
+    figdir.mkdir(parents=True, exist_ok=True)
+    obs = result.obs.table if hasattr(result, "obs") else pd.DataFrame()
+    aliases = _obs_aliases(result)
+    paths: list[Path] = []
+    for exp_id, spawn in best_spawns.items():
+        if getattr(spawn, "status", "") not in {"success", "cached"}:
+            continue
+        sim_long = _combined_output_long(spawn)
+        for treatment in _treatments_for_plot(sim_long, obs, str(exp_id)):
+            sim_trt = _filter_treatment(sim_long, treatment)
+            weather = _weather_fallback_long(result, str(exp_id), sim_trt)
+            if not weather.empty:
+                sim_trt = pd.concat([sim_trt, weather], ignore_index=True, sort=False)
+            fig, axes = plt.subplots(3, 3, figsize=(14, 10.5), squeeze=False)
+            for idx, spec in enumerate(_EXPERIMENT_PANEL_SPECS):
+                ax = axes[idx // 3][idx % 3]
+                if spec.get("stage"):
+                    _plot_stage_panel(ax, result, spawn, exp_id, treatment=treatment)
+                elif spec.get("soil"):
+                    _plot_soil_panel(ax, sim_trt, treatment=treatment)
+                else:
+                    _plot_series_panel(ax, sim_trt, obs, str(exp_id), spec, aliases,
+                                       color_offset=idx, treatment=treatment)
+            trt_label = f"T{int(treatment)}" if treatment is not None else "TNA"
+            fig.suptitle(f"{exp_id} {trt_label}: observed vs simulated diagnostic time series",
+                         fontsize=13, fontweight="bold")
+            fig.tight_layout(rect=(0, 0, 1, 0.97))
+            path = figdir / f"fig_experiment_{exp_id}_{trt_label}_3x3.png"
+            fig.savefig(path, dpi=140, bbox_inches="tight")
+            plt.close(fig)
+            paths.append(path)
+    return paths
+
+
 def plot_fit_bars(result, path):
     pv = result.best.per_var
     if not pv:
@@ -412,6 +832,9 @@ def make_report(result, outdir, best_spawns=None, figdir=None) -> dict:
     plot_fit_bars(result, figdir / "fig_fit_bars.png")
     if best_spawns:
         plot_timeseries(result, best_spawns, figdir / "fig_timeseries.png")
+        experiment_panels = plot_experiment_diagnostics(result, best_spawns, figdir)
+        if experiment_panels:
+            paths["experiment_diagnostics"] = experiment_panels
 
     if result.nsga2 is not None:
         _plot_pareto(result.nsga2, figdir / "fig_pareto.png")

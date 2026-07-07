@@ -15,6 +15,23 @@ def test_read_filea_yuku2101(hemp_dir):
     assert ((fa.variable == "SWAH") & (fa.kind == "scalar")).any()
 
 
+def test_read_filea_yuba2101_doy_dates(hemp_dir):
+    fa = read_filea(hemp_dir / "YUBA2101.HMA", "YUBA2101")
+    edate = fa[(fa.variable == "EDATE") & (fa.treatment == 1)].iloc[0]
+    adat = fa[(fa.variable == "ADAT") & (fa.treatment == 1)].iloc[0]
+    assert edate["kind"] == "phenology"
+    assert edate["date"] == pd.Timestamp("2021-05-17")
+    assert adat["kind"] == "phenology"
+    assert adat["date"] == pd.Timestamp("2021-08-04")
+
+
+def test_read_filea_skips_placeholder_duplicate_headers(hemp_dir):
+    fa = read_filea(hemp_dir / "UKAB2101.HMA", "UKAB2101")
+    assert not fa.empty
+    assert not fa["variable"].astype(str).str.startswith("__skip").any()
+    assert {"ADAT", "EDAT"} <= set(fa["variable"])
+
+
 def test_read_filet_yuku2101(hemp_dir):
     ft = read_filet(hemp_dir / "YUKU2101.HMT", "YUKU2101")
     assert not ft.empty

@@ -19,3 +19,10 @@ Thumbs.db
 /_smoke
 /results
 /figures
+/calibration_china_hemp/logs
+/calibration_germany_hemp/derived/dwd_cache
+/calibration_germany_hemp/figures
+/calibration_germany_hemp/results
+/tmp
+/calibration_europe_hemp/logs
+/calibration_germany_hemp/derived

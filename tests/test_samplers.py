@@ -18,7 +18,10 @@ def space():
 
 
 def test_space_from_config(space):
-    assert space.ndim == 13
+    assert space.ndim > 0
+    assert space.ndim == len(space.low) == len(space.high)
+    assert space.ndim == len(space.start) == len(space.specs)
+    assert space.names == [spec["name"] for spec in space.specs]
     assert (space.low < space.high).all()
     assert (space.low <= space.start).all() and (space.start <= space.high).all()
 

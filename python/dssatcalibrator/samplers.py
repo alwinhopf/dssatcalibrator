@@ -35,9 +35,11 @@ def sample(space: ParameterSpace, n: int, engine: str = "lhs",
     elif engine == "montecarlo":
         unit = rng.random((n, d))
     elif engine == "grid":
-        per = max(2, int(round(n ** (1.0 / d))))
+        per = max(2, int(np.ceil(n ** (1.0 / d))))
         axes = [np.linspace(0, 1, per) for _ in range(d)]
-        unit = np.array(list(itertools.product(*axes)))[:n]
+        rows = itertools.islice(itertools.product(*axes), n)
+        unit = np.fromiter((value for row in rows for value in row),
+                           dtype=float, count=n * d).reshape(-1, d)
     else:
         raise ValueError(f"unknown sampler engine: {engine}")
 

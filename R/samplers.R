@@ -27,10 +27,17 @@ sample_design <- function(space, n, engine = "lhs", seed = 42, include_start = T
     },
     "montecarlo" = matrix(runif(n * d), nrow = n, ncol = d),
     "grid" = {
-      per <- max(2L, as.integer(round(n^(1.0 / d))))
+      per <- max(2L, as.integer(ceiling(n^(1.0 / d))))
       axes <- replicate(d, seq(0, 1, length.out = per), simplify = FALSE)
-      g <- as.matrix(expand.grid(axes))
-      g[seq_len(min(n, nrow(g))), , drop = FALSE]
+      total <- per^d
+      rows <- seq_len(min(n, total)) - 1L
+      g <- matrix(0, nrow = length(rows), ncol = d)
+      for (j in seq_len(d)) {
+        # Matches expand.grid ordering without materialising the full factorial.
+        idx <- (rows %/% (per^(j - 1L))) %% per + 1L
+        g[, j] <- axes[[j]][idx]
+      }
+      g
     },
     stop(sprintf("unknown sampler engine: %s", engine))
   )

@@ -69,22 +69,48 @@ observations_from_sources <- function(cfg, experiments) {
 evaluate_thetas <- function(cfg, thetas, setup = NULL, n_workers = NULL, progress = FALSE) {
   if (is.null(setup)) setup <- .setup(cfg)
   if (is.null(n_workers)) n_workers <- resolve_cores(.cfg_get(cfg$calibrator, "num_cores", 0))
-  jobs <- list(); idx <- list()
+  cache <- .evaluation_cache_from_setup(cfg, setup$crop, setup$specs, setup$experiments,
+                                        setup$treatments, setup$obs$table, setup$exe)
+  out <- vector("list", length(thetas))
+  miss_by_key <- list()
+  miss_keys <- character(0)
   for (ti in seq_along(thetas)) {
-    for (exp in setup$experiments) {
-      jobs[[length(jobs) + 1L]] <- list(theta = thetas[[ti]], exp_id = exp, cfg = cfg, crop = setup$crop,
-                                        param_specs = setup$specs, run_root = setup$run_root,
-                                        treatments = setup$treatments[[exp]], exe = setup$exe)
-      idx[[length(idx) + 1L]] <- c(ti, exp)
+    key <- if (isTRUE(cache$enabled)) .eval_cache_key(cache, thetas[[ti]], setup$experiments) else paste0("no-cache-", ti)
+    cached <- if (isTRUE(cache$enabled)) .eval_cache_get(cache, key) else NULL
+    if (!is.null(cached)) {
+      out[[ti]] <- cached
+    } else {
+      if (is.null(miss_by_key[[key]])) {
+        miss_by_key[[key]] <- list(theta = thetas[[ti]], indices = integer(0))
+        miss_keys <- c(miss_keys, key)
+      }
+      miss_by_key[[key]]$indices <- c(miss_by_key[[key]]$indices, ti)
     }
   }
-  results <- run_many(jobs, n_workers = n_workers)
-  per_theta <- lapply(seq_along(thetas), function(i) list())
-  for (k in seq_along(idx)) {
-    ti <- as.integer(idx[[k]][1]); exp <- idx[[k]][2]
-    per_theta[[ti]][[exp]] <- results[[k]]
+
+  jobs <- list(); idx <- list()
+  for (mi in seq_along(miss_keys)) {
+    theta <- miss_by_key[[miss_keys[[mi]]]]$theta
+    for (exp in setup$experiments) {
+      jobs[[length(jobs) + 1L]] <- list(theta = theta, exp_id = exp, cfg = cfg, crop = setup$crop,
+                                        param_specs = setup$specs, run_root = setup$run_root,
+                                        treatments = setup$treatments[[exp]], exe = setup$exe)
+      idx[[length(idx) + 1L]] <- list(mi = mi, exp = exp)
+    }
   }
-  list(results = lapply(per_theta, function(rmap) score(rmap, setup$obs$table, cfg)), setup = setup)
+  results <- if (length(jobs)) run_many(jobs, n_workers = n_workers) else list()
+  per_miss <- lapply(seq_along(miss_keys), function(i) list())
+  for (k in seq_along(idx)) {
+    mi <- idx[[k]]$mi; exp <- idx[[k]]$exp
+    per_miss[[mi]][[exp]] <- results[[k]]
+  }
+  for (mi in seq_along(miss_keys)) {
+    key <- miss_keys[[mi]]
+    scored <- score(per_miss[[mi]], setup$obs$table, cfg)
+    if (isTRUE(cache$enabled)) .eval_cache_put(cache, key, scored)
+    for (ti in miss_by_key[[key]]$indices) out[[ti]] <- scored
+  }
+  list(results = out, setup = setup)
 }
 
 # Run every (sample x experiment) spawn, score per sample.
@@ -94,29 +120,57 @@ evaluate_design <- function(cfg, samples, progress = TRUE) {
   n_workers <- resolve_cores(.cfg_get(cfg$calibrator, "num_cores", 0))
   rows <- list(); obj_results <- list()
   best_score <- Inf; best_obj_res <- NULL; best_sid <- NULL
-  jobs <- list(); idx <- list()
+  cache <- .evaluation_cache_from_setup(cfg, setup$crop, setup$specs, setup$experiments,
+                                        setup$treatments, setup$obs$table, setup$exe)
+  miss_by_key <- list(); miss_keys <- character(0)
+  record_objective <- function(sid, theta, o) {
+    if (o$score < best_score) {
+      best_score <<- o$score; best_obj_res <<- o; best_sid <<- as.integer(sid)
+    }
+    rows[[length(rows) + 1L]] <<- c(list(sample_id = as.integer(sid)), theta,
+                                    list(score = o$score, loglik = o$loglik, n_obs = nrow(o$residuals)))
+  }
   for (sid in seq_len(nrow(samples)) - 1L) {
     theta <- ps_to_theta(setup$space, as.numeric(samples[sid + 1L, ]))
+    key <- if (isTRUE(cache$enabled)) .eval_cache_key(cache, theta, setup$experiments) else paste0("no-cache-", sid)
+    cached <- if (isTRUE(cache$enabled)) .eval_cache_get(cache, key) else NULL
+    if (!is.null(cached)) {
+      record_objective(sid, theta, cached)
+    } else {
+      if (is.null(miss_by_key[[key]])) {
+        miss_by_key[[key]] <- list(theta = theta, sample_ids = integer(0))
+        miss_keys <- c(miss_keys, key)
+      }
+      miss_by_key[[key]]$sample_ids <- c(miss_by_key[[key]]$sample_ids, sid)
+    }
+  }
+
+  jobs <- list(); idx <- list()
+  for (mi in seq_along(miss_keys)) {
+    theta <- miss_by_key[[miss_keys[[mi]]]]$theta
     for (exp in setup$experiments) {
       jobs[[length(jobs) + 1L]] <- list(theta = theta, exp_id = exp, cfg = cfg, crop = setup$crop,
                                         param_specs = setup$specs, run_root = setup$run_root,
                                         treatments = setup$treatments[[exp]], exe = setup$exe)
-      idx[[length(idx) + 1L]] <- list(sid = sid, exp = exp)
+      idx[[length(idx) + 1L]] <- list(mi = mi, exp = exp)
     }
   }
-  results <- run_many(jobs, n_workers = n_workers)
-  per_sample <- list()
+  results <- if (length(jobs)) run_many(jobs, n_workers = n_workers) else list()
+  per_miss <- list()
   for (k in seq_along(idx)) {
-    sid <- as.character(idx[[k]]$sid); exp <- idx[[k]]$exp
-    if (is.null(per_sample[[sid]])) per_sample[[sid]] <- list()
-    per_sample[[sid]][[exp]] <- results[[k]]
+    mi <- as.character(idx[[k]]$mi); exp <- idx[[k]]$exp
+    if (is.null(per_miss[[mi]])) per_miss[[mi]] <- list()
+    per_miss[[mi]][[exp]] <- results[[k]]
   }
-  for (sid in names(per_sample)) {
-    o <- score(per_sample[[sid]], setup$obs$table, cfg)
-    if (o$score < best_score) { best_score <- o$score; best_obj_res <- o; best_sid <- as.integer(sid) }
-    theta <- ps_to_theta(setup$space, as.numeric(samples[as.integer(sid) + 1L, ]))
-    rows[[length(rows) + 1L]] <- c(list(sample_id = as.integer(sid)), theta,
-                                   list(score = o$score, loglik = o$loglik, n_obs = nrow(o$residuals)))
+  for (mi_name in names(per_miss)) {
+    mi <- as.integer(mi_name)
+    key <- miss_keys[[mi]]
+    o <- score(per_miss[[mi_name]], setup$obs$table, cfg)
+    if (isTRUE(cache$enabled)) .eval_cache_put(cache, key, o)
+    for (sid in miss_by_key[[key]]$sample_ids) {
+      theta <- ps_to_theta(setup$space, as.numeric(samples[as.integer(sid) + 1L, ]))
+      record_objective(sid, theta, o)
+    }
   }
   if (!is.null(best_sid)) obj_results[[as.character(best_sid)]] <- best_obj_res
   design <- do.call(rbind, lapply(rows, function(r) as.data.frame(r, stringsAsFactors = FALSE, check.names = FALSE)))
@@ -659,12 +713,21 @@ combined_mode <- function(cfg, progress = TRUE) {
 
 # Score one theta across a set of experiments (used by combine_runs / validate_cv).
 .score_theta <- function(theta, experiments, cfg, crop, specs, run_root, treatments, exe, obs, n_workers) {
+  cache <- .evaluation_cache_from_setup(cfg, crop, specs, experiments, treatments[experiments],
+                                        obs$table, exe)
+  if (isTRUE(cache$enabled)) {
+    key <- .eval_cache_key(cache, theta, experiments)
+    cached <- .eval_cache_get(cache, key)
+    if (!is.null(cached)) return(cached)
+  }
   jobs <- lapply(experiments, function(exp) list(theta = theta, exp_id = exp, cfg = cfg, crop = crop,
                                                  param_specs = specs, run_root = run_root,
                                                  treatments = treatments[[exp]], exe = exe))
   results <- run_many(jobs, n_workers = n_workers)
   rmap <- setNames(results, experiments)
-  score(rmap, obs$table, cfg)
+  scored <- score(rmap, obs$table, cfg)
+  if (isTRUE(cache$enabled)) .eval_cache_put(cache, key, scored)
+  scored
 }
 
 #' Return {exp_id: SpawnResult} for a theta (cached spawns are instant).

@@ -42,7 +42,14 @@ def mock_spawn(theta, exp_id, cfg, crop, param_specs, run_root, treatments, exe)
 
 
 BASE_CFG = {
-    "calibrator": {"name": "t", "seed": 1, "workdir": "fake", "dssat_dir": "fake", "num_cores": 1},
+    "calibrator": {
+        "name": "t",
+        "seed": 1,
+        "workdir": "fake",
+        "dssat_dir": "fake",
+        "num_cores": 1,
+        "cache_evaluations": False,
+    },
     "engine": {"timeseries_outputs": {"biomass": "CWAD"}, "scalar_outputs": {"grain_yield": "HWAM"}},
     "objective": {"weighting": "unified", "weights": {"biomass": 1.0, "grain_yield": 1.0},
                   "error_model": {"biomass": {"type": "absolute", "value": 10.0},

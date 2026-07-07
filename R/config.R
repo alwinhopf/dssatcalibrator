@@ -26,6 +26,9 @@
       dssat_dir = "C:/DSSAT48",
       num_cores = 0L,
       cache_spawns = TRUE,
+      cache_evaluations = TRUE,
+      evaluation_cache_dir = "",
+      evaluation_cache_salt = "",
       keep_run_dirs = FALSE
     ),
     method = list(

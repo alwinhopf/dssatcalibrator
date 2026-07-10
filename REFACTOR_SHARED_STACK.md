@@ -48,14 +48,14 @@ layers; don't fork engine/utils logic).
   DSSAT in mode `A`/`Q`, and reads **`summary.csv`** (requires the FileX OUTPUTS line to end
   in `FMOPT='C'`). It assembles a fixed end-of-season result frame (`top_weight_kg_ha`,
   `final_grain_kg_ha`, soil C/N, …). **It does not read `PlantGro` (daily) or `Evaluate.OUT`.**
-- **Reusable, low-level helpers** (public as of `dssatengine@v0.3.0`):
+- **Reusable, low-level helpers** (public in current `dssatengine` 0.4.x builds):
   - `run_dssat(run_dir, exe, run_mode_flag, filex, model=None, timeout=None)` — robust
     executor: resolves `exe`, captures stdout/stderr to a log, **raises `RuntimeError` on
     non-zero exit** (strictly better than the calibrator's old silent `DEVNULL`/`check=False`).
   - `write_dssbatch`, `write_dssbatch_sequence`, `normalize_treatment_list`.
   - `extend_weather_repeat_single_ignore_partial` — weather extension (relevant to the
     forecast horizon).
-- Private Python aliases remain for older consumers that imported the pre-`v0.3.0` names.
+- Private Python aliases remain for older consumers that imported the earlier private names.
 
 ### 2.2 `dssatutils` (`python/dssatutils/__init__.py`)
 - Public `process_weather_*` / `process_soils_*` (NASA POWER, AgERA5, Daymet, GridMET,
@@ -115,12 +115,13 @@ The per-spawn (“Level B”) flow keeps the calibrator's perturbation + parsing
 ### Phase 0 — upstream prerequisites (foundation-first, per AGENTS.md §2)
 - **`dssatengine`:** promote `_run_dssat` → `run_dssat`, `_write_dssbatch` → `write_dssbatch`,
   `_normalize_treatment_list` → `normalize_treatment_list`, and re-export
-  `extend_weather_repeat_single_ignore_partial`. Mirror in R for parity. Tag `dssatengine@v0.3.0`.
+  `extend_weather_repeat_single_ignore_partial`. Mirror in R for parity. Current consumers pin
+  the verified 0.4.0 release commit until a matching remote tag is pushed.
 - **(Optional) `dssatengine` parsers:** add `parse_plantgro`/`parse_evaluate` so the daily +
   sim-vs-meas readers become shared too. If declined, the calibrator keeps `dssat_io.py`
   (documented divergence — the engine's CSV-summary contract genuinely doesn't cover it).
 - **`dssatcalibrator/pyproject.toml`:** add pinned, **optional** extras
-  `[shared]` → `dssatengine @ git+…@v0.3.0`; `[acquire]` → `dssatutils @ …@v0.2.0` (+ geopandas).
+  `[shared]` → `dssatengine @ git+…@84b6e508...`; `[acquire]` → `dssatutils @ …@v0.4.0` (+ geopandas).
   Never `@main`/editable in a committed manifest (principle 3).
 
 ### Phase 1 — formalise the `DSSAT48` layer (low risk, no upstream dep)
@@ -190,8 +191,8 @@ Recommend **A** now, leaving **B** as a later consolidation if the engine grows 
 
 ## 7. Dependency, parity & governance impact
 
-- **Pins:** add `dssatutils@v0.2.0` / `dssatengine@v0.3.0` (post-Phase-0 tag) as **optional
-  extras**; refresh any lockfile; update `DEPENDENCIES.md` (calibrator row: *"does not use"* →
+- **Pins:** keep `dssatutils@v0.4.0` / the verified `dssatengine` 0.4.0 release commit as
+  **optional extras**; refresh any lockfile; update `DEPENDENCIES.md` (calibrator row: *"does not use"* →
   *"consumes `dssatengine` for execution; `dssatutils` for acquisition (optional extra)"*).
 - **R/Python parity (principle 5):** the calibrator is Python-only today; it stays Python-only
   (documented). Upstream engine API promotions in Phase 0 must be mirrored R↔Python.
@@ -236,7 +237,7 @@ which no shared layer currently serves.
 - `dssatengine` promoted public Python/R helpers: `run_dssat`,
   `write_dssbatch`, `write_dssbatch_sequence`, and treatment normalization
   (`normalize_treatment_list` in both languages). Private Python names remain
-  aliases for older consumers. Version metadata is now `0.3.0`.
+  aliases for older consumers. Version metadata is now `0.4.0`.
 - `dssatcalibrator` added `execution.backend: native | dssatengine`; the shared
   backend delegates batch writing, treatment normalization, and DSSAT execution
   while keeping `dssat_io.py` PlantGro/Evaluate parsing local.

@@ -86,6 +86,14 @@ def test_pipeline_glue():
     _check(_calibrate(METHODS["glue"]))
 
 
+def test_pipeline_glue_can_skip_start_row():
+    method = {"preset": "C", "sample": {"engine": "lhs", "n": 6, "include_start": False},
+              "bayesian": {"engine": "glue", "behavioural_quantile": 0.5}}
+    res = _calibrate(method)
+    _check(res)
+    assert len(res.design) == 6
+
+
 def test_pipeline_smc_pf():
     _check(_calibrate(METHODS["smc_pf"]))
 

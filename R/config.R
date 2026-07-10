@@ -342,13 +342,13 @@ resolve_dssat_paths <- function(cfg) {
 
 # Sibling DSSAT_Gridded_Run_Tutorial/dssat_templates relative to this package.
 .workspace_template_dir <- function() {
-  # ../../DSSAT_Gridded_Run_Tutorial/dssat_templates relative to R/ in the repo.
-  pkg_root <- tryCatch(
-    normalizePath(file.path(dirname(getwd())), mustWork = FALSE),
-    error = function(e) getwd()
-  )
-  file.path(dirname(dirname(pkg_root)),
-            "DSSAT_Gridded_Run_Tutorial", "dssat_templates")
+  cwd <- normalizePath(getwd(), winslash = "/", mustWork = FALSE)
+  workspaces <- unique(c(dirname(cwd), cwd, dirname(dirname(cwd))))
+  for (workspace in workspaces) {
+    candidate <- file.path(workspace, "DSSAT_Gridded_Run_Tutorial", "dssat_templates")
+    if (dir.exists(candidate)) return(candidate)
+  }
+  file.path(workspaces[1], "DSSAT_Gridded_Run_Tutorial", "dssat_templates")
 }
 
 #' Resolve the shared `dssat_templates` directory.

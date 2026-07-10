@@ -8,6 +8,7 @@ calibrator:
   dssat_dir: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp
   num_cores: 0
   cache_spawns: false
+  cache_evaluations: false
   keep_run_dirs: false
   batch_size: 20
   spawn_timeout: 60
@@ -30,10 +31,10 @@ experiments:
 - YUKU2101
 - YUKU2201
 calibration_treatments_by_experiment:
-  UFJA2101: [1]
-  UFJA2201: [3]
-  UFCI2101: [1]
-  UFCI2201: [2]
+  UFJA2101: [2, 4]
+  UFJA2201: [2, 4]
+  UFCI2101: [1, 3]
+  UFCI2201: [2, 4]
   ITPI2001: [1]
   ITPI2101: [1]
   UKAB2101: [1]
@@ -136,14 +137,14 @@ parameters:
       scope: cultivar
     EM-FL:
       active: true
-      min: 5.0
-      max: 110.0
+      min: 10.0
+      max: 50.0
       start: 35.0
       prior:
         dist: uniform
       scope: cultivar
     FL-SH:
-      active: true
+      active: false
       min: 0.1
       max: 30.0
       start: 8.0
@@ -151,7 +152,7 @@ parameters:
         dist: uniform
       scope: cultivar
     FL-SD:
-      active: true
+      active: false
       min: 0.1
       max: 40.0
       start: 12.0
@@ -159,15 +160,15 @@ parameters:
         dist: uniform
       scope: cultivar
     SD-PM:
-      active: true
-      min: 0.1
-      max: 90.0
+      active: false
+      min: 5.0
+      max: 50.0
       start: 35.0
       prior:
         dist: uniform
       scope: cultivar
     FL-LF:
-      active: true
+      active: false
       min: 1.0
       max: 80.0
       start: 30.0
@@ -224,7 +225,7 @@ parameters:
         dist: uniform
       scope: cultivar
     R7-R8:
-      active: true
+      active: false
       min: 0.1
       max: 60.0
       start: 25.0
@@ -232,7 +233,7 @@ parameters:
         dist: uniform
       scope: cultivar
     FL-VS:
-      active: true
+      active: false
       min: 0.1
       max: 80.0
       start: 35.0
@@ -258,8 +259,8 @@ parameters:
   genetic_species:
     TB1:
       active: true
-      min: -2.0
-      max: 8.0
+      min: 0.5
+      max: 5.5
       start: 3.0
       prior:
         dist: uniform
@@ -267,7 +268,7 @@ parameters:
       spe_index: 0
     TO1_1:
       active: true
-      min: 8.0
+      min: 19.0
       max: 28.0
       start: 24.0
       prior:
@@ -276,8 +277,8 @@ parameters:
       spe_index: 1
     TO2_1:
       active: true
-      min: 20.0
-      max: 36.0
+      min: 25.0
+      max: 33.0
       start: 29.0
       prior:
         dist: uniform
@@ -285,8 +286,8 @@ parameters:
       spe_index: 2
     TM1:
       active: true
-      min: 32.0
-      max: 45.0
+      min: 36.75
+      max: 43.25
       start: 40.0
       prior:
         dist: uniform
@@ -294,8 +295,8 @@ parameters:
       spe_index: 3
     TB2:
       active: true
-      min: -2.0
-      max: 8.0
+      min: 1.5
+      max: 6.5
       start: 4.0
       prior:
         dist: uniform
@@ -303,7 +304,7 @@ parameters:
       spe_index: 0
     TO1_2:
       active: true
-      min: 8.0
+      min: 16.0
       max: 24.0
       start: 20.0
       prior:
@@ -312,8 +313,8 @@ parameters:
       spe_index: 1
     TO2_2:
       active: true
-      min: 20.0
-      max: 34.0
+      min: 26.5
+      max: 33.5
       start: 30.0
       prior:
         dist: uniform
@@ -321,8 +322,8 @@ parameters:
       spe_index: 2
     TM2:
       active: true
-      min: 32.0
-      max: 45.0
+      min: 36.75
+      max: 43.25
       start: 40.0
       prior:
         dist: uniform
@@ -330,8 +331,8 @@ parameters:
       spe_index: 3
     TB3:
       active: true
-      min: -2.0
-      max: 8.0
+      min: 1.5
+      max: 6.5
       start: 4.0
       prior:
         dist: uniform
@@ -339,8 +340,8 @@ parameters:
       spe_index: 0
     TO1_3:
       active: true
-      min: 8.0
-      max: 26.0
+      min: 17.5
+      max: 26.5
       start: 22.0
       prior:
         dist: uniform
@@ -348,8 +349,8 @@ parameters:
       spe_index: 1
     TO2_3:
       active: true
-      min: 20.0
-      max: 36.0
+      min: 27.0
+      max: 35.0
       start: 31.0
       prior:
         dist: uniform
@@ -357,8 +358,8 @@ parameters:
       spe_index: 2
     TM3:
       active: true
-      min: 32.0
-      max: 45.0
+      min: 36.75
+      max: 43.25
       start: 40.0
       prior:
         dist: uniform

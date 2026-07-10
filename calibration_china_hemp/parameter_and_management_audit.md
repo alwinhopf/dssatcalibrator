@@ -78,7 +78,7 @@ byte-identical to the source file after calibration setup and a DSSAT run.
   passed with 16 tests.
 - `python -m pytest tests/test_config.py tests/test_spawn.py tests/test_observations.py tests/test_writers.py tests/test_writers_ecotype.py tests/test_writers_filex.py tests/test_writers_soil_weather.py tests/test_new_engines.py -q`
   passed with 47 tests and 4 skipped tests.
-- `Rscript -e "pkgload::load_all('.', quiet=TRUE); testthat::test_file('tests/testthat/test-pooled-calibration.R', reporter='summary'); testthat::test_file('tests/testthat/test-parity-writers.R', reporter='summary')"`
+- `Rscript -e "pkgload::load_all('.', quiet=TRUE); testthat::test_file('tests/testthat/test_pooled_calibration.R', reporter='summary'); testthat::test_file('tests/testthat/test_parity_writers.R', reporter='summary')"`
   passed.
 - R source parsing passed for all files under `R/`.
 - Config loading confirms 14 active Stage 1 parameter specs and 8 active

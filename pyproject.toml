@@ -20,10 +20,10 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
 shared = [
-    "dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@v0.3.0",
+    "dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@84b6e50895e7e2e2a4b02553d2705f4d879d269b",
 ]
 acquire = [
-    "dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@v0.2.0",
+    "dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@v0.4.0",
     "geopandas>=0.14",
     "shapely>=2.0",
 ]

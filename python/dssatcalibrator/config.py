@@ -51,7 +51,7 @@ DEFAULTS: dict[str, Any] = {
     "execution": {"backend": "native"},
     # Shared FileX/genotype template directory for synthesized experiments and
     # new-crop scaffolding. Empty means DSSAT_TEMPLATE_DIR, then the sibling
-    # DSSAT_Gridded_Run_Tutorial/dssat_templates directory if present.
+    # Sibling gridded tutorial dssat_templates directory if present.
     "templates": {"template_dir": ""},
     # Parameter-file gating safety (dssatcal model): CUL free, ECO gated, SPE blocked.
     # Set species: free only for new-species adaptation from an analog template.
@@ -366,8 +366,17 @@ def resolve_dssat_paths(cfg: dict) -> dict[str, Path]:
 
 
 def _workspace_template_dir() -> Path:
-    return (Path(__file__).resolve().parents[2] /
-            "DSSAT_Gridded_Run_Tutorial" / "dssat_templates")
+    """Return the sibling gridded tutorial template directory when discoverable."""
+    here = Path(__file__).resolve()
+    workspaces = []
+    if len(here.parents) > 3:
+        workspaces.append(here.parents[3])
+    workspaces.extend([Path.cwd().resolve().parent, Path.cwd().resolve()])
+    for workspace in dict.fromkeys(workspaces):
+        candidate = workspace / "DSSAT_Gridded_Run_Tutorial" / "dssat_templates"
+        if candidate.exists():
+            return candidate
+    return workspaces[0] / "DSSAT_Gridded_Run_Tutorial" / "dssat_templates"
 
 
 def resolve_template_dir(cfg: dict | None = None, *, required: bool = False) -> Path | None:

@@ -248,6 +248,7 @@ def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.Dat
                     kind = "phenology" if base in ("ADAP", "EDAP", "MDAP") else "scalar"
                     rows.append(dict(exp_id=exp, treatment=int(r["treatment"]), user_var=sc_inv[base],
                                      dssat=base, kind=kind, date=pd.NaT, obs=float(meas), sim=float(penalty_sim)))
+                    seen_scalar.add((exp, int(r["treatment"]), sc_inv[base], kind))
                 continue
             kind = "phenology" if base in ("ADAP", "EDAP", "MDAP") else "scalar"
             rows.append(dict(exp_id=exp, treatment=int(r["treatment"]), user_var=sc_inv[base],
@@ -469,6 +470,19 @@ def score(results: dict, obs_table: pd.DataFrame, cfg: dict) -> ObjectiveResult:
         for uv, g in resid.groupby("user_var"):
             mse = float(np.mean(g["_loss"]))
             sc += float(wts.get(uv, 1.0)) * mse
+
+    penalty_cfg = (cfg.get("objective", {}) or {}).get("max_bias_penalty", {}) or {}
+    if penalty_cfg:
+        variable = str(penalty_cfg.get("variable", "anthesis"))
+        lam = float(penalty_cfg.get("lambda", penalty_cfg.get("weight", 0.0)) or 0.0)
+        if lam > 0:
+            g = resid[resid["user_var"].astype(str) == variable]
+            if not g.empty:
+                max_abs = float(np.nanmax(np.abs(pd.to_numeric(g["resid"], errors="coerce"))))
+                tolerance = float(penalty_cfg.get("tolerance", penalty_cfg.get("target", 0.0)) or 0.0)
+                sigma = float(penalty_cfg.get("sigma", 1.0) or 1.0)
+                excess = max(0.0, max_abs - tolerance)
+                sc += lam * float((excess / max(sigma, 1e-12)) ** 2)
 
     per_var = {uv: metrics(g["obs"], g["sim"]) for uv, g in resid.groupby("user_var")}
     pev = (resid.groupby(["exp_id", "user_var"])

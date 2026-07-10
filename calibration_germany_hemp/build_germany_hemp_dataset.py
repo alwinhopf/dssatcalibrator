@@ -45,8 +45,8 @@ SOWING_DATES = {
     "Ivory": date(2018, 5, 22),
 }
 
-PDF_AGRONOMY = ROOT / "agronomy-10-01361-v2.pdf"
-PDF_WATER = ROOT / "water-12-02982-v2.pdf"
+PDF_AGRONOMY = ROOT / "agronomy_10_01361_v2.pdf"
+PDF_WATER = ROOT / "water_12_02982_v2.pdf"
 
 
 def ensure_import_paths() -> None:

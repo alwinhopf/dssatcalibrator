@@ -38,7 +38,7 @@ def _warn_unmatched(obs, cfg: dict) -> None:
         )
 
 from . import objective as obj
-from .config import active_parameters, crop_for, resolve_exe
+from .config import crop_for, resolve_exe
 from .eval_cache import EvaluationCache
 from .observations import Observations
 from .runner import resolve_cores, run_many
@@ -66,7 +66,7 @@ def _setup(cfg: dict):
     space = ParameterSpace.from_config(cfg)
     crop = crop_for(cfg, (cfg.get("crops") or [{}])[0].get("code", "HM"))
     exe = resolve_exe(cfg)
-    specs = active_parameters(cfg)
+    specs = space.specs
     hemp_dir = Path(cfg["source"]["hemp_dir"])
     run_root = Path(cfg["calibrator"]["workdir"]) / cfg["calibrator"]["name"]
     run_root.mkdir(parents=True, exist_ok=True)
@@ -85,6 +85,7 @@ def _setup(cfg: dict):
             
     experiments = [e for e in cfg.get("experiments", []) if e in set(obs.experiments())]
     treatments = {e: parse_treatments(hemp_dir / f"{e}.{crop['filex_ext']}") for e in experiments}
+    treatments = _selected_treatments(cfg, experiments, treatments)
 
     # Optional: take planting dates from ingested farm-management rows and set them
     # as a FileX PDATE override (an input, not a calibrated parameter). Opt-in via
@@ -96,11 +97,52 @@ def _setup(cfg: dict):
     return space, crop, exe, specs, run_root, obs, experiments, treatments
 
 
+def _selected_treatments(cfg: dict, experiments: list[str], available: dict[str, list[int]]) -> dict[str, list[int]]:
+    selected = (
+        cfg.get("calibration_treatments_by_experiment")
+        or cfg.get("calibration_treatments")
+        or cfg.get("calibrator", {}).get("calibration_treatments_by_experiment")
+        or {}
+    )
+    out: dict[str, list[int]] = {}
+    for exp in experiments:
+        vals = selected.get(exp, available.get(exp, [1]))
+        if vals is None:
+            vals = available.get(exp, [1])
+        if isinstance(vals, (str, int)):
+            vals = [vals]
+        seen = set()
+        chosen = []
+        for val in vals:
+            trt = int(val)
+            if trt not in seen:
+                seen.add(trt)
+                chosen.append(trt)
+        if not chosen:
+            chosen = list(available.get(exp, [1]))
+        out[exp] = chosen
+    return out
+
+
+def _obs_table_for_units(obs_table: pd.DataFrame, experiments: list[str], treatments: dict[str, list[int]]) -> pd.DataFrame:
+    if obs_table is None or obs_table.empty:
+        return obs_table
+    if "exp_id" not in obs_table.columns or "treatment" not in obs_table.columns:
+        return obs_table
+    units = {(str(exp), int(trt)) for exp in experiments for trt in treatments.get(exp, [])}
+    mask = [
+        (str(exp), int(trt)) in units
+        for exp, trt in zip(obs_table["exp_id"], obs_table["treatment"])
+    ]
+    return obs_table.loc[mask].copy()
+
+
 def _score_theta(theta: dict, experiments, *, cfg, crop, specs, run_root, treatments,
                  exe, obs, n_workers) -> obj.ObjectiveResult:
+    obs_table = _obs_table_for_units(obs.table, list(experiments), treatments)
     cache = EvaluationCache.from_setup(
         cfg, crop=crop, specs=specs, experiments=list(experiments),
-        treatments={e: treatments[e] for e in experiments}, obs_table=obs.table, exe=exe,
+        treatments={e: treatments[e] for e in experiments}, obs_table=obs_table, exe=exe,
     )
     if cache.enabled:
         key = cache.key(theta, list(experiments))
@@ -115,7 +157,7 @@ def _score_theta(theta: dict, experiments, *, cfg, crop, specs, run_root, treatm
         keys.append(exp)
     results = run_many(jobs, n_workers=n_workers)
     rmap = {k: r for k, r in zip(keys, results)}
-    scored = obj.score(rmap, obs.table, cfg)
+    scored = obj.score(rmap, obs_table, cfg)
     if cache.enabled:
         cache.put(key, scored)
     return scored
@@ -150,8 +192,9 @@ def evaluate_thetas(cfg: dict, thetas: list[dict], *, setup=None, n_workers=None
 
     cache = EvaluationCache.from_setup(
         cfg, crop=crop, specs=specs, experiments=experiments,
-        treatments=treatments, obs_table=obs.table, exe=exe,
+        treatments=treatments, obs_table=_obs_table_for_units(obs.table, experiments, treatments), exe=exe,
     )
+    obs_table = _obs_table_for_units(obs.table, experiments, treatments)
     out: list[obj.ObjectiveResult | None] = [None] * len(thetas)
     miss_by_key: dict[str, dict] = {}
     for ti, theta in enumerate(thetas):
@@ -187,7 +230,7 @@ def evaluate_thetas(cfg: dict, thetas: list[dict], *, setup=None, n_workers=None
     for (mi, exp), res in zip(idx, results):
         per_miss[mi][exp] = res
     for mi, key in enumerate(miss_keys):
-        scored = obj.score(per_miss[mi], obs.table, cfg)
+        scored = obj.score(per_miss[mi], obs_table, cfg)
         if cache.enabled:
             cache.put(key, scored)
         for ti in miss_by_key[key]["indices"]:
@@ -209,6 +252,7 @@ def evaluate_design(cfg: dict, samples: pd.DataFrame, *, progress=True):
     rows = []
     spawn_manifest_rows = []
     obj_results = {}
+    keep_all_objectives = bool((cfg.get("diagnostics", {}) or {}).get("keep_all_objectives", False))
     best_score = float("inf")
     best_obj_res = None
     best_sid = None
@@ -223,11 +267,14 @@ def evaluate_design(cfg: dict, samples: pd.DataFrame, *, progress=True):
 
     cache = EvaluationCache.from_setup(
         cfg, crop=crop, specs=specs, experiments=experiments,
-        treatments=treatments, obs_table=obs.table, exe=exe,
+        treatments=treatments, obs_table=_obs_table_for_units(obs.table, experiments, treatments), exe=exe,
     )
+    obs_table = _obs_table_for_units(obs.table, experiments, treatments)
 
     def _record_objective(sid, theta, o):
         nonlocal best_score, best_obj_res, best_sid
+        if keep_all_objectives:
+            obj_results[sid] = o
         if o.score < best_score:
             best_score = o.score
             best_obj_res = o
@@ -294,7 +341,7 @@ def evaluate_design(cfg: dict, samples: pd.DataFrame, *, progress=True):
 
         for mi, rmap in per_miss.items():
             key = miss_keys[mi]
-            o = obj.score(rmap, obs.table, cfg)
+            o = obj.score(rmap, obs_table, cfg)
             if cache.enabled:
                 cache.put(key, o)
             for sid in miss_by_key[key]["sample_ids"]:
@@ -571,9 +618,11 @@ def _estimate_abc_smc(work_cfg, space, setup, method, *, seed, n_workers, extras
 @_register_estimator("glue")
 def _estimate_glue(work_cfg, space, setup, method, *, seed, n_workers, extras, progress):
     from .engines import run_glue
-    n = int(method.get("sample", {}).get("n", 200))
-    engine = method.get("sample", {}).get("engine", "lhs")
-    samples = sample(space, n=n, engine=engine, seed=seed, include_start=True)
+    sample_cfg = method.get("sample", {}) or {}
+    n = int(sample_cfg.get("n", 200))
+    engine = sample_cfg.get("engine", "lhs")
+    include_start = bool(sample_cfg.get("include_start", True))
+    samples = sample(space, n=n, engine=engine, seed=seed, include_start=include_start)
     design, obj_results, (space, obs, experiments) = evaluate_design(work_cfg, samples, progress=progress)
     spawn_manifest = design.attrs.get("spawn_manifest")
     glue = run_glue(design, space.names, work_cfg, space=space)

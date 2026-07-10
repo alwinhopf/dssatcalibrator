@@ -115,6 +115,82 @@ def test_make_report_falls_back_to_best_spawn_manifest(tmp_path, monkeypatch):
     assert (tmp_path / "manifest.json").exists()
 
 
+def test_phenology_report_table_dates_and_bias(tmp_path, monkeypatch):
+    for name in (
+        "plot_param_posteriors",
+        "plot_score_funnel",
+        "plot_ess_trajectory",
+        "plot_mcmc_trace",
+        "plot_sensitivity",
+        "plot_obs_vs_sim",
+        "plot_obs_vs_sim_by_category",
+        "plot_fit_bars",
+        "plot_timeseries",
+        "plot_experiment_diagnostics",
+    ):
+        monkeypatch.setattr(viz, name, lambda *args, **kwargs: None)
+
+    best = SimpleNamespace(
+        residuals=pd.DataFrame({
+            "exp_id": ["E1"],
+            "treatment": [1],
+            "user_var": ["anthesis"],
+            "dssat": ["ADAP"],
+            "kind": ["phenology"],
+            "obs": [40.0],
+            "sim": [43.0],
+            "resid": [3.0],
+        }),
+        per_var={},
+        per_exp_var=pd.DataFrame(),
+    )
+    obs = pd.DataFrame({
+        "exp_id": ["E1", "E1"],
+        "treatment": [1, 1],
+        "variable": ["EDAT", "ADAT"],
+        "kind": ["phenology", "phenology"],
+        "date": pd.to_datetime(["2021-04-10", "2021-05-10"]),
+        "value": [21100.0, 21130.0],
+        "sigma": [float("nan"), float("nan")],
+        "weight": [1.0, 1.0],
+    })
+    result = SimpleNamespace(
+        cfg={},
+        space=SimpleNamespace(names=[]),
+        design=pd.DataFrame({"sample_id": [0]}),
+        best_theta={},
+        best=best,
+        glue=None,
+        nsga2=None,
+        extras={},
+        obs=SimpleNamespace(table=obs),
+    )
+    plantgro = pd.DataFrame({
+        "date": pd.to_datetime(["2021-04-01", "2021-04-02"]),
+        "DAP": [0, 1],
+        "treatment": [1, 1],
+    })
+    best_spawns = {"E1": SimpleNamespace(plantgro=plantgro)}
+
+    paths = viz.make_report(result, tmp_path, best_spawns=best_spawns)
+
+    table = pd.read_csv(paths["phenology_report"])
+    assert table.columns.tolist() == [
+        "site", "cultivar", "planting_date", "emergence_date", "observed_anthesis",
+        "simulated_anthesis", "bias",
+    ]
+    direct = viz.phenology_report_table(result, best_spawns=best_spawns)
+    assert direct.iloc[0].to_dict() == {
+        "site": "E1",
+        "cultivar": "",
+        "planting_date": "2021-04-01",
+        "emergence_date": "2021-04-10",
+        "observed_anthesis": "2021-05-10",
+        "simulated_anthesis": "2021-05-14",
+        "bias": 3,
+    }
+
+
 def test_plot_experiment_diagnostics_writes_panel(tmp_path):
     dates = pd.date_range("2021-06-01", periods=3)
     plantgro = pd.DataFrame({

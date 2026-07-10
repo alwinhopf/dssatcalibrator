@@ -9,13 +9,15 @@
 * ``fig_obs_vs_sim``       — 1:1 simulated-vs-observed for the best fit.
 * ``fig_timeseries``       — best-fit simulated growth curves vs observed points.
 * ``fig_fit_bars``         — per-variable nRMSE / Willmott d.
-* ``summary_fit.csv`` / ``objective_breakdown.csv`` / ``manifest.csv`` /
-  ``posterior_summary.csv`` / ``design.csv`` / ``best_theta.json``.
+* ``summary_fit.csv`` / ``phenology_report.csv`` / ``objective_breakdown.csv`` /
+  ``manifest.csv`` / ``posterior_summary.csv`` / ``design.csv`` /
+  ``best_theta.json``.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import matplotlib
@@ -721,7 +723,8 @@ def objective_breakdown_table(result) -> pd.DataFrame:
         ])
     df = resid.copy()
     if "_loss" not in df.columns:
-        sigma = pd.to_numeric(df.get("sigma", 1.0), errors="coerce").replace(0, np.nan)
+        sigma_source = df["sigma"] if "sigma" in df.columns else pd.Series(1.0, index=df.index)
+        sigma = pd.to_numeric(sigma_source, errors="coerce").replace(0, np.nan)
         df["_loss"] = (pd.to_numeric(df["resid"], errors="coerce") / sigma) ** 2
     if "weight" not in df.columns:
         df["weight"] = 1.0
@@ -744,6 +747,216 @@ def objective_breakdown_table(result) -> pd.DataFrame:
         })
         rows.append(rec)
     return pd.DataFrame(rows).sort_values(group_cols).reset_index(drop=True)
+
+
+def _date_str(value) -> str:
+    ts = pd.to_datetime(value, errors="coerce")
+    return "" if pd.isna(ts) else str(ts.date())
+
+
+def _observed_stage_date(obs: pd.DataFrame, exp_id: str, treatment: int, variables: set[str]):
+    if obs is None or obs.empty:
+        return pd.NaT
+    rows = obs[
+        (obs["exp_id"].astype(str) == str(exp_id))
+        & (pd.to_numeric(obs["treatment"], errors="coerce") == int(treatment))
+        & (obs["variable"].astype(str).isin(variables))
+    ]
+    if rows.empty:
+        return pd.NaT
+    dates = pd.to_datetime(rows["date"], errors="coerce").dropna()
+    if not dates.empty:
+        return dates.iloc[0]
+    return pd.NaT
+
+
+def _header_token_spans(header: str) -> dict[str, tuple[int, int]]:
+    spans = {}
+    for match in re.finditer(r"\S+", header):
+        spans[match.group().lstrip("@")] = (match.start(), match.end())
+    return spans
+
+
+def _selected_cultivar_name(cfg: dict, exp_id: str, treatment: int) -> str:
+    try:
+        crop = crop_for(cfg, (cfg.get("crops") or [{}])[0].get("code", "HM"))
+        filex = Path(cfg["source"]["hemp_dir"]) / f"{exp_id}.{crop['filex_ext']}"
+    except Exception:
+        return ""
+    if not filex.exists():
+        return ""
+    lines = filex.read_text(errors="replace").splitlines()
+
+    cultivar_by_factor = {}
+    try:
+        start = next(i for i, ln in enumerate(lines) if ln.startswith("*CULTIVARS"))
+    except StopIteration:
+        start = None
+    if start is not None:
+        header = None
+        for ln in lines[start + 1:]:
+            if ln.startswith("*"):
+                break
+            if ln.lstrip().startswith("@"):
+                header = ln.lstrip().lstrip("@").split()
+                continue
+            if header and ln.strip() and not ln.lstrip().startswith("!"):
+                vals = ln.split(maxsplit=len(header) - 1)
+                row = dict(zip(header, vals))
+                factor = row.get("C")
+                if factor:
+                    name = row.get("CNAME") or row.get("INGENO") or ""
+                    code = row.get("INGENO") or ""
+                    cultivar_by_factor[str(int(float(factor)))] = str(name or code)
+
+    try:
+        start = next(i for i, ln in enumerate(lines) if ln.startswith("*TREATMENTS"))
+    except StopIteration:
+        return ""
+    header = None
+    spans = {}
+    for ln in lines[start + 1:]:
+        if ln.startswith("*"):
+            break
+        if ln.lstrip().startswith("@"):
+            header = ln
+            spans = _header_token_spans(ln)
+            continue
+        if not header or not ln.strip() or ln.lstrip().startswith("!"):
+            continue
+        try:
+            trt = int(float(ln.split()[0]))
+        except (ValueError, IndexError):
+            continue
+        if trt != int(treatment):
+            continue
+        if "CU" in spans:
+            lo, hi = spans["CU"]
+            try:
+                factor = str(int(float(ln[lo:hi].strip())))
+                return cultivar_by_factor.get(factor, factor)
+            except ValueError:
+                return ""
+    return ""
+
+
+def phenology_report_table(result, best_spawns=None) -> pd.DataFrame:
+    """Return site-level planting, emergence, anthesis, and bias for best fit."""
+    cols = [
+        "site", "cultivar", "planting_date", "emergence_date", "observed_anthesis",
+        "simulated_anthesis", "bias",
+    ]
+    resid = getattr(result.best, "residuals", pd.DataFrame())
+    if resid is None or resid.empty:
+        return pd.DataFrame(columns=cols)
+    mask = pd.Series(False, index=resid.index)
+    if "user_var" in resid.columns:
+        mask = resid["user_var"].astype(str) == "anthesis"
+    if "dssat" in resid.columns:
+        mask = mask | (resid["dssat"].astype(str) == "ADAP")
+    anth = resid[mask].copy()
+    if anth.empty:
+        return pd.DataFrame(columns=cols)
+
+    obs = result.obs.table if hasattr(result, "obs") else pd.DataFrame()
+    rows = []
+    for _, row in anth.sort_values(["exp_id", "treatment"]).iterrows():
+        exp_id = str(row["exp_id"])
+        treatment = int(row["treatment"])
+        spawn = (best_spawns or {}).get(exp_id)
+        pg = getattr(spawn, "plantgro", pd.DataFrame()) if spawn is not None else pd.DataFrame()
+        planted = _planting_date_from_plantgro(pg, treatment)
+        emergence = _observed_stage_date(obs, exp_id, treatment, {"EDAT", "EDATE"})
+        observed = _observed_stage_date(obs, exp_id, treatment, {"ADAT"})
+        if pd.isna(observed) and pd.notna(planted):
+            observed = planted + pd.to_timedelta(float(row["obs"]), unit="D")
+        simulated = pd.NaT
+        if pd.notna(planted) and pd.notna(row["sim"]):
+            simulated = planted + pd.to_timedelta(float(row["sim"]), unit="D")
+        bias = pd.to_numeric(row.get("resid"), errors="coerce")
+        rows.append({
+            "site": exp_id,
+            "cultivar": _selected_cultivar_name(getattr(result, "cfg", {}) or {}, exp_id, treatment),
+            "planting_date": _date_str(planted),
+            "emergence_date": _date_str(emergence),
+            "observed_anthesis": _date_str(observed),
+            "simulated_anthesis": _date_str(simulated),
+            "bias": int(round(float(bias))) if pd.notna(bias) else np.nan,
+        })
+    return pd.DataFrame(rows, columns=cols)
+
+
+def sample_phenology_residuals_table(result) -> pd.DataFrame:
+    """Return anthesis residuals for every evaluated sample/site.
+
+    This is useful when the calibration target is not only the default scalar
+    objective, but also balance across environments, such as minimizing the
+    maximum absolute anthesis bias.
+    """
+    cols = [
+        "sample_id", "site", "treatment", "user_var", "observed_dap",
+        "simulated_dap", "bias", "abs_bias",
+    ]
+    rows = []
+    for sample_id, ores in (getattr(result, "obj_results", {}) or {}).items():
+        resid = getattr(ores, "residuals", pd.DataFrame())
+        if resid is None or resid.empty:
+            continue
+        mask = pd.Series(False, index=resid.index)
+        if "user_var" in resid.columns:
+            mask = resid["user_var"].astype(str) == "anthesis"
+        if "dssat" in resid.columns:
+            mask = mask | (resid["dssat"].astype(str) == "ADAP")
+        anth = resid[mask].copy()
+        for _, row in anth.iterrows():
+            bias = pd.to_numeric(row.get("resid"), errors="coerce")
+            rows.append({
+                "sample_id": sample_id,
+                "site": str(row.get("exp_id", "")),
+                "treatment": int(row["treatment"]) if pd.notna(row.get("treatment")) else np.nan,
+                "user_var": str(row.get("user_var", "")),
+                "observed_dap": float(row["obs"]) if pd.notna(row.get("obs")) else np.nan,
+                "simulated_dap": float(row["sim"]) if pd.notna(row.get("sim")) else np.nan,
+                "bias": float(bias) if pd.notna(bias) else np.nan,
+                "abs_bias": abs(float(bias)) if pd.notna(bias) else np.nan,
+            })
+    return pd.DataFrame(rows, columns=cols)
+
+
+def balanced_candidates_table(result) -> pd.DataFrame:
+    """Rank samples by worst-site anthesis bias, then RMSE and mean bias."""
+    phen = sample_phenology_residuals_table(result)
+    if phen.empty:
+        return pd.DataFrame(columns=[
+            "sample_id", "n", "max_abs_bias", "RMSE", "MBE", "score",
+        ])
+    grouped = phen.groupby("sample_id", dropna=False)
+    rows = []
+    score_map = {}
+    if hasattr(result, "design") and result.design is not None and not result.design.empty:
+        if "sample_id" in result.design.columns and "score" in result.design.columns:
+            score_map = dict(zip(result.design["sample_id"].astype(str), result.design["score"]))
+    for sample_id, g in grouped:
+        bias = pd.to_numeric(g["bias"], errors="coerce")
+        rec = {
+            "sample_id": sample_id,
+            "n": int(bias.notna().sum()),
+            "max_abs_bias": float(np.nanmax(np.abs(bias))) if bias.notna().any() else np.nan,
+            "RMSE": float(np.sqrt(np.nanmean(bias ** 2))) if bias.notna().any() else np.nan,
+            "MBE": float(np.nanmean(bias)) if bias.notna().any() else np.nan,
+            "score": score_map.get(str(sample_id), np.nan),
+        }
+        for _, row in g.sort_values(["site", "treatment"]).iterrows():
+            site = str(row["site"])
+            rec[f"{site}_obs_dap"] = row["observed_dap"]
+            rec[f"{site}_sim_dap"] = row["simulated_dap"]
+            rec[f"{site}_bias"] = row["bias"]
+        rows.append(rec)
+    return (
+        pd.DataFrame(rows)
+        .sort_values(["max_abs_bias", "RMSE", "score"], na_position="last")
+        .reset_index(drop=True)
+    )
 
 
 def spawn_manifest_table(result, best_spawns=None) -> pd.DataFrame:
@@ -788,9 +1001,22 @@ def make_report(result, outdir, best_spawns=None, figdir=None) -> dict:
     fit.to_csv(outdir / "summary_fit.csv", index=False)
     paths["summary_fit"] = outdir / "summary_fit.csv"
 
+    phenology = phenology_report_table(result, best_spawns=best_spawns)
+    if not phenology.empty:
+        phenology.to_csv(outdir / "phenology_report.csv", index=False)
+        paths["phenology_report"] = outdir / "phenology_report.csv"
+
     objective_breakdown = objective_breakdown_table(result)
     objective_breakdown.round(6).to_csv(outdir / "objective_breakdown.csv", index=False)
     paths["objective_breakdown"] = outdir / "objective_breakdown.csv"
+
+    sample_phenology = sample_phenology_residuals_table(result)
+    if not sample_phenology.empty:
+        sample_phenology.round(6).to_csv(outdir / "sample_phenology_residuals.csv", index=False)
+        paths["sample_phenology_residuals"] = outdir / "sample_phenology_residuals.csv"
+        balanced = balanced_candidates_table(result)
+        balanced.round(6).to_csv(outdir / "balanced_candidates.csv", index=False)
+        paths["balanced_candidates"] = outdir / "balanced_candidates.csv"
 
     spawn_manifest = spawn_manifest_table(result, best_spawns=best_spawns)
     if spawn_manifest is not None and not spawn_manifest.empty:

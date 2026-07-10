@@ -66,8 +66,11 @@ def main():
     ap = argparse.ArgumentParser(description="Run a DSSAT calibration.")
     ap.add_argument("config", help="path to the calibration YAML")
     ap.add_argument("--n", type=int, default=None, help="number of samples (overrides config)")
+    ap.add_argument("--seed", type=int, default=None, help="random seed (overrides calibrator.seed)")
     ap.add_argument("--experiments", nargs="*", default=None, help="subset of experiments")
     ap.add_argument("--engine", default=None, help="sample engine: lhs|sobol|montecarlo|grid")
+    ap.add_argument("--no-include-start", action="store_true",
+                    help="do not prepend the configured start vector to sampled designs")
     ap.add_argument("--preset", default=None, help="pipeline preset: A|B|C|D (overrides config)")
     ap.add_argument("--bayesian-engine", default=None, help="estimator: glue|smc_pf|mcmc|none")
     ap.add_argument("--optimizer", default=None, help="optimizer engine: nelder_mead|diffevo")
@@ -101,8 +104,12 @@ def main():
     cfg = load_config(args.config)
     if args.n is not None:
         cfg["method"].setdefault("sample", {})["n"] = args.n
+    if args.seed is not None:
+        cfg["calibrator"]["seed"] = args.seed
     if args.engine:
         cfg["method"].setdefault("sample", {})["engine"] = args.engine
+    if args.no_include_start:
+        cfg["method"].setdefault("sample", {})["include_start"] = False
     if args.preset:
         cfg["method"]["preset"] = args.preset
     if args.bayesian_engine:
@@ -185,6 +192,10 @@ def main():
         print(f"  {k:8s} {v:.4f}")
     print("\n=== Fit summary (best) ===")
     print(viz.summary_fit_table(result).to_string(index=False))
+    phenology = viz.phenology_report_table(result, best_spawns=best_spawns)
+    if not phenology.empty:
+        print("\n=== Phenology report (best) ===")
+        print(phenology.to_string(index=False))
     if args.diagnostics or cfg.get("diagnostics", {}).get("active", False):
         from dssatcalibrator import diagnostics
         outdir.mkdir(parents=True, exist_ok=True)

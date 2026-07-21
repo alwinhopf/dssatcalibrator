@@ -62,3 +62,28 @@ test_that("DSSAT path resolution supports sibling POSIX installations", {
     expect_match(exe, "with_HM_code", fixed = TRUE)
   }
 })
+
+test_that("DSSAT path resolution retains custom name when native discovery fails", {
+  target_env <- environment(resolve_exe)
+  if (identical(target_env, .GlobalEnv)) {
+    original_discovery <- .workspace_dssat_root
+    on.exit(assign(".workspace_dssat_root", original_discovery, envir = .GlobalEnv),
+            add = TRUE)
+    assign(".workspace_dssat_root", function() NULL, envir = .GlobalEnv)
+  } else {
+    local_mocked_bindings(
+      .workspace_dssat_root = function() NULL,
+      .package = environmentName(target_env)
+    )
+  }
+  custom <- paste0(
+    "C:/Users/example/DSSAT48Hemp/",
+    "dscsm048_compiled_4.8.2.with_HM_code.exe"
+  )
+  cfg <- list(calibrator = list(
+    dssat_dir = "C:/Users/example/DSSAT48Hemp",
+    dssat_exe = custom
+  ))
+
+  expect_identical(resolve_exe(cfg), custom)
+})

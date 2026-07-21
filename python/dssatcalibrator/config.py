@@ -373,7 +373,12 @@ def resolve_dssat_root(cfg: dict) -> Path:
 
 
 def resolve_exe(cfg: dict) -> Path:
-    """Resolve the DSSAT executable across native Windows and POSIX installs."""
+    """Resolve the DSSAT executable across native Windows and POSIX installs.
+
+    A discoverable native executable takes precedence over a foreign-platform
+    configured path.  If discovery finds nothing, retain the configured path
+    (including custom executable names) so validation can report it faithfully.
+    """
     exe_value = str((cfg.get("calibrator") or {}).get("dssat_exe", "") or "")
     explicit = Path(exe_value) if exe_value else None
     if explicit is not None and explicit.is_file():
@@ -386,7 +391,10 @@ def resolve_exe(cfg: dict) -> Path:
         return explicit
     root = resolve_dssat_root(cfg)
     candidates = [root / "dscsm048", root / "DSCSM048.EXE", root / "dscsm048.exe"]
-    return next((candidate for candidate in candidates if candidate.is_file()), candidates[0])
+    discovered = next((candidate for candidate in candidates if candidate.is_file()), None)
+    if discovered is not None:
+        return discovered
+    return explicit if explicit is not None else candidates[0]
 
 
 def resolve_dssat_paths(cfg: dict) -> dict[str, Path]:

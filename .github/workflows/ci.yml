@@ -38,7 +38,8 @@ jobs:
         with:
           use-public-rspm: true
       - name: Install R parity dependencies
-        run: Rscript -e 'install.packages(c("testthat","jsonlite","yaml","digest"))'
+        # Sobol parity tests execute real designs and require `sensitivity`.
+        run: Rscript -e 'install.packages(c("testthat","jsonlite","yaml","digest","sensitivity"))'
       - name: Run R parity suite
         run: Rscript run_r_tests.R
 

@@ -364,6 +364,10 @@ resolve_dssat_root <- function(cfg) {
 }
 
 #' Resolve the DSSAT executable path. Mirrors config.py:resolve_exe.
+#'
+#' A discoverable native executable takes precedence over a foreign-platform
+#' configured path. If discovery finds nothing, the configured path (including
+#' a custom executable name) is retained for faithful validation diagnostics.
 #' @export
 resolve_exe <- function(cfg) {
   exe <- as.character(.cfg_get(cfg$calibrator, "dssat_exe", ""))
@@ -374,7 +378,8 @@ resolve_exe <- function(cfg) {
   root <- resolve_dssat_root(cfg)
   candidates <- file.path(root, c("dscsm048", "DSCSM048.EXE", "dscsm048.exe"))
   hit <- candidates[file.exists(candidates)]
-  if (length(hit)) hit[1] else candidates[1]
+  if (length(hit)) return(hit[1])
+  if (nzchar(exe)) exe else candidates[1]
 }
 
 #' Resolve the DSSAT48 install layout used by every spawn.

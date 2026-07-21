@@ -5,10 +5,10 @@
 #
 # It installs the few packages the parity tests need (if missing), sources the
 # package's R/ files into the session, and runs testthat over tests/testthat.
-# (The heavier engine packages — lhs, DEoptim, mco, DiceKriging, ranger, etc. —
-# are only needed to RUN those engines, not for the parity tests.)
+# The suite runs the Sobol sensitivity engine, so its `sensitivity` dependency
+# is required. Other optional engine packages are skipped when unavailable.
 
-needed <- c("testthat", "jsonlite", "yaml", "digest")
+needed <- c("testthat", "jsonlite", "yaml", "digest", "sensitivity")
 miss <- needed[!vapply(needed, requireNamespace, logical(1), quietly = TRUE)]
 if (length(miss)) {
   message("Installing: ", paste(miss, collapse = ", "))

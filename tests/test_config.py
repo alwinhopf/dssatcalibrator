@@ -176,6 +176,22 @@ def test_resolve_exe():
         assert "with_HM_code" in str(exe)
 
 
+def test_resolve_exe_retains_custom_name_when_native_discovery_fails(monkeypatch):
+    custom = Path(
+        "C:/Users/example/DSSAT48Hemp/"
+        "dscsm048_compiled_4.8.2.with_HM_code.exe"
+    )
+    cfg = {
+        "calibrator": {
+            "dssat_dir": "C:/Users/example/DSSAT48Hemp",
+            "dssat_exe": str(custom),
+        }
+    }
+    monkeypatch.setattr(cfgmod, "_workspace_dssat_root", lambda: None)
+
+    assert cfgmod.resolve_exe(cfg) == custom
+
+
 def test_shared_stack_defaults_and_template_env(monkeypatch, tmp_path):
     assert cfgmod.DEFAULTS["execution"]["backend"] == "native"
     assert cfgmod.DEFAULTS["soil"]["provider"] == "file"

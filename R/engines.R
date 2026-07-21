@@ -39,10 +39,14 @@ run_glue <- function(design, param_names, cfg, space = NULL) {
                            "behavioural_quantile", 0.1))
   score_for_min <- ifelse(is.finite(d$score), d$score, Inf)
   valid_scores <- d$score[is.finite(d$score)]
-  threshold <- if (length(valid_scores)) as.numeric(quantile(valid_scores, q, names = FALSE, type = 7)) else Inf
+  if (!length(valid_scores)) {
+    stop("GLUE found no valid candidates: every evaluated score is non-finite. ",
+         "Inspect the spawn manifest and per-run DSSAT errors.", call. = FALSE)
+  }
+  threshold <- as.numeric(quantile(valid_scores, q, names = FALSE, type = 7))
   behavioural <- d[is.finite(d$score) & d$score <= threshold, , drop = FALSE]
 
-  best_id0 <- if (length(valid_scores)) (which.min(score_for_min) - 1L) else 0L
+  best_id0 <- which.min(score_for_min) - 1L
   best_theta <- setNames(as.list(as.numeric(d[best_id0 + 1L, param_names])), param_names)
 
   structure(list(design = d, behavioural = behavioural, best_theta = best_theta,
@@ -292,6 +296,48 @@ run_morris <- function(space, score_results, trajectories = 10, levels = 4, seed
 # population sd (np.std) for Morris sigma parity
 sd_pop <- function(x) { x <- x[is.finite(x)]; if (length(x) == 0) return(NA_real_); sqrt(mean((x - mean(x))^2)) }
 
+#' Sobol variance-based sensitivity using sensitivity::sobolSalt.
+#' Mirrors engines/sensitivity.py:run_sobol statistically (R/Python RNG streams
+#' and Saltelli implementations are not expected to be bit-identical).
+#' @export
+run_sobol <- function(space, score_results, n_base = 256, seed = 42, progress = FALSE) {
+  if (!requireNamespace("sensitivity", quietly = TRUE)) {
+    stop("Sobol sensitivity needs the 'sensitivity' package. Install it with install.packages('sensitivity'), or use method 'morris'.")
+  }
+  n_base <- as.integer(n_base)
+  if (is.na(n_base) || n_base < 2L) stop("n_base must be an integer >= 2.", call. = FALSE)
+  set.seed(as.integer(seed))
+  draw <- function() {
+    x <- matrix(stats::runif(n_base * ps_ndim(space)), nrow = n_base)
+    x <- sweep(sweep(x, 2, space$high - space$low, `*`), 2, space$low, `+`)
+    out <- as.data.frame(x)
+    names(out) <- space$names
+    out
+  }
+  design <- sensitivity::sobolSalt(model = NULL, X1 = draw(), X2 = draw(), nboot = 0)
+  X <- as.matrix(design$X)
+  thetas <- lapply(seq_len(nrow(X)), function(i) ps_to_theta(space, X[i, ]))
+  results <- score_results(thetas)
+  scores <- vapply(results, function(r) {
+    value <- if (is.list(r) && !is.null(r$score)) r$score else r
+    if (length(value) && is.finite(value[[1]])) as.numeric(value[[1]]) else NA_real_
+  }, numeric(1))
+  finite <- scores[is.finite(scores)]
+  replacement <- if (length(finite)) max(finite) else 0
+  scores[!is.finite(scores)] <- replacement
+  fitted <- sensitivity::tell(design, scores)
+  ranking <- data.frame(
+    parameter = space$names,
+    S1 = as.numeric(fitted$S$original),
+    ST = as.numeric(fitted$T$original),
+    stringsAsFactors = FALSE
+  )
+  ranking <- ranking[order(-ranking$ST), , drop = FALSE]
+  rownames(ranking) <- NULL
+  structure(list(method = "sobol", ranking = ranking, n_eval = nrow(X)),
+            class = "sensitivity_result")
+}
+
 #' Pick influential parameters from a ranking table. Mirrors influential_params.
 #' @export
 influential_params <- function(ranking, keep = NULL, rel_threshold = 0.1) {
@@ -303,7 +349,7 @@ influential_params <- function(ranking, keep = NULL, rel_threshold = 0.1) {
   r$parameter[r[[metric]] >= rel_threshold * top]
 }
 
-#' Dispatch to Morris (Sobol requires the 'sensitivity' package). Mirrors run_sensitivity.
+#' Dispatch to Morris or Sobol sensitivity. Mirrors run_sensitivity.
 #' @export
 run_sensitivity <- function(space, score_results, method = "morris", ...) {
   method <- tolower(method); args <- list(...)
@@ -313,7 +359,13 @@ run_sensitivity <- function(space, score_results, method = "morris", ...) {
                       levels = as.integer(args$levels %||% 4),
                       seed = as.integer(args$seed %||% 42)))
   }
-  stop(sprintf("sensitivity method '%s' not available in R port yet (use morris)", method))
+  if (method == "sobol") {
+    return(run_sobol(space, score_results,
+                     n_base = as.integer(args$n_base %||% 256),
+                     seed = as.integer(args$seed %||% 42),
+                     progress = isTRUE(args$progress)))
+  }
+  stop(sprintf("unknown sensitivity method '%s' (use morris | sobol)", method))
 }
 
 #' Share of output variance per discrete factor (one-way ANOVA). Mirrors anova_variance_share.
@@ -377,9 +429,11 @@ run_surrogate <- function(cfg, space, score_results, progress = TRUE) {
   }
   if (length(kept) < 4) stop("surrogate: too few successful training runs to fit an emulator")
   Xn <- do.call(rbind, Xn)
+  colnames(Xn) <- space$names
   cand <- sample_design(space, n_candidates, engine = "lhs", seed = seed + 1L, include_start = FALSE)
   cand_native <- as.matrix(cand)
   cand_norm <- sweep(sweep(cand_native, 2, lo, `-`), 2, span, `/`)
+  colnames(cand_norm) <- space$names
   if (model == "rf") {
     if (!requireNamespace("ranger", quietly = TRUE)) stop("surrogate rf needs 'ranger'.")
     est <- ranger::ranger(x = Xn, y = y, num.trees = 300, seed = seed)
@@ -715,7 +769,7 @@ run_bayesopt <- function(cfg, score_results, space, progress = TRUE) {
 
   for (it in seq_len(n_iter)) {
     Xu <- sweep(sweep(X, 2, low), 2, span, "/")
-    ym <- mean(y); ys <- stats::sd(y); if (!is.finite(ys) || ys == 0) ys <- 1
+    ym <- mean(y); ys <- sqrt(mean((y - ym)^2)); if (!is.finite(ys) || ys == 0) ys <- 1
     m <- suppressWarnings(DiceKriging::km(design = as.data.frame(Xu), response = (y - ym) / ys,
                   covtype = "matern5_2", control = list(trace = FALSE), nugget = 1e-6))
     cand <- matrix(runif(2000 * d), 2000, d)
@@ -725,7 +779,16 @@ run_bayesopt <- function(cfg, score_results, space, progress = TRUE) {
     best_y <- min(y); imp <- best_y - mu - xi_frac * (max(y) - best_y + 1e-9)
     z <- imp / pmax(sd_, 1e-12)
     ei <- imp * pnorm(z) + pmax(sd_, 1e-12) * dnorm(z)
-    picks <- order(ei, decreasing = TRUE)[seq_len(batch)]
+    # Diversity-filtered batch selection (matches Python's 1e-2 spacing)
+    ord <- order(ei, decreasing = TRUE)
+    picks <- integer(0)
+    for (j in ord) {
+      if (length(picks) == 0L ||
+          all(sqrt(rowSums((cand[picks, , drop = FALSE] - cand[rep(j, length(picks)), , drop = FALSE])^2)) > 1e-2)) {
+        picks <- c(picks, j)
+      }
+      if (length(picks) >= batch) break
+    }
     newX <- sweep(sweep(cand[picks, , drop = FALSE], 2, span, "*"), 2, low, "+")
     new_res <- score_results(lapply(seq_len(nrow(newX)), function(i) ps_to_theta(space, newX[i, ])))
     X <- rbind(X, newX); y <- c(y, vapply(new_res, function(r) if (is.finite(r$score)) r$score else 1e12, numeric(1)))

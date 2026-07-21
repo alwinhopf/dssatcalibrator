@@ -38,12 +38,12 @@ def _warn_unmatched(obs, cfg: dict) -> None:
         )
 
 from . import objective as obj
-from .config import crop_for, resolve_exe
+from .config import crop_for, fixed_parameters, resolve_exe
 from .eval_cache import EvaluationCache
 from .observations import Observations
 from .runner import resolve_cores, run_many
 from .samplers import sample
-from .spaces import ParameterSpace
+from .spaces import ParameterSpace, expand_parameter_specs
 from .spawn import parse_treatments, spawn_and_run, theta_hash
 
 
@@ -66,7 +66,7 @@ def _setup(cfg: dict):
     space = ParameterSpace.from_config(cfg)
     crop = crop_for(cfg, (cfg.get("crops") or [{}])[0].get("code", "HM"))
     exe = resolve_exe(cfg)
-    specs = space.specs
+    specs = space.specs + expand_parameter_specs(cfg, fixed_parameters(cfg))
     hemp_dir = Path(cfg["source"]["hemp_dir"])
     run_root = Path(cfg["calibrator"]["workdir"]) / cfg["calibrator"]["name"]
     run_root.mkdir(parents=True, exist_ok=True)
@@ -845,7 +845,8 @@ def _site_key(exp: str) -> str:
     return "".join(ch for ch in exp if not ch.isdigit()) or exp
 
 
-def _make_folds(experiments: list[str], scheme: str, seed: int) -> list[tuple[str, list[str]]]:
+def _make_folds(experiments: list[str], scheme: str, seed: int,
+                k: int = 5) -> list[tuple[str, list[str]]]:
     """Return ``[(fold_label, held_experiments)]`` for a CV scheme.
 
     ``loeo`` holds out one experiment at a time; ``year``/``site`` hold out a whole
@@ -869,7 +870,7 @@ def _make_folds(experiments: list[str], scheme: str, seed: int) -> list[tuple[st
         rng = np.random.default_rng(seed)
         shuffled = list(exps)
         rng.shuffle(shuffled)
-        k = min(len(shuffled), 5)
+        k = min(len(shuffled), max(2, int(k)))
         return [(f"fold_{i}", shuffled[i::k]) for i in range(k) if shuffled[i::k]]
     raise ValueError(f"Unknown validation scheme '{scheme}'. "
                      "Use loeo | year | site | random.")
@@ -888,10 +889,12 @@ def validate_cv(cfg: dict, *, scheme: str | None = None, progress=False) -> pd.D
     method = cfg.get("method", {})
     n = int(method.get("sample", {}).get("n", 100))
     seed = int(cfg["calibrator"].get("seed", 42))
-    scheme = scheme or method.get("validation", {}).get("scheme", "loeo")
+    validation = method.get("validation", {}) or {}
+    scheme = scheme or validation.get("scheme", "loeo")
+    k = int(validation.get("k", 5))
 
     rows = []
-    for label, held in _make_folds(experiments, scheme, seed):
+    for label, held in _make_folds(experiments, scheme, seed, k=k):
         train = [e for e in experiments if e not in set(held)]
         if not train or not held:
             continue

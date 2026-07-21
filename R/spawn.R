@@ -56,6 +56,32 @@ parse_treatments <- function(filex_path) {
   if (length(trts) == 0) 1L else trts
 }
 
+#' Return cultivar codes listed in a FileX `*CULTIVARS` section.
+#' Mirrors spawn.py:parse_cultivars.
+#' @export
+parse_cultivars <- function(filex_path) {
+  lines <- readLines(filex_path, warn = FALSE)
+  start <- which(startsWith(lines, "*CULTIVARS"))
+  if (!length(start)) return(character(0))
+  header <- NULL; out <- character(0)
+  if (start[1] >= length(lines)) return(out)
+  for (ln in lines[(start[1] + 1L):length(lines)]) {
+    if (startsWith(ln, "*")) break
+    if (startsWith(trimws(ln, which = "left"), "@")) {
+      header <- strsplit(sub("^@", "", trimws(ln)), "\\s+")[[1]]
+      next
+    }
+    if (!is.null(header) && grepl("^\\s*\\d", ln)) {
+      values <- strsplit(trimws(ln), "\\s+")[[1]]
+      row <- setNames(as.list(values[seq_len(min(length(values), length(header)))]),
+                      header[seq_len(min(length(values), length(header)))])
+      code <- .cfg_get(row, "INGENO", .cfg_get(row, "CULTIVAR", .cfg_get(row, "VAR#", NULL)))
+      if (!is.null(code) && !(code %in% out)) out <- c(out, as.character(code))
+    }
+  }
+  out
+}
+
 #' Write a DSSAT B-mode batch file listing the requested treatments.
 #' Mirrors spawn.py:write_dssbatch (byte-identical layout).
 #' @export
@@ -96,43 +122,109 @@ normalize_treatments <- function(treatments, backend = "native") {
 }
 
 # Split a flat theta into per-group update lists using the param specs.
-.spec_applies_to_exp <- function(spec, exp_id = NULL) {
-  if (!identical(.cfg_get(spec, "scope", "global"), "experiment")) return(TRUE)
-  is.null(exp_id) || as.character(.cfg_get(spec, "exp_id", "")) == as.character(exp_id)
+.spec_applies <- function(spec, exp_id = NULL, cultivars = NULL) {
+  scope <- .cfg_get(spec, "scope", "global")
+  if (identical(scope, "experiment")) {
+    return(is.null(exp_id) || as.character(.cfg_get(spec, "exp_id", "")) == as.character(exp_id))
+  }
+  if (identical(scope, "cultivar")) {
+    return(is.null(cultivars) || as.character(.cfg_get(spec, "cultivar", "")) %in% as.character(cultivars))
+  }
+  TRUE
 }
 
-.effective_theta <- function(theta, param_specs, exp_id = NULL) {
+.effective_theta <- function(theta, param_specs, exp_id = NULL, cultivars = NULL) {
   out <- list()
   matched <- character(0)
   for (spec in param_specs) {
     name <- spec$name
-    if (is.null(theta[[name]]) || !.spec_applies_to_exp(spec, exp_id)) next
+    if (!.spec_applies(spec, exp_id, cultivars)) next
+    value <- theta[[name]]
+    if (is.null(value) && isTRUE(spec$fixed)) value <- spec$start
+    if (is.null(value)) next
     base <- .cfg_get(spec, "base_name", name)
-    out[[base]] <- theta[[name]]
+    if (identical(.cfg_get(spec, "scope", "global"), "cultivar")) {
+      base <- sprintf("%s__%s", base, .cfg_get(spec, "cultivar", ""))
+    }
+    out[[base]] <- value
     matched <- c(matched, name)
   }
-  if (length(matched) == 0) theta else out
+  if (length(matched) == 0 && length(param_specs) == 0) theta else out
 }
 
-.partition_theta <- function(theta, param_specs, exp_id = NULL) {
+.partition_theta <- function(theta, param_specs, exp_id = NULL, cultivars = NULL) {
   groups <- list()
   matched <- character(0)
   for (spec in param_specs) {
     name <- spec$name
-    if (is.null(theta[[name]]) || !.spec_applies_to_exp(spec, exp_id)) next
+    if (!.spec_applies(spec, exp_id, cultivars)) next
+    value <- theta[[name]]
+    if (is.null(value) && isTRUE(spec$fixed)) value <- spec$start
+    if (is.null(value)) next
     g <- .cfg_get(spec, "group", "genetic_cultivar")
     base <- .cfg_get(spec, "base_name", name)
-    if (is.null(groups[[g]])) groups[[g]] <- list()
-    groups[[g]][[base]] <- theta[[name]]
+    if (identical(.cfg_get(spec, "scope", "global"), "cultivar")) {
+      scoped_group <- paste0(g, "_by_cultivar")
+      anchor <- as.character(.cfg_get(spec, "cultivar", ""))
+      if (is.null(groups[[scoped_group]])) groups[[scoped_group]] <- list()
+      if (is.null(groups[[scoped_group]][[anchor]])) groups[[scoped_group]][[anchor]] <- list()
+      groups[[scoped_group]][[anchor]][[base]] <- value
+    } else {
+      if (is.null(groups[[g]])) groups[[g]] <- list()
+      groups[[g]][[base]] <- value
+    }
     matched <- c(matched, name)
   }
-  if (length(matched) == 0) {
+  if (length(matched) == 0 && length(param_specs) == 0) {
     for (name in names(theta)) {
       if (is.null(groups[["genetic_cultivar"]])) groups[["genetic_cultivar"]] <- list()
       groups[["genetic_cultivar"]][[name]] <- theta[[name]]
     }
   }
   groups
+}
+
+.cultivar_ecotype_map <- function(crop) {
+  mapping <- .cfg_get(crop, "cultivar_ecotypes", list())
+  mapping <- as.list(mapping)
+  anchor <- .cfg_get(crop, "cultivar_anchor", NULL)
+  ecotype <- .cfg_get(crop, "ecotype", NULL)
+  if (!is.null(anchor) && !is.null(ecotype) && is.null(mapping[[as.character(anchor)]])) {
+    mapping[[as.character(anchor)]] <- as.character(ecotype)
+  }
+  mapping
+}
+
+.treatment_run_key <- function(treatments) {
+  if (is.null(treatments)) return(NULL)
+  vals <- sort(unique(as.integer(treatments)))
+  if (!length(vals)) NULL else paste0("T", paste(vals, collapse = "-"))
+}
+
+.stamp_single_treatment <- function(outputs, treatments) {
+  vals <- sort(unique(as.integer(treatments %||% integer(0))))
+  if (length(vals) != 1L) return(outputs)
+  trt <- vals[1]
+  lapply(outputs, function(df) {
+    if (!is.data.frame(df) || !nrow(df)) return(df)
+    if ("treatment" %in% names(df)) {
+      missing <- is.na(df$treatment)
+      df$treatment[missing] <- trt
+      df$treatment <- as.integer(df$treatment)
+    } else {
+      df$treatment <- trt
+    }
+    df
+  })
+}
+
+.collect_core_outputs <- function(run_dir, treatments = NULL) {
+  outputs <- list(
+    plantgro = parse_plantgro(file.path(run_dir, "PlantGro.OUT")),
+    evaluate = parse_evaluate(file.path(run_dir, "Evaluate.OUT")),
+    summary = parse_summary(file.path(run_dir, "Summary.OUT"))
+  )
+  .stamp_single_treatment(outputs, treatments)
 }
 
 .filex_overrides_for <- function(cfg, exp_id) {
@@ -170,9 +262,10 @@ normalize_treatments <- function(treatments, backend = "native") {
 #' SpawnResult constructor (S3). Mirrors spawn.py:SpawnResult.
 #' @export
 spawn_result <- function(status, run_dir, theta, plantgro = data.frame(),
-                         evaluate = data.frame(), message = "") {
+                         evaluate = data.frame(), outputs = list(), message = "") {
   structure(list(status = status, run_dir = run_dir, theta = theta,
-                 plantgro = plantgro, evaluate = evaluate, message = message),
+                 plantgro = plantgro, evaluate = evaluate, outputs = outputs,
+                 message = message),
             class = "spawn_result")
 }
 
@@ -189,27 +282,42 @@ spawn_and_run <- function(theta, exp_id, cfg, crop, param_specs, run_root,
   stem <- crop$genotype_stem
   ext <- crop$filex_ext
   code <- crop$code
+  filex_name <- sprintf("%s.%s", exp_id, ext)
+  source_filex <- file.path(hemp_dir, filex_name)
+  exp_cultivars <- parse_cultivars(source_filex)
 
-  effective_theta <- .effective_theta(theta, param_specs, exp_id)
-  run_dir <- file.path(run_root, exp_id, paste0("s_", theta_hash(effective_theta)))
+  effective_theta <- .effective_theta(theta, param_specs, exp_id, exp_cultivars)
+  treatment_key <- .treatment_run_key(treatments)
+  run_dir <- file.path(run_root, exp_id)
+  if (!is.null(treatment_key)) run_dir <- file.path(run_dir, treatment_key)
+  run_dir <- file.path(run_dir, paste0("s_", theta_hash(effective_theta)))
   pg_path <- file.path(run_dir, "PlantGro.OUT")
 
   if (isTRUE(.cfg_get(cfg$calibrator, "cache_spawns", TRUE)) &&
       file.exists(pg_path) && file.info(pg_path)$size > 0) {
+    outputs <- .collect_core_outputs(run_dir, treatments)
     return(spawn_result("cached", run_dir, theta,
-                        plantgro = parse_plantgro(pg_path),
-                        evaluate = parse_evaluate(file.path(run_dir, "Evaluate.OUT"))))
+                        plantgro = outputs$plantgro,
+                        evaluate = outputs$evaluate,
+                        outputs = outputs))
   }
 
   dir.create(run_dir, recursive = TRUE, showWarnings = FALSE)
+
+  for (profile_name in c("DSSATPRO.L48", "DSSATPRO.V48", "DSSATPRO.v48", "DSCSM048.CTR")) {
+    src <- file.path(dssat_paths$root, profile_name)
+    if (file.exists(src)) file.copy(src, file.path(run_dir, profile_name), overwrite = TRUE)
+  }
 
   for (e in c("CUL", "ECO", "SPE")) {
     src <- file.path(geno_dir, sprintf("%s.%s", stem, e))
     if (file.exists(src)) file.copy(src, file.path(run_dir, sprintf("%s.%s", stem, e)), overwrite = TRUE)
   }
 
-  filex_name <- sprintf("%s.%s", exp_id, ext)
-  file.copy(file.path(hemp_dir, filex_name), file.path(run_dir, filex_name), overwrite = TRUE)
+  if (!file.exists(source_filex)) stop(sprintf("FileX not found: %s", source_filex))
+  if (!file.copy(source_filex, file.path(run_dir, filex_name), overwrite = TRUE)) {
+    stop(sprintf("Could not copy FileX into run directory: %s", source_filex))
+  }
   filex_overrides <- .filex_overrides_for(cfg, exp_id)
   if (length(filex_overrides) > 0) {
     edit_filex(file.path(run_dir, filex_name), filex_overrides, list())
@@ -219,15 +327,31 @@ spawn_and_run <- function(theta, exp_id, cfg, crop, param_specs, run_root,
     if (file.exists(src)) file.copy(src, file.path(run_dir, sprintf("%s.%s", exp_id, obs_ext)), overwrite = TRUE)
   }
 
-  groups <- .partition_theta(theta, param_specs, exp_id)
+  groups <- .partition_theta(theta, param_specs, exp_id, exp_cultivars)
   cul_updates <- list()
   for (g in GENETIC_GROUPS) cul_updates <- modifyList(cul_updates, .cfg_get(groups, g, list()))
   if (length(cul_updates) > 0) {
-    edit_cultivar(file.path(run_dir, sprintf("%s.CUL", stem)), crop$cultivar_anchor, cul_updates)
+    anchors <- unlist(.cfg_get(crop, "cultivar_anchors", list(crop$cultivar_anchor)))
+    for (anchor in anchors) {
+      edit_cultivar(file.path(run_dir, sprintf("%s.CUL", stem)), anchor, cul_updates)
+    }
+  }
+  for (anchor in names(.cfg_get(groups, "genetic_cultivar_by_cultivar", list()))) {
+    edit_cultivar(file.path(run_dir, sprintf("%s.CUL", stem)), anchor,
+                  groups$genetic_cultivar_by_cultivar[[anchor]])
   }
   eco_updates <- .cfg_get(groups, "genetic_ecotype", list())
   if (length(eco_updates) > 0) {
     edit_ecotype(file.path(run_dir, sprintf("%s.ECO", stem)), crop$ecotype, eco_updates)
+  }
+  cultivar_ecotypes <- .cultivar_ecotype_map(crop)
+  for (anchor in names(.cfg_get(groups, "genetic_ecotype_by_cultivar", list()))) {
+    eco_anchor <- cultivar_ecotypes[[anchor]]
+    if (is.null(eco_anchor)) {
+      stop(sprintf("No ecotype mapping for cultivar '%s'. Add crops[].cultivar_ecotypes.", anchor))
+    }
+    edit_ecotype(file.path(run_dir, sprintf("%s.ECO", stem)), eco_anchor,
+                 groups$genetic_ecotype_by_cultivar[[anchor]])
   }
 
   spe_updates <- .cfg_get(groups, "genetic_species", list())
@@ -372,7 +496,7 @@ spawn_and_run <- function(theta, exp_id, cfg, crop, param_specs, run_root,
   if (!file.exists(pg_path) || file.info(pg_path)$size == 0) {
     return(spawn_result("error", run_dir, theta, message = "no PlantGro.OUT produced"))
   }
-  pg <- parse_plantgro(pg_path)
-  ev <- parse_evaluate(file.path(run_dir, "Evaluate.OUT"))
-  spawn_result("success", run_dir, theta, plantgro = pg, evaluate = ev)
+  outputs <- .collect_core_outputs(run_dir, treatments)
+  spawn_result("success", run_dir, theta, plantgro = outputs$plantgro,
+               evaluate = outputs$evaluate, outputs = outputs)
 }

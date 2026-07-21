@@ -70,6 +70,11 @@ def run_history_matching(cfg: dict, score_results, space, *, progress: bool = Tr
             design = pd.concat([start, design], ignore_index=True)
         thetas = [space.to_theta(design.iloc[i].to_numpy()) for i in range(len(design))]
         results = list(score_results(thetas))
+        if not any(np.isfinite(r.score) for r in results):
+            raise ValueError(
+                "History matching found no valid candidates: every evaluated score "
+                "is non-finite. Inspect the spawn manifest and per-run DSSAT errors."
+            )
         impl = np.array([_implausibility(r, mode) for r in results], dtype=float)
         nroy_mask = impl <= cutoff
         if not nroy_mask.any() and np.isfinite(impl).any():
@@ -104,7 +109,12 @@ def run_history_matching(cfg: dict, score_results, space, *, progress: bool = Tr
     if not nroy_final.empty:
         out.loc[nroy_final.index, "weight"] = 1.0 / len(nroy_final)
     valid = out[np.isfinite(out["score"])]
-    best_sample_id = int(valid["score"].idxmin()) if not valid.empty else 0
+    if valid.empty:  # Defensive guard if a future wave policy changes.
+        raise ValueError(
+            "History matching found no valid candidates: every evaluated score "
+            "is non-finite. Inspect the spawn manifest and per-run DSSAT errors."
+        )
+    best_sample_id = int(valid["score"].idxmin())
     best_theta = {name: float(out.loc[best_sample_id, name]) for name in space.names}
     best = obj_results[best_sample_id]
     return HistoryResult(design=out, behavioural=nroy_final, best_theta=best_theta,

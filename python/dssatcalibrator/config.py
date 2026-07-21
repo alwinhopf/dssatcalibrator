@@ -120,6 +120,7 @@ _ENV_OVERRIDES = {
     "DSSATCAL_NUM_CORES": ("calibrator", "num_cores"),
     "DSSATCAL_WORKDIR": ("calibrator", "workdir"),
     "DSSATCAL_RESULTS_DIR": ("calibrator", "results_dir"),
+    "DSSATCAL_HEMP_DIR": ("source", "hemp_dir"),
     "DSSAT_TEMPLATE_DIR": ("templates", "template_dir"),
 }
 
@@ -340,12 +341,52 @@ def crop_for(cfg: dict, code: str) -> dict:
     return crops[0] if crops else {}
 
 
+def _workspace_dssat_root() -> Path | None:
+    """Find a sibling DSSAT48 install without assuming a host operating system."""
+    here = Path(__file__).resolve()
+    candidates = []
+    if len(here.parents) > 3:
+        candidates.append(here.parents[3] / "DSSAT48")
+    candidates.extend([
+        Path.cwd().resolve().parent / "DSSAT48",
+        Path.cwd().resolve() / "DSSAT48",
+    ])
+    for candidate in dict.fromkeys(candidates):
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def resolve_dssat_root(cfg: dict) -> Path:
+    """Resolve DSSAT root, falling back only from empty/cross-platform defaults."""
+    configured = str((cfg.get("calibrator") or {}).get("dssat_dir", "") or "")
+    path = Path(configured) if configured else None
+    if path is not None and path.is_dir():
+        return path
+    cross_platform = (
+        not configured
+        or configured.replace("\\", "/").rstrip("/").lower() == "c:/dssat48"
+        or (os.name != "nt" and len(configured) >= 2 and configured[1] == ":")
+    )
+    discovered = _workspace_dssat_root() if cross_platform else None
+    return discovered if discovered is not None else (path or Path("C:/DSSAT48"))
+
+
 def resolve_exe(cfg: dict) -> Path:
-    """Resolve the DSSAT executable path (explicit, else dir default)."""
-    exe = cfg["calibrator"].get("dssat_exe", "")
-    if exe:
-        return Path(exe)
-    return Path(cfg["calibrator"]["dssat_dir"]) / "DSCSM048.EXE"
+    """Resolve the DSSAT executable across native Windows and POSIX installs."""
+    exe_value = str((cfg.get("calibrator") or {}).get("dssat_exe", "") or "")
+    explicit = Path(exe_value) if exe_value else None
+    if explicit is not None and explicit.is_file():
+        return explicit
+    cross_platform_explicit = (
+        explicit is None
+        or (os.name != "nt" and len(exe_value) >= 2 and exe_value[1] == ":")
+    )
+    if explicit is not None and not cross_platform_explicit:
+        return explicit
+    root = resolve_dssat_root(cfg)
+    candidates = [root / "dscsm048", root / "DSCSM048.EXE", root / "dscsm048.exe"]
+    return next((candidate for candidate in candidates if candidate.is_file()), candidates[0])
 
 
 def resolve_dssat_paths(cfg: dict) -> dict[str, Path]:
@@ -355,7 +396,7 @@ def resolve_dssat_paths(cfg: dict) -> dict[str, Path]:
     ``Genotype/``, ``Weather/`` and ``Soil/``. Callers can still override the
     executable with ``calibrator.dssat_exe`` when using a custom compiled model.
     """
-    root = Path(cfg["calibrator"]["dssat_dir"])
+    root = resolve_dssat_root(cfg)
     return {
         "root": root,
         "exe": resolve_exe(cfg),

@@ -25,8 +25,18 @@ def test_run_glue_synthetic():
     assert g.best_sample_id == 0
     assert g.best_theta == {"P1": 1.0, "P2": 5.0}
     assert abs(g.design["weight"].sum() - 1.0) < 1e-9
-    assert g.design["weight"].iloc[0] == g.design["weight"].max()  # best has most weight
+    assert g.design["weight"].iloc[0] == g.design["weight"].max()
     assert len(g.behavioural) >= 2 and g.ess > 0
+
+
+def test_run_glue_rejects_all_invalid_candidates():
+    design = pd.DataFrame({
+        "P1": [1.0, 2.0],
+        "score": [np.inf, np.nan],
+        "loglik": [-np.inf, np.nan],
+    })
+    with pytest.raises(ValueError, match="no valid candidates"):
+        run_glue(design, ["P1"], {"method": {"bayesian": {}}})
 
 
 @pytest.mark.slow

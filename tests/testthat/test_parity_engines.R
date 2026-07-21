@@ -26,3 +26,12 @@ test_that("run_glue matches Python (weights, ESS, threshold, best, behavioural)"
   expect_equal(nrow(res$behavioural), g$n_behavioural)
   expect_equal(as.numeric(res$best_theta$P1), as.numeric(g$best_theta$P1), tolerance = 1e-9)
 })
+
+test_that("run_glue rejects an all-invalid design", {
+  design <- data.frame(P1 = c(1, 2), score = c(Inf, NA_real_),
+                       loglik = c(-Inf, NA_real_))
+  expect_error(
+    run_glue(design, "P1", list(method = list(bayesian = list()))),
+    "no valid candidates"
+  )
+})

@@ -8,7 +8,23 @@
 #
 # Writes figures + CSV summaries to results/<name>/ (or --outdir).
 
-suppressMessages(library(dssatcalibrator))
+.script_dir <- function() {
+  file_arg <- grep("^--file=", commandArgs(FALSE), value = TRUE)
+  if (length(file_arg)) return(dirname(normalizePath(sub("^--file=", "", file_arg[[1]]), mustWork = TRUE)))
+  getwd()
+}
+
+.load_dssatcalibrator <- function() {
+  r_dir <- file.path(.script_dir(), "R")
+  if (dir.exists(r_dir)) {
+    r_files <- list.files(r_dir, pattern = "[.]R$", full.names = TRUE)
+    invisible(lapply(r_files, function(f) sys.source(f, envir = globalenv())))
+  } else {
+    suppressMessages(library(dssatcalibrator))
+  }
+}
+
+.load_dssatcalibrator()
 
 # --- tiny flag parser: --key value, or --flag (boolean) ---------------------
 .parse_args <- function(argv) {

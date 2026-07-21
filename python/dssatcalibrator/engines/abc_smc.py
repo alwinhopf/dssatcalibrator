@@ -92,7 +92,10 @@ def run_abc_smc(cfg: dict, score_results, space, *, progress: bool = True) -> Ab
         scores = np.array([r.score if np.isfinite(r.score) else np.inf for r in results], dtype=float)
         finite = scores[np.isfinite(scores)]
         if finite.size == 0:
-            threshold = float("inf")
+            raise ValueError(
+                "ABC-SMC found no valid candidates: every evaluated score is "
+                "non-finite. Inspect the spawn manifest and per-run DSSAT errors."
+            )
         elif wave == 0:
             threshold = float(np.quantile(finite, min(max(quantile, 0.0), 1.0)))
         else:
@@ -127,7 +130,12 @@ def run_abc_smc(cfg: dict, score_results, space, *, progress: bool = True) -> Ab
     if not final.empty:
         design.loc[final.index, "weight"] = 1.0 / len(final)
     valid = design[np.isfinite(design["score"])]
-    best_sample_id = int(valid["score"].idxmin()) if not valid.empty else 0
+    if valid.empty:  # Defensive guard if a future acceptance policy changes.
+        raise ValueError(
+            "ABC-SMC found no valid candidates: every evaluated score is "
+            "non-finite. Inspect the spawn manifest and per-run DSSAT errors."
+        )
+    best_sample_id = int(valid["score"].idxmin())
     best_theta = {name: float(design.loc[best_sample_id, name]) for name in space.names}
     best = obj_results[best_sample_id]
     return AbcSmcResult(design=design, behavioural=final, best_theta=best_theta,

@@ -12,7 +12,7 @@
   first_code <- if (length(crops)) (.cfg_get(crops[[1]], "code", "HM")) else "HM"
   crop <- crop_for(cfg, first_code)
   exe <- resolve_exe(cfg)
-  specs <- active_parameters(cfg)
+  specs <- c(space$specs, expand_parameter_specs(cfg, fixed_parameters(cfg)))
   hemp_dir <- cfg$source$hemp_dir
   run_root <- file.path(cfg$calibrator$workdir, cfg$calibrator$name)
   dir.create(run_root, recursive = TRUE, showWarnings = FALSE)
@@ -772,7 +772,7 @@ combine_runs <- function(cfg, run_dirs) {
 .year_key <- function(exp) { d <- gsub("[^0-9]", "", exp); if (nchar(d) >= 2) substr(d, 1, 2) else exp }
 .site_key <- function(exp) { s <- gsub("[0-9]", "", exp); if (nzchar(s)) s else exp }
 
-.make_folds <- function(experiments, scheme, seed) {
+.make_folds <- function(experiments, scheme, seed, k = 5L) {
   exps <- experiments
   if (scheme %in% c("loeo", "none", "")) return(lapply(exps, function(e) list(label = e, held = e)))
   if (scheme == "year") {
@@ -784,7 +784,8 @@ combine_runs <- function(cfg, run_dirs) {
     return(lapply(names(groups), function(k) list(label = paste0("site_", k), held = groups[[k]])))
   }
   if (scheme == "random") {
-    set.seed(seed); shuffled <- sample(exps); k <- min(length(shuffled), 5L)
+    set.seed(seed); shuffled <- sample(exps)
+    k <- min(length(shuffled), max(2L, as.integer(k)))
     folds <- lapply(seq_len(k) - 1L, function(i) shuffled[seq(i + 1L, length(shuffled), by = k)])
     return(lapply(seq_along(folds), function(i) list(label = paste0("fold_", i - 1L), held = folds[[i]])))
   }
@@ -799,9 +800,11 @@ validate_cv <- function(cfg, scheme = NULL, progress = FALSE) {
   method <- .cfg_get(cfg, "method", list())
   n <- as.integer(.cfg_get(.cfg_get(method, "sample", list()), "n", 100))
   seed <- as.integer(.cfg_get(cfg$calibrator, "seed", 42))
-  scheme <- scheme %||% .cfg_get(.cfg_get(method, "validation", list()), "scheme", "loeo")
+  validation <- .cfg_get(method, "validation", list())
+  scheme <- scheme %||% .cfg_get(validation, "scheme", "loeo")
+  k <- as.integer(.cfg_get(validation, "k", 5L))
   rows <- list()
-  for (fold in .make_folds(setup$experiments, scheme, seed)) {
+  for (fold in .make_folds(setup$experiments, scheme, seed, k = k)) {
     held <- fold$held; train <- setdiff(setup$experiments, held)
     if (length(train) == 0 || length(held) == 0) next
     cfg_train <- cfg; cfg_train$experiments <- as.list(train)

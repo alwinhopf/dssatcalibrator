@@ -4,7 +4,15 @@ from pathlib import Path
 
 from dssatcalibrator.writers import edit_cultivar, edit_species, read_cultivar_values, cultivar_field_map
 
-GENO = Path("C:/DSSAT48/Genotype/HMGRO048.CUL")
+REPO = Path(__file__).resolve().parents[1]
+GENO = REPO.parent / "DSSAT48" / "Genotype" / "HMGRO048.CUL"
+if not GENO.exists():
+    GENO = Path("C:/DSSAT48/Genotype/HMGRO048.CUL")
+
+
+def _anchor(cul: Path) -> str:
+    text = cul.read_text(errors="replace")
+    return "IB0008" if any(line.startswith("IB0008") for line in text.splitlines()) else "IB0001"
 
 
 def _cul(tmp_path):
@@ -27,9 +35,10 @@ def test_field_map_has_all_coefficients(tmp_path):
 
 def test_edit_cultivar_changes_only_targeted(tmp_path):
     cul = _cul(tmp_path)
-    before = read_cultivar_values(cul, "IB0008")
-    edit_cultivar(cul, "IB0008", {"CSDL": 14.5, "EM-FL": 18.0})
-    after = read_cultivar_values(cul, "IB0008")
+    anchor = _anchor(cul)
+    before = read_cultivar_values(cul, anchor)
+    edit_cultivar(cul, anchor, {"CSDL": 14.5, "EM-FL": 18.0})
+    after = read_cultivar_values(cul, anchor)
     assert after["CSDL"] == 14.5
     assert after["EM-FL"] == 18.0
     # untouched coefficients preserved exactly
@@ -41,7 +50,7 @@ def test_edit_cultivar_rejects_unknown(tmp_path):
     import pytest
     cul = _cul(tmp_path)
     with pytest.raises(KeyError):
-        edit_cultivar(cul, "IB0008", {"NOPE": 1.0})
+        edit_cultivar(cul, _anchor(cul), {"NOPE": 1.0})
 
 
 def test_edit_species_preserves_leading_dot_decimal(tmp_path):

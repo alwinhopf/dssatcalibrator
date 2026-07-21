@@ -38,7 +38,8 @@
     ),
     objective = list(weighting = "unified", weights = list(), error_model = list(),
                      likelihood = list(type = "gaussian"),
-                     model_discrepancy = list()),
+                     model_discrepancy = list(),
+                     ignore_zero_observations = list()),
     parameters = list(),
     crops = list(),
     experiments = list(),
@@ -85,6 +86,7 @@
   DSSATCAL_NUM_CORES   = c("calibrator", "num_cores"),
   DSSATCAL_WORKDIR     = c("calibrator", "workdir"),
   DSSATCAL_RESULTS_DIR = c("calibrator", "results_dir"),
+  DSSATCAL_HEMP_DIR    = c("source", "hemp_dir"),
   DSSAT_TEMPLATE_DIR   = c("templates", "template_dir")
 )
 
@@ -155,7 +157,9 @@ validate_config <- function(cfg) {
                           "cmaes", "cma_es", "cma", "none", "")
   PARAMETER_SCOPES   <- c("global", "shared", "pooled", "pool",
                           "experiment", "experiments", "per_experiment", "per-experiment",
-                          "experiment_specific", "experiment-specific", "local")
+                          "experiment_specific", "experiment-specific", "local",
+                          "cultivar", "cultivars", "per_cultivar", "per-cultivar",
+                          "cultivar_specific", "cultivar-specific")
 
   errors <- character(0)
   is_num <- function(x) is.numeric(x) && length(x) == 1L
@@ -287,6 +291,25 @@ active_parameters <- function(cfg) {
   out
 }
 
+#' Flatten specs marked `fixed: true` but not active.
+#' Mirrors config.py:fixed_parameters.
+#' @export
+fixed_parameters <- function(cfg) {
+  out <- list()
+  params_block <- cfg$parameters
+  if (is.null(params_block)) return(out)
+  for (group in names(params_block)) {
+    params <- params_block[[group]]
+    if (!is.list(params) || is.null(names(params))) next
+    for (name in names(params)) {
+      spec <- params[[name]]
+      if (!is.list(spec) || isTRUE(spec$active) || !isTRUE(spec$fixed)) next
+      out[[length(out) + 1L]] <- c(list(group = group, name = name, active = FALSE), spec)
+    }
+  }
+  out
+}
+
 #' Every declared parameter (active or not). Mirrors config.py:all_parameters.
 #' @export
 all_parameters <- function(cfg) {
@@ -318,19 +341,47 @@ crop_for <- function(cfg, code) {
   crops[[1]]
 }
 
+# Find a sibling DSSAT48 install without assuming Windows paths.
+.workspace_dssat_root <- function() {
+  cwd <- normalizePath(getwd(), winslash = "/", mustWork = FALSE)
+  ancestors <- cwd
+  for (i in seq_len(6L)) ancestors <- c(ancestors, dirname(tail(ancestors, 1)))
+  candidates <- unique(file.path(ancestors, "DSSAT48"))
+  hit <- candidates[dir.exists(candidates)]
+  if (length(hit)) hit[1] else NULL
+}
+
+#' Resolve the DSSAT installation root. Mirrors config.py:resolve_dssat_root.
+#' @export
+resolve_dssat_root <- function(cfg) {
+  configured <- as.character(.cfg_get(cfg$calibrator, "dssat_dir", ""))
+  if (nzchar(configured) && dir.exists(configured)) return(configured)
+  normalized <- tolower(sub("/+$", "", gsub("\\\\", "/", configured)))
+  cross_platform <- !nzchar(configured) || identical(normalized, "c:/dssat48") ||
+    (.Platform$OS.type != "windows" && grepl("^[A-Za-z]:[/\\\\]", configured))
+  discovered <- if (cross_platform) .workspace_dssat_root() else NULL
+  if (!is.null(discovered)) discovered else if (nzchar(configured)) configured else "C:/DSSAT48"
+}
+
 #' Resolve the DSSAT executable path. Mirrors config.py:resolve_exe.
 #' @export
 resolve_exe <- function(cfg) {
-  exe <- cfg$calibrator$dssat_exe
-  if (!is.null(exe) && nzchar(exe)) return(exe)
-  file.path(cfg$calibrator$dssat_dir, "DSCSM048.EXE")
+  exe <- as.character(.cfg_get(cfg$calibrator, "dssat_exe", ""))
+  if (nzchar(exe) && file.exists(exe)) return(exe)
+  cross_platform <- !nzchar(exe) ||
+    (.Platform$OS.type != "windows" && grepl("^[A-Za-z]:[/\\\\]", exe))
+  if (nzchar(exe) && !cross_platform) return(exe)
+  root <- resolve_dssat_root(cfg)
+  candidates <- file.path(root, c("dscsm048", "DSCSM048.EXE", "dscsm048.exe"))
+  hit <- candidates[file.exists(candidates)]
+  if (length(hit)) hit[1] else candidates[1]
 }
 
 #' Resolve the DSSAT48 install layout used by every spawn.
 #' Mirrors config.py:resolve_dssat_paths.
 #' @export
 resolve_dssat_paths <- function(cfg) {
-  root <- cfg$calibrator$dssat_dir
+  root <- resolve_dssat_root(cfg)
   list(
     root = root,
     exe = resolve_exe(cfg),

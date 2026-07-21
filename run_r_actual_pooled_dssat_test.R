@@ -1,27 +1,45 @@
 #!/usr/bin/env Rscript
 
 # Manual integration test for pooled calibration against a local DSSAT install.
-# It uses the existing hemp example experiments in C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/Hemp and does not
-# modify the DSSAT installation; all genotype edits happen in per-spawn run dirs.
+# Paths may be set with DSSATCAL_DSSAT_DIR, DSSATCAL_DSSAT_EXE,
+# DSSATCAL_HEMP_DIR, and DSSATCAL_INTEGRATION_ROOT. Otherwise the script uses
+# the sibling workspace DSSAT48 install. It never modifies that installation.
 
 source_package <- function() {
   r_files <- list.files("R", pattern = "[.]R$", full.names = TRUE)
   invisible(lapply(r_files, function(f) sys.source(f, envir = globalenv())))
 }
 
-make_pooled_cfg <- function(num_cores = 4L, workdir = "results/_actual_pooled_r_eval",
+workspace_root <- normalizePath("..", winslash = "/", mustWork = FALSE)
+DSSAT_ROOT <- Sys.getenv("DSSATCAL_DSSAT_DIR", file.path(workspace_root, "DSSAT48"))
+HEMP_DIR <- Sys.getenv("DSSATCAL_HEMP_DIR", file.path(DSSAT_ROOT, "Hemp"))
+default_exe <- c(file.path(DSSAT_ROOT, "dscsm048"),
+                 file.path(DSSAT_ROOT, "DSCSM048.EXE"))
+default_exe <- default_exe[file.exists(default_exe)][1]
+if (is.na(default_exe)) default_exe <- file.path(DSSAT_ROOT, "dscsm048")
+DSSAT_EXE <- Sys.getenv("DSSATCAL_DSSAT_EXE", default_exe)
+INTEGRATION_ROOT <- Sys.getenv(
+  "DSSATCAL_INTEGRATION_ROOT",
+  file.path(tempdir(), "dssatcalibrator_r_actual")
+)
+
+make_pooled_cfg <- function(num_cores = 4L, workdir = file.path(INTEGRATION_ROOT, "eval"),
                             keep_run_dirs = FALSE,
                             experiments = c("UFCI2101", "UFCI2201", "UFJA2101", "UFJA2201")) {
   cfg <- load_config("config_hemp.yaml", validate = FALSE)
-  cfg$calibrator$dssat_exe <- "C:/DSSAT48/DSCSM048.EXE"
-  cfg$calibrator$dssat_dir <- "C:/DSSAT48"
+  cfg$calibrator$dssat_exe <- DSSAT_EXE
+  cfg$calibrator$dssat_dir <- DSSAT_ROOT
   cfg$calibrator$workdir <- workdir
   cfg$calibrator$cache_spawns <- FALSE
   cfg$calibrator$keep_run_dirs <- keep_run_dirs
   cfg$calibrator$num_cores <- as.integer(num_cores)
-  cfg$source$hemp_dir <- "C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/Hemp"
+  cfg$source$hemp_dir <- HEMP_DIR
   cfg$experiments <- as.list(experiments)
   cfg$gating$species <- "free"
+  cfg$crops[[1]]$cultivar_anchor <- "IB0001"
+  cfg$crops[[1]]$cultivar_anchors <- list("IB0001", "IB0002")
+  cfg$crops[[1]]$ecotype <- "HM0001"
+  cfg$crops[[1]]$cultivar_ecotypes <- list(IB0001 = "HM0001", IB0002 = "HM0002")
 
   for (group in names(cfg$parameters)) {
     for (name in names(cfg$parameters[[group]])) {
@@ -64,11 +82,11 @@ make_samples <- function(space) {
 }
 
 stop_if_missing_dssat <- function() {
-  if (!file.exists("C:/DSSAT48/DSCSM048.EXE")) stop("DSSAT executable not found: C:/DSSAT48/DSCSM048.EXE")
+  if (!file.exists(DSSAT_EXE)) stop("DSSAT executable not found: ", DSSAT_EXE)
   missing <- character(0)
   for (exp_id in c("UFCI2101", "UFCI2201", "UFJA2101", "UFJA2201")) {
     for (ext in c("HMX", "HMA", "HMT")) {
-      p <- file.path("C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/Hemp", sprintf("%s.%s", exp_id, ext))
+      p <- file.path(HEMP_DIR, sprintf("%s.%s", exp_id, ext))
       if (!file.exists(p)) missing <- c(missing, p)
     }
   }
@@ -78,7 +96,7 @@ stop_if_missing_dssat <- function() {
 source_package()
 stop_if_missing_dssat()
 
-debug_dir <- "results/_actual_pooled_r_debug"
+debug_dir <- file.path(INTEGRATION_ROOT, "debug")
 if (dir.exists(debug_dir)) unlink(debug_dir, recursive = TRUE, force = TRUE)
 debug_cfg <- make_pooled_cfg(1L, debug_dir, keep_run_dirs = TRUE, experiments = "UFCI2101")
 debug_space <- parameter_space_from_config(debug_cfg)
@@ -90,19 +108,25 @@ debug_theta[["SLWREF"]] <- 0.0048
 
 debug_res <- spawn_and_run(
   theta = debug_theta, exp_id = "UFCI2101", cfg = debug_cfg, crop = crop_for(debug_cfg, "HM"),
-  param_specs = debug_space$specs, run_root = debug_dir, treatments = 1L,
+  param_specs = debug_space$specs, run_root = debug_dir, treatments = 2L,
   exe = debug_cfg$calibrator$dssat_exe
 )
 cat(sprintf("DIRECT_SPAWN status=%s plantgro=%d evaluate=%d run_dir=%s\n",
             debug_res$status, nrow(debug_res$plantgro), nrow(debug_res$evaluate), debug_res$run_dir))
 if (!identical(debug_res$status, "success")) stop(debug_res$message)
+if (!identical(sort(unique(as.integer(debug_res$plantgro$treatment))), 2L)) {
+  stop("R direct spawn did not preserve selected treatment 2 in PlantGro.OUT")
+}
+if (!identical(sort(unique(as.integer(debug_res$evaluate$treatment))), 2L)) {
+  stop("R direct spawn did not preserve selected treatment 2 in Evaluate.OUT")
+}
 spe_path <- file.path(debug_res$run_dir, "HMGRO048.SPE")
 spe_line <- grep("SLWREF,SLWSLO,NSLOPE,LNREF,PGREF", readLines(spe_path, warn = FALSE), value = TRUE)
 spe_line <- spe_line[!startsWith(trimws(spe_line, which = "left"), "!")][1]
 cat(sprintf("DIRECT_SPE_LINE %s\n", spe_line))
 if (!startsWith(spe_line, " .0048 .0004")) stop("R species writer did not preserve .SPE leading-dot decimal")
 
-eval_dir <- "results/_actual_pooled_r_eval"
+eval_dir <- file.path(INTEGRATION_ROOT, "eval")
 if (dir.exists(eval_dir)) unlink(eval_dir, recursive = TRUE, force = TRUE)
 cfg <- make_pooled_cfg(4L, eval_dir)
 space <- parameter_space_from_config(cfg)
@@ -126,7 +150,7 @@ if (any(as.integer(design$n_obs) <= 0L)) stop("No matched observations in R pool
 parallel_samples <- samples[1:3, , drop = FALSE]
 parallel_runs <- list()
 for (cores in c(1L, 4L)) {
-  pdir <- sprintf("results/_actual_pooled_r_parallel_%d", cores)
+  pdir <- file.path(INTEGRATION_ROOT, sprintf("parallel_%d", cores))
   if (dir.exists(pdir)) unlink(pdir, recursive = TRUE, force = TRUE)
   pcfg <- make_pooled_cfg(cores, pdir)
   pt0 <- proc.time()[["elapsed"]]

@@ -296,6 +296,12 @@ run_history_matching <- function(cfg, score_results, space, progress = TRUE) {
     names(design) <- space$names
     thetas <- lapply(seq_len(nrow(design)), function(i) ps_to_theta(space, as.numeric(design[i, ])))
     results <- score_results(thetas)
+    if (!any(vapply(results, function(r) is.finite(r$score), logical(1)))) {
+      stop(paste(
+        "History matching found no valid candidates: every evaluated score is non-finite.",
+        "Inspect the spawn manifest and per-run DSSAT errors."
+      ), call. = FALSE)
+    }
     impl <- vapply(results, .implausibility, numeric(1), mode = mode)
     nroy <- impl <= cutoff
     if (!any(nroy) && any(is.finite(impl))) nroy <- impl <= as.numeric(quantile(impl[is.finite(impl)], 0.9, names = FALSE))
@@ -323,7 +329,14 @@ run_history_matching <- function(cfg, score_results, space, progress = TRUE) {
   design$weight <- 0.0
   behavioural <- design[as.logical(design$nroy), , drop = FALSE]
   if (nrow(behavioural) > 0) design$weight[as.logical(design$nroy)] <- 1.0 / nrow(behavioural)
-  valid <- which(is.finite(design$score)); best_sample_id <- if (length(valid)) design$sample_id[valid[which.min(design$score[valid])]] else 0L
+  valid <- which(is.finite(design$score))
+  if (!length(valid)) {
+    stop(paste(
+      "History matching found no valid candidates: every evaluated score is non-finite.",
+      "Inspect the spawn manifest and per-run DSSAT errors."
+    ), call. = FALSE)
+  }
+  best_sample_id <- design$sample_id[valid[which.min(design$score[valid])]]
   best_theta <- as.list(design[design$sample_id == best_sample_id, space$names, drop = FALSE][1, ])
   best <- obj_results[[as.character(best_sample_id)]]
   structure(list(design = design, behavioural = behavioural, best_theta = best_theta,
@@ -361,7 +374,13 @@ run_abc_smc <- function(cfg, score_results, space, progress = TRUE) {
     results <- score_results(candidates)
     scores <- vapply(results, function(r) if (is.finite(r$score)) r$score else Inf, numeric(1))
     finite <- scores[is.finite(scores)]
-    eps <- if (length(finite)) as.numeric(quantile(finite, q, names = FALSE)) else Inf
+    if (!length(finite)) {
+      stop(paste(
+        "ABC-SMC found no valid candidates: every evaluated score is non-finite.",
+        "Inspect the spawn manifest and per-run DSSAT errors."
+      ), call. = FALSE)
+    }
+    eps <- as.numeric(quantile(finite, q, names = FALSE))
     if (length(thresholds)) eps <- min(eps, tail(thresholds, 1))
     keep <- which(scores <= eps)
     if (length(keep) < max(8L, n_particles %/% 4L)) keep <- order(scores)[seq_len(min(length(scores), n_particles))]
@@ -386,7 +405,14 @@ run_abc_smc <- function(cfg, score_results, space, progress = TRUE) {
   design$weight <- 0.0
   final <- design[design$wave == max(design$wave) & as.logical(design$accepted), , drop = FALSE]
   if (nrow(final) > 0) design$weight[design$wave == max(design$wave) & as.logical(design$accepted)] <- 1.0 / nrow(final)
-  valid <- which(is.finite(design$score)); best_sample_id <- if (length(valid)) design$sample_id[valid[which.min(design$score[valid])]] else 0L
+  valid <- which(is.finite(design$score))
+  if (!length(valid)) {
+    stop(paste(
+      "ABC-SMC found no valid candidates: every evaluated score is non-finite.",
+      "Inspect the spawn manifest and per-run DSSAT errors."
+    ), call. = FALSE)
+  }
+  best_sample_id <- design$sample_id[valid[which.min(design$score[valid])]]
   best_theta <- as.list(design[design$sample_id == best_sample_id, space$names, drop = FALSE][1, ])
   best <- obj_results[[as.character(best_sample_id)]]
   structure(list(design = design, behavioural = final, best_theta = best_theta,

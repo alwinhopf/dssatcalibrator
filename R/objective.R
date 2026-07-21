@@ -22,6 +22,12 @@ variable_maps <- function(cfg) {
   list(ts = ts, sc = sc, ts_inv = inv(ts), sc_inv = inv(sc))
 }
 
+.PHENOLOGY_DATE_TO_DAP <- c(
+  EDAT = "EDAP", EDATE = "EDAP", ADAT = "ADAP", MDAT = "MDAP",
+  HDAT = "HDAP", R8 = "R8AP"
+)
+.PHENOLOGY_DAP_OUTPUTS <- c("EDAP", "ADAP", "MDAP", "HDAP", "R8AP")
+
 #' DSSAT variables present in observations but NOT scorable.
 #' Mirrors objective.py:unmatched_variables.
 #' @export
@@ -32,7 +38,9 @@ unmatched_variables <- function(obs_table, cfg) {
     return(character(0))
   }
   present <- unique(obs_table$variable[!is.na(obs_table$variable)])
-  sort(setdiff(present, known))
+  mapped <- present[present %in% names(.PHENOLOGY_DATE_TO_DAP) &
+                      unname(.PHENOLOGY_DATE_TO_DAP[present]) %in% known]
+  sort(setdiff(present, c(known, mapped)))
 }
 
 #' RMSE / nRMSE% / MBE / Willmott d / modelling efficiency EF / R2 + n.
@@ -99,6 +107,90 @@ metrics <- function(obs, sim) {
   z^2
 }
 
+.drop_configured_zero_observations <- function(resid, cfg) {
+  ocfg <- .cfg_get(cfg, "objective", list())
+  raw <- .cfg_get(ocfg, "ignore_zero_observations",
+                  .cfg_get(ocfg, "drop_zero_observations", list()))
+  if (is.null(raw) || length(raw) == 0) return(resid)
+  drop_all <- isTRUE(raw)
+  atol <- 1e-12
+  variables <- character(0)
+  if (is.list(raw) && !is.null(names(raw))) {
+    atol <- as.numeric(.cfg_get(raw, "atol", .cfg_get(raw, "tolerance", atol)))
+    variables <- as.character(unlist(.cfg_get(raw, "variables",
+                                               .cfg_get(raw, "user_vars",
+                                                        .cfg_get(raw, "dssat_vars", list())))))
+  } else if (!is.logical(raw)) {
+    variables <- as.character(unlist(raw))
+  }
+  zero <- is.finite(resid$obs) & abs(as.numeric(resid$obs)) <= atol
+  keep <- if (drop_all) {
+    !zero
+  } else {
+    variable_match <- as.character(resid$user_var) %in% variables |
+      as.character(resid$dssat) %in% variables
+    !(zero & variable_match)
+  }
+  resid[keep, , drop = FALSE]
+}
+
+.planting_date_from_plantgro <- function(pg, treatment) {
+  if (is.null(pg) || nrow(pg) == 0 || !all(c("date", "DAP", "treatment") %in% names(pg))) {
+    return(as.Date(NA))
+  }
+  trt <- suppressWarnings(as.integer(pg$treatment))
+  sub <- pg[!is.na(trt) & trt == as.integer(treatment), , drop = FALSE]
+  if (nrow(sub) == 0) return(as.Date(NA))
+  dates <- suppressWarnings(as.Date(sub$date))
+  dap <- suppressWarnings(as.numeric(sub$DAP))
+  ok <- !is.na(dates) & is.finite(dap)
+  if (!any(ok)) return(as.Date(NA))
+  (dates[ok] - dap[ok])[1]
+}
+
+.scalar_observation_mapping <- function(obs_var, sc_map, sc_inv) {
+  obs_var <- as.character(obs_var)
+  if (!is.null(sc_map[[obs_var]])) {
+    return(list(user_var = obs_var, dssat_var = as.character(sc_map[[obs_var]])))
+  }
+  mapped <- unname(.PHENOLOGY_DATE_TO_DAP[obs_var])
+  if (length(mapped) && !is.na(mapped) && !is.null(sc_inv[[mapped]])) {
+    return(list(user_var = as.character(sc_inv[[mapped]]), dssat_var = mapped))
+  }
+  if (!is.null(sc_inv[[obs_var]])) {
+    return(list(user_var = as.character(sc_inv[[obs_var]]), dssat_var = obs_var))
+  }
+  list(user_var = obs_var, dssat_var = obs_var)
+}
+
+.observed_scalar_value <- function(row, dssat_var, pg) {
+  if (as.character(row$kind) == "phenology" && dssat_var %in% .PHENOLOGY_DAP_OUTPUTS) {
+    date <- suppressWarnings(as.Date(row$date))
+    planted <- .planting_date_from_plantgro(pg, as.integer(row$treatment))
+    if (!is.na(date) && !is.na(planted)) return(as.numeric(date - planted))
+  }
+  as.numeric(row$value)
+}
+
+.timeseries_sim_value <- function(pg, treatment, date, col) {
+  if (is.null(pg) || nrow(pg) == 0 || !all(c("treatment", "date", col) %in% names(pg))) {
+    return(NA_real_)
+  }
+  trt <- suppressWarnings(as.integer(pg$treatment))
+  sub <- pg[!is.na(trt) & trt == as.integer(treatment), , drop = FALSE]
+  if (nrow(sub) == 0) return(NA_real_)
+  dates <- suppressWarnings(as.Date(sub$date))
+  target <- suppressWarnings(as.Date(date))
+  exact <- which(!is.na(dates) & dates == target)
+  if (length(exact)) return(suppressWarnings(as.numeric(sub[[col]][exact[1]])))
+  valid_dates <- which(!is.na(dates))
+  if (length(valid_dates) && !is.na(target) && target > max(dates[valid_dates])) {
+    last <- valid_dates[which.max(dates[valid_dates])]
+    return(suppressWarnings(as.numeric(sub[[col]][last])))
+  }
+  NA_real_
+}
+
 #' Down-weight dense time-series for serial correlation (obs_autocorr: true).
 #' Mirrors objective.py:_downweight_autocorr (AR(1) effective-sample-size factor).
 .downweight_autocorr <- function(df) {
@@ -116,7 +208,7 @@ metrics <- function(obs, sim) {
     rho <- sum(x[-length(x)] * x[-1]) / denom
     rho <- min(max(rho, 0.0), 0.99)
     factor <- (1.0 - rho) / (1.0 + rho)
-    rows <- as.integer(rownames(g))
+    rows <- rownames(g)
     df[rows, "weight"] <- df[rows, "weight"] * factor
   }
   df
@@ -152,6 +244,9 @@ build_residuals <- function(results, obs_table, cfg) {
                          user_var = sc_inv[[base_var]], dssat = base_var, kind = kind,
                          date = as.Date(NA), obs = as.numeric(meas),
                          sim = as.numeric(penalty_sim), stringsAsFactors = FALSE))
+          seen_scalar <- c(seen_scalar, paste(
+            exp, as.integer(r$treatment), sc_inv[[base_var]], kind, sep = "\r"
+          ))
         }
         next
       }
@@ -172,20 +267,37 @@ build_residuals <- function(results, obs_table, cfg) {
       if (is.null(ev) || nrow(ev) == 0) next
       o <- scalar_obs[scalar_obs$exp_id == exp, , drop = FALSE]
       if (nrow(o) == 0) next
-      agg <- aggregate(value ~ treatment + variable + kind, data = o, FUN = mean)
+      pg <- results[[exp]]$plantgro
+      computed <- lapply(seq_len(nrow(o)), function(j) {
+        rr <- o[j, , drop = FALSE]
+        mapping <- .scalar_observation_mapping(rr$variable, sc_map, sc_inv)
+        data.frame(
+          treatment = as.integer(rr$treatment),
+          variable = mapping$user_var,
+          dssat = mapping$dssat_var,
+          kind = as.character(rr$kind),
+          value = .observed_scalar_value(rr, mapping$dssat_var, pg),
+          stringsAsFactors = FALSE
+        )
+      })
+      computed <- do.call(rbind, computed)
+      computed <- computed[is.finite(computed$value), , drop = FALSE]
+      if (nrow(computed) == 0) next
+      agg <- aggregate(value ~ treatment + variable + dssat + kind, data = computed, FUN = mean)
       for (i in seq_len(nrow(agg))) {
         r <- agg[i, ]
-        user_var <- r$variable
-        dssat_var <- if (!is.null(sc_map[[user_var]])) sc_map[[user_var]] else user_var
-        if (!(dssat_var %in% ev$variable)) next
+        user_var <- as.character(r$variable)
+        dssat_var <- as.character(r$dssat)
+        obs_value <- as.numeric(r$value)
+        if (is.na(obs_value) || is.null(sc_inv[[dssat_var]])) next
         key <- paste(exp, as.integer(r$treatment), user_var, r$kind, sep = "\r")
         if (key %in% seen_scalar) next
         sub <- ev[ev$treatment == r$treatment & ev$variable == dssat_var, , drop = FALSE]
-        if (nrow(sub) == 0 || is.na(sub$sim[1]) || is.na(r$value)) next
+        sim_value <- if (nrow(sub) == 0 || is.na(sub$sim[1])) obs_value + 1000.0 else as.numeric(sub$sim[1])
         add(data.frame(exp_id = exp, treatment = as.integer(r$treatment),
                        user_var = user_var, dssat = dssat_var, kind = r$kind,
-                       date = as.Date(NA), obs = as.numeric(r$value),
-                       sim = as.numeric(sub$sim[1]), stringsAsFactors = FALSE))
+                       date = as.Date(NA), obs = obs_value,
+                       sim = sim_value, stringsAsFactors = FALSE))
         seen_scalar <- c(seen_scalar, key)
       }
     }
@@ -203,12 +315,13 @@ build_residuals <- function(results, obs_table, cfg) {
       for (i in seq_len(nrow(agg))) {
         r <- agg[i, ]
         col <- r$variable
-        if (!col %in% names(pg)) next
-        sub <- pg[pg$treatment == r$treatment & pg$date == r$date, , drop = FALSE]
-        if (nrow(sub) == 0) next
-        simv <- sub[[col]][1]
+        # PlantGro may contain many columns that are intentionally outside this
+        # calibration. Only variables explicitly mapped by the active config are
+        # scorable, matching the Python objective contract.
+        if (!col %in% names(ts_inv) || !col %in% names(pg)) next
+        simv <- .timeseries_sim_value(pg, r$treatment, r$date, col)
         if (is.na(simv)) next
-        uv <- if (!is.null(ts_inv[[col]])) ts_inv[[col]] else col
+        uv <- ts_inv[[col]]
         add(data.frame(exp_id = exp, treatment = as.integer(r$treatment),
                        user_var = uv, dssat = col, kind = "timeseries",
                        date = r$date, obs = as.numeric(r$value), sim = as.numeric(simv),
@@ -220,12 +333,49 @@ build_residuals <- function(results, obs_table, cfg) {
   if (length(rows) == 0) return(data.frame())
   df <- do.call(rbind, rows)
   rownames(df) <- seq_len(nrow(df))
+  df <- .drop_configured_zero_observations(df, cfg)
+  if (nrow(df) == 0) return(df)
 
   wts <- if (!is.null(cfg$objective$weights)) cfg$objective$weights else list()
-  df$sigma <- mapply(function(uv, ov) .obj_sigma(uv, ov, cfg), df$user_var, df$obs)
-  df$weight <- vapply(df$user_var, function(v) {
+  configured_weight <- function(v) {
     if (!is.null(wts[[v]])) as.numeric(wts[[v]]) else 1.0
-  }, numeric(1))
+  }
+  lookup_key <- function(exp_id, treatment, variable, date) {
+    date_part <- if (length(date) && !is.na(date)) as.character(as.Date(date)) else ""
+    paste(as.character(exp_id), as.integer(treatment), as.character(variable),
+          date_part, sep = "\r")
+  }
+  # Observation adapters may provide row-level sigma/quality weights. As in
+  # Python, those values override objective defaults; missing values fall back
+  # to the configured error model and per-variable weight.
+  if (!is.null(obs_table) && nrow(obs_table) > 0 && "sigma" %in% names(obs_table)) {
+    lookup <- new.env(hash = TRUE, parent = emptyenv())
+    for (i in seq_len(nrow(obs_table))) {
+      r <- obs_table[i, , drop = FALSE]
+      key <- lookup_key(r$exp_id, r$treatment, r$variable, r$date)
+      wt <- if ("weight" %in% names(r)) r$weight else NA_real_
+      assign(key, list(sigma = suppressWarnings(as.numeric(r$sigma)),
+                       weight = suppressWarnings(as.numeric(wt))), envir = lookup)
+    }
+    params <- lapply(seq_len(nrow(df)), function(i) {
+      r <- df[i, , drop = FALSE]
+      key <- lookup_key(r$exp_id, r$treatment, r$dssat, r$date)
+      val <- if (exists(key, envir = lookup, inherits = FALSE)) get(key, envir = lookup) else NULL
+      sigma <- if (!is.null(val) && length(val$sigma) && !is.na(val$sigma)) {
+        val$sigma
+      } else .obj_sigma(r$user_var, r$obs, cfg)
+      weight <- if (!is.null(val) && length(val$weight) && !is.na(val$weight)) {
+        val$weight
+      } else configured_weight(as.character(r$user_var))
+      c(sigma = as.numeric(sigma), weight = as.numeric(weight))
+    })
+    params <- do.call(rbind, params)
+    df$sigma <- params[, "sigma"]
+    df$weight <- params[, "weight"]
+  } else {
+    df$sigma <- mapply(function(uv, ov) .obj_sigma(uv, ov, cfg), df$user_var, df$obs)
+    df$weight <- vapply(df$user_var, configured_weight, numeric(1))
+  }
 
   df$resid <- df$sim - df$obs
   if (isTRUE(cfg$objective$obs_autocorr)) df <- .downweight_autocorr(df)

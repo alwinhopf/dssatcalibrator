@@ -152,10 +152,12 @@ def test_grid_sampler_can_skip_start_row_for_exact_factorial_size():
     assert design["PPSEN__IB0008"].nunique() == 5
 
 
-def test_env_override(monkeypatch):
+def test_env_override(monkeypatch, tmp_path):
     monkeypatch.setenv("DSSATCAL_NUM_CORES", "5")
+    monkeypatch.setenv("DSSATCAL_HEMP_DIR", str(tmp_path))
     cfg = cfgmod.load_config(HEMP_CFG)
     assert cfg["calibrator"]["num_cores"] == 5
+    assert cfg["source"]["hemp_dir"] == str(tmp_path)
 
 
 def test_zero_num_cores_uses_all_logical_cores(monkeypatch):
@@ -166,7 +168,12 @@ def test_zero_num_cores_uses_all_logical_cores(monkeypatch):
 def test_resolve_exe():
     cfg = cfgmod.load_config(HEMP_CFG)
     exe = cfgmod.resolve_exe(cfg)
-    assert "with_HM_code" in str(exe)
+    # Retain a valid explicit executable, but fall back from a foreign Windows
+    # path to the sibling POSIX DSSAT48 install when available.
+    if exe.exists():
+        assert exe.name.lower() in {"dscsm048", "dscsm048.exe", "dscsm048_compiled_4.8.2.with_hm_code.exe"}
+    else:
+        assert "with_HM_code" in str(exe)
 
 
 def test_shared_stack_defaults_and_template_env(monkeypatch, tmp_path):

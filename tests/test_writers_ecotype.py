@@ -4,7 +4,15 @@ from pathlib import Path
 
 from dssatcalibrator.writers import edit_ecotype, read_ecotype_values, ecotype_field_map
 
-ECO = Path("C:/DSSAT48/Genotype/HMGRO048.ECO")
+REPO = Path(__file__).resolve().parents[1]
+ECO = REPO.parent / "DSSAT48" / "Genotype" / "HMGRO048.ECO"
+if not ECO.exists():
+    ECO = Path("C:/DSSAT48/Genotype/HMGRO048.ECO")
+
+
+def _anchor(eco: Path) -> str:
+    text = eco.read_text(errors="replace")
+    return "HM0003" if any(line.startswith("HM0003") for line in text.splitlines()) else "HM0001"
 
 
 def _eco(tmp_path):
@@ -27,9 +35,10 @@ def test_field_map_has_all_coefficients(tmp_path):
 
 def test_edit_ecotype_changes_only_targeted(tmp_path):
     eco = _eco(tmp_path)
-    before = read_ecotype_values(eco, "HM0003")
-    edit_ecotype(eco, "HM0003", {"PL-EM": 5.2, "RHGHT": 2.1})
-    after = read_ecotype_values(eco, "HM0003")
+    anchor = _anchor(eco)
+    before = read_ecotype_values(eco, anchor)
+    edit_ecotype(eco, anchor, {"PL-EM": 5.2, "RHGHT": 2.1})
+    after = read_ecotype_values(eco, anchor)
     assert after["PL-EM"] == 5.2
     assert after["RHGHT"] == 2.1
     # untouched coefficients preserved exactly
@@ -41,7 +50,7 @@ def test_edit_ecotype_rejects_unknown(tmp_path):
     import pytest
     eco = _eco(tmp_path)
     with pytest.raises(KeyError):
-        edit_ecotype(eco, "HM0003", {"NOPE": 1.0})
+        edit_ecotype(eco, _anchor(eco), {"NOPE": 1.0})
 
 
 def test_edit_ecotype_keeps_precision_for_small_changed_values(tmp_path):

@@ -63,10 +63,15 @@ def run_glue(design: pd.DataFrame, param_names: list[str], cfg: dict,
 
     q = float(cfg.get("method", {}).get("bayesian", {}).get("behavioural_quantile", 0.1))
     valid = d[np.isfinite(d["score"])]
+    if valid.empty:
+        raise ValueError(
+            "GLUE found no valid candidates: every evaluated score is non-finite. "
+            "Inspect the spawn manifest and per-run DSSAT errors."
+        )
     threshold = float(valid["score"].quantile(q)) if not valid.empty else float("inf")
     behavioural = d[d["score"] <= threshold].copy()
 
-    best_id = int(valid["score"].idxmin()) if not valid.empty else 0
+    best_id = int(valid["score"].idxmin())
     best_theta = {n: float(d.loc[best_id, n]) for n in param_names}
 
     return GlueResult(design=d, behavioural=behavioural, best_theta=best_theta,

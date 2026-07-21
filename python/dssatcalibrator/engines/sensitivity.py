@@ -118,13 +118,15 @@ def run_sobol(space, score_results: Callable[[list[dict]], list], *,
 
     problem = {"num_vars": space.ndim, "names": list(space.names),
                "bounds": list(zip(space.low.tolist(), space.high.tolist()))}
-    X = sobol_sample.sample(problem, n_base)         # (n_base*(2k+2), k)
+    X = sobol_sample.sample(problem, n_base, seed=seed)  # (n_base*(2k+2), k)
     thetas = [space.to_theta(row) for row in X]
     results = score_results(thetas)
     Y = np.array([r.score if np.isfinite(r.score) else np.nan for r in results])
     # SALib cannot handle NaN; replace failed runs with the worst observed score.
-    if np.isnan(Y).any():
-        Y = np.where(np.isnan(Y), np.nanmax(Y) if np.isfinite(np.nanmax(Y)) else 0.0, Y)
+    if not np.isfinite(Y).all():
+        finite = Y[np.isfinite(Y)]
+        replacement = float(finite.max()) if finite.size else 0.0
+        Y = np.where(np.isfinite(Y), Y, replacement)
     Si = sobol_analyze.analyze(problem, Y, print_to_console=False)
     ranking = (pd.DataFrame({"parameter": problem["names"], "S1": Si["S1"], "ST": Si["ST"]})
                .sort_values("ST", ascending=False).reset_index(drop=True))

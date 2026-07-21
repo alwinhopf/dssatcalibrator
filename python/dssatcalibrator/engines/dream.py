@@ -123,7 +123,8 @@ def run_dream(cfg: dict, score_results, space, *, progress: bool = True) -> Mcmc
     design = pd.DataFrame(rows)
     design["weight"] = 1.0 / len(design)
 
-    best_sample_id = int(design["score"].idxmin())
+    valid = design[np.isfinite(design["score"])]
+    best_sample_id = int(valid["score"].idxmin()) if not valid.empty else 0
     best_theta = {n: float(design.loc[best_sample_id, n]) for n in names}
     best = obj_results[best_sample_id]
 

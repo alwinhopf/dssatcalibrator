@@ -61,6 +61,23 @@ def test_build_residuals_both_paths():
     assert "phenology" in set(resid["kind"]) and "timeseries" in set(resid["kind"])
 
 
+def test_unconfigured_plantgro_columns_are_not_scored():
+    """Available PlantGro columns are not automatically calibration targets."""
+    obs = pd.concat([
+        _obs(),
+        pd.DataFrame([
+            ("E1", 1, "RWAD", "timeseries", DATES[0], 250.0, np.nan, 1.0),
+        ], columns=SCHEMA),
+    ], ignore_index=True)
+    result = _result(75.0, 1000.0, [5000.0, 8000.0])
+    result.plantgro["RWAD"] = [250.0, 300.0]
+
+    resid = obj.build_residuals({"E1": result}, obs, CFG)
+
+    assert "RWAD" not in set(resid["dssat"])
+    assert len(resid[resid["kind"] == "timeseries"]) == 2
+
+
 def test_filea_phenology_date_maps_to_dap_output():
     obs = pd.DataFrame([
         ("E1", 1, "ADAT", "phenology", DATES[0], 21260.0, np.nan, 1.0),
@@ -111,6 +128,27 @@ def test_configured_zero_observations_are_ignored():
     biomass = resid[resid["user_var"] == "biomass"]
     assert len(biomass) == 1
     assert biomass.iloc[0]["obs"] == 8000.0
+
+
+def test_observation_sigma_and_weight_override_objective_defaults():
+    obs = _obs().iloc[[0]].copy()
+    obs.loc[:, "sigma"] = 50.0
+    obs.loc[:, "weight"] = 0.25
+    cfg = {
+        **CFG,
+        "objective": {
+            **CFG["objective"],
+            "weights": {**CFG["objective"]["weights"], "biomass": 0.5},
+        },
+    }
+
+    resid = obj.build_residuals(
+        {"E1": _result(75.0, 1000.0, [5000.0, 8000.0])}, obs, cfg
+    )
+    biomass = resid[resid["user_var"] == "biomass"].iloc[0]
+
+    assert biomass["sigma"] == 50.0
+    assert biomass["weight"] == 0.25
 
 
 def test_perfect_fit_scores_zero():

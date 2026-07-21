@@ -76,6 +76,13 @@ python run_impact_atlas.py config_hemp.yaml --experiments UFCI2101 --discover-ge
 Rscript -e "library(dssatcalibrator); run_impact_atlas('config_hemp.yaml', experiments='UFCI2101', discover_genotype=TRUE, allow_species=TRUE, max_per_group=1, grid_points=3, num_cores=2, write_long=FALSE)"
 ```
 
+For report-oriented cross-validation with a final parameter recommendation, add
+an enabled `cross_validation` block (`leave_one_out`, `k_fold`,
+`leave_site_out`, or expanding-window `temporal_forward`) and call
+`run_cross_validation(cfg)` after importing it from `dssatcalibrator.cv` in
+Python, or call `run_cross_validation(cfg)` in R. Fold experiment subsets use
+the top-level `experiments` field in both languages.
+
 Calibration outputs (`design.csv`, `best_theta.json`, `objective_breakdown.csv`, `manifest.csv`/`.json`, and summary tables) are written to `results/<calibrator_name>/` or custom directory paths; figures go under `figures/<calibrator_name>/` by default. The impact atlas additionally writes `run_manifest.json`, `failed_runs.csv`, per-group plots under `plots/`, and broad DSSAT output effect summaries.
 
 ## Cloud runs (SageMaker / EKS)
@@ -105,10 +112,11 @@ python -m pytest -m "not slow"
 python -m pytest
 ```
 
-## R interface (full parity)
+## R interface (core calibration parity)
 
-`dssatcalibrator` ships as a **dual-language package**: every public function has an
-R twin with the same name, and both languages read the same `config.yaml`. The
+`dssatcalibrator` ships as a **dual-language package**: the calibration engines,
+configuration, parameter spaces, writers, parsers, objective, spawning, and
+orchestration have R twins, and both languages read the same `config.yaml`. The
 layout mirrors the workspace's other shared packages (`dssatengine`, `dssatutils`):
 
 ```
@@ -171,6 +179,25 @@ The SageMaker/EKS files under `../dssatdocker/` are orchestration wrappers. The 
 launcher is Python because it handles AWS/S3 plumbing, but the container can run
 either `run_calibration.py` or `run_calibration.R` via `--language python|r`.
 This does not add a new calibration algorithm or output schema.
+
+The R impact-atlas entry point is intentionally a wrapper around
+`run_impact_atlas.py`, so both front ends use one real-DSSAT discovery/catalog
+implementation. Core report tables and the observed-vs-simulated figure exist in
+both languages; the larger set of specialized diagnostic plot panels is currently
+Python-only. These are reporting/orchestration divergences, not estimator or
+objective divergences.
+
+## Portable local DSSAT paths
+
+Set `DSSATCAL_DSSAT_DIR`, `DSSATCAL_DSSAT_EXE`, and `DSSATCAL_HEMP_DIR` to move a
+config between machines without editing YAML. If a config contains a foreign
+Windows path on POSIX, the loaders can discover a sibling `../DSSAT48` install.
+Run the maintained real-binary checks with:
+
+```bash
+PYTHONPATH=python python -m pytest tests/test_live_workspace_dssat.py -m slow -q
+Rscript run_r_actual_pooled_dssat_test.R
+```
 
 ## Dependencies (R)
 

@@ -30,9 +30,10 @@ HEMP_REFERENCE_FILES = [
 
 @pytest.fixture
 def smoke_dir():
-    if not (SMOKE / "PlantGro.OUT").exists():
+    smoke = SMOKE if (SMOKE / "PlantGro.OUT").exists() else REPO / "tests" / "fixtures"
+    if not (smoke / "PlantGro.OUT").exists():
         pytest.skip("smoke outputs not present (run the hemp smoke test first)")
-    return SMOKE
+    return smoke
 
 
 @pytest.fixture

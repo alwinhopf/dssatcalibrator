@@ -29,6 +29,10 @@ make_scorer <- function(seed = 0, n_obs = 10, sigma = 0.2) {
   })
 }
 
+all_invalid_scorer <- function(thetas) lapply(thetas, function(t) list(
+  score = Inf, loglik = -Inf, residuals = data.frame(), per_var = list()
+))
+
 err <- function(theta) sqrt(sum((as.numeric(unlist(theta[NAMES])) - TARGET)^2))
 cfg_for <- function(engine, ...) list(calibrator = list(seed = 7, num_cores = 1),
                                       method = list(bayesian = c(list(engine = engine), list(...))))
@@ -73,6 +77,19 @@ test_that("ABC-SMC (R) accepts a final population", {
   expect_lt(err(r$best_theta), 3.0)
 })
 
+test_that("sparse Bayesian engines reject all-invalid candidates", {
+  expect_error(
+    run_history_matching(cfg_for("history", n = 8, waves = 2),
+                         all_invalid_scorer, make_space(), progress = FALSE),
+    "History matching found no valid candidates"
+  )
+  expect_error(
+    run_abc_smc(cfg_for("abc_smc", n_particles = 8, waves = 2, oversample = 1),
+                all_invalid_scorer, make_space(), progress = FALSE),
+    "ABC-SMC found no valid candidates"
+  )
+})
+
 test_that("the added engines resolve through the registry", {
   expect_equal(.resolve_estimator(list(bayesian = list(engine = "dream"))), "dream")
   expect_equal(.resolve_estimator(list(bayesian = list(engine = "es_mda"))), "es_mda")
@@ -81,4 +98,65 @@ test_that("the added engines resolve through the registry", {
   expect_equal(.resolve_estimator(list(bayesian = list(engine = "abc_smc"))), "abc_smc")
   expect_equal(.resolve_estimator(list(bayesian = list(engine = "none"),
                                        optimizer = list(engine = "cmaes"))), "optimizer")
+})
+
+test_that("Sobol sensitivity (R) ranks the influential parameter", {
+  sp <- list(
+    names = c("a", "b"), low = c(0, 0), high = c(10, 10), start = c(5, 5),
+    specs = list(list(name = "a", min = 0, max = 10, start = 5),
+                 list(name = "b", min = 0, max = 10, start = 5))
+  )
+  scorer <- function(thetas) lapply(thetas, function(theta)
+    list(score = 5 * theta$a + 0.001 * theta$b))
+  first <- run_sensitivity(sp, scorer, method = "sobol", n_base = 128, seed = 7)
+  second <- run_sensitivity(sp, scorer, method = "sobol", n_base = 128, seed = 7)
+  expect_equal(first$ranking, second$ranking)
+  expect_equal(first$ranking$parameter[1], "a")
+  expect_equal(first$n_eval, 128 * (2 * length(sp$names)))
+})
+
+test_that("DEoptim differential evolution executes the real optional backend", {
+  skip_if_not_installed("DEoptim")
+  sp <- make_space()
+  score_batch <- function(ths) vapply(ths, function(t) sum((unlist(t[NAMES]) - TARGET)^2), numeric(1))
+  res <- run_optimizer(sp, score_batch, method = "diffevo", seed = 4,
+                       maxiter = 25, popsize = 10)
+  expect_true(is.finite(res$best_score))
+  expect_lt(err(res$best_theta), 1.0)
+})
+
+test_that("mco NSGA-II executes and returns a finite Pareto population", {
+  skip_if_not_installed("mco")
+  sp <- make_space()
+  evaluate <- function(ths) lapply(ths, function(t) {
+    x <- unlist(t[NAMES])
+    list(first = sum((x - TARGET)^2), second = sum((x + TARGET)^2))
+  })
+  res <- run_nsga2(evaluate, sp, c("first", "second"), pop_size = 8,
+                   n_gen = 3, seed = 5)
+  expect_equal(ncol(res$F), 2)
+  expect_true(nrow(res$F) > 0 && all(is.finite(res$F)))
+})
+
+test_that("GP and RF surrogate backends execute with finite designs", {
+  skip_if_not_installed("DiceKriging")
+  skip_if_not_installed("ranger")
+  sp <- make_space(); scorer <- make_scorer()
+  for (backend in c("gp", "rf")) {
+    cfg <- list(calibrator = list(seed = 8),
+                method = list(surrogate = list(engine = backend, n_train = 16,
+                                                n_candidates = 40, top_k = 3)))
+    res <- run_surrogate(cfg, sp, scorer, progress = FALSE)
+    expect_equal(res$info$model, backend)
+    expect_true(nrow(res$design) >= 7 && any(is.finite(res$design$score)))
+  }
+})
+
+test_that("DiceKriging Bayesian optimisation executes", {
+  skip_if_not_installed("DiceKriging")
+  sp <- make_space(); scorer <- make_scorer()
+  cfg <- cfg_for("bayesopt", n_init = 10, n_iter = 1, batch_size = 2)
+  res <- run_bayesopt(cfg, scorer, sp, progress = FALSE)
+  expect_true(is.finite(res$best$score))
+  expect_equal(nrow(res$design), 12)
 })

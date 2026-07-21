@@ -194,7 +194,8 @@ Recommend **A** now, leaving **B** as a later consolidation if the engine grows 
 - **Pins:** keep `dssatutils@v0.4.0` / the verified `dssatengine` 0.4.0 release commit as
   **optional extras**; refresh any lockfile; update `DEPENDENCIES.md` (calibrator row: *"does not use"* →
   *"consumes `dssatengine` for execution; `dssatutils` for acquisition (optional extra)"*).
-- **R/Python parity (principle 5):** the calibrator is Python-only today; it stays Python-only
+- **R/Python parity (principle 5):** the calibrator now has mirrored R and Python
+  calibration implementations; shared-stack changes must preserve both paths
   (documented). Upstream engine API promotions in Phase 0 must be mirrored R↔Python.
 - **Caches (principle 6):** `weather_cache/` already git-ignored; engine run logs land under
   `results/` (ignored).

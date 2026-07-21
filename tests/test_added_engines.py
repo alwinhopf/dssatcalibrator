@@ -51,6 +51,13 @@ def _scorer(seed=0, n_obs=10, sigma=0.2):
     return score_results
 
 
+def _all_invalid_scorer(thetas):
+    return [ObjectiveResult(
+        score=float("inf"), loglik=float("-inf"),
+        residuals=pd.DataFrame(), per_var={}, per_exp_var=pd.DataFrame(),
+    ) for _ in thetas]
+
+
 def _cfg(engine, **bayes):
     return {"calibrator": {"seed": 7, "num_cores": 1},
             "method": {"bayesian": {"engine": engine, **bayes}}}
@@ -120,6 +127,24 @@ def test_abc_smc_accepts_final_population():
     assert r.thresholds[-1] <= r.thresholds[0]
     assert _err(r.best_theta) < 2.5
     assert orch._resolve_estimator({"bayesian": {"engine": "abc_smc"}}) == "abc_smc"
+
+
+@pytest.mark.parametrize(
+    ("engine", "message"),
+    [
+        ("history", "History matching found no valid candidates"),
+        ("abc_smc", "ABC-SMC found no valid candidates"),
+    ],
+)
+def test_sparse_bayesian_engines_reject_all_invalid_candidates(engine, message):
+    if engine == "history":
+        from dssatcalibrator.engines.history import run_history_matching as run
+        cfg = _cfg(engine, n=8, waves=2)
+    else:
+        from dssatcalibrator.engines.abc_smc import run_abc_smc as run
+        cfg = _cfg(engine, n_particles=8, waves=2, oversample=1)
+    with pytest.raises(ValueError, match=message):
+        run(cfg, _all_invalid_scorer, _space(), progress=False)
 
 
 def test_all_new_engines_in_registry():

@@ -15,7 +15,8 @@ from dssatcalibrator import priors
 from dssatcalibrator.objective import ObjectiveResult
 from dssatcalibrator.spaces import ParameterSpace
 from dssatcalibrator.engines import (
-    influential_params, run_mcmc, run_morris, run_optimizer, stepwise_select,
+    influential_params, run_mcmc, run_morris, run_optimizer, run_sobol,
+    stepwise_select,
 )
 from dssatcalibrator.engines.sensitivity import anova_variance_share
 from dssatcalibrator.orchestrator import _apply_active_subset, _resolve_method, _stage_on
@@ -81,6 +82,20 @@ def test_morris_ranks_influential_first():
     assert sens.ranking.iloc[0]["parameter"] == "a"
     assert "a" in influential_params(sens.ranking)
     assert "b" not in influential_params(sens.ranking, rel_threshold=0.5)
+
+
+def test_sobol_is_reproducible_and_ranks_influential_first():
+    space = make_space()
+
+    def score_results(thetas):
+        return [ObjectiveResult(score=5.0 * t["a"] + 0.001 * t["b"], loglik=0.0,
+                                residuals=pd.DataFrame()) for t in thetas]
+
+    first = run_sobol(space, score_results, n_base=64, seed=7)
+    second = run_sobol(space, score_results, n_base=64, seed=7)
+    pd.testing.assert_frame_equal(first.ranking, second.ranking)
+    assert first.ranking.iloc[0]["parameter"] == "a"
+    assert first.n_eval == 64 * (2 * space.ndim + 2)
 
 
 def test_anova_variance_share():

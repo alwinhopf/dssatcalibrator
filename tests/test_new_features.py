@@ -15,7 +15,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-SMOKE = Path(__file__).resolve().parent.parent / "_smoke"
+REPO = Path(__file__).resolve().parent.parent
+SMOKE = REPO / "_smoke"
+if not (SMOKE / "HMGRO048.CUL").exists():
+    SMOKE = REPO.parent / "DSSAT48" / "Genotype"
 
 
 # --------------------------------------------------------------------------- #

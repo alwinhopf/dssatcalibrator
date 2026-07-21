@@ -378,7 +378,8 @@ def run_smc_pf(cfg: dict, progress: bool = True) -> SmcResult:
     design = pd.DataFrame(rows)
     design["weight"] = weights
 
-    best_sample_id = int(design["score"].idxmin()) if not design.empty else 0
+    valid = design[np.isfinite(design["score"])]
+    best_sample_id = int(valid["score"].idxmin()) if not valid.empty else 0
     best_theta = particles[best_sample_id]["theta"]
     best = obj_results[best_sample_id]
 

@@ -42,7 +42,9 @@ include = ["dssatcalibrator*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["python"]
+filterwarnings = [
+    "ignore:numpy.ndarray size changed:RuntimeWarning",
+]
 markers = [
     "slow: end-to-end tests that invoke the DSSAT binary (deselect with -m 'not slow')",
 ]
-filterwarnings = ["ignore::RuntimeWarning"]

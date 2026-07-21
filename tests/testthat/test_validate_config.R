@@ -37,3 +37,28 @@ test_that("validate_config requires at least one active parameter", {
   cfg <- list(parameters = list(g = list(A = list(active = FALSE, min = 0, max = 1))))
   expect_error(validate_config(cfg), "No active parameters")
 })
+
+test_that("cultivar-scoped parameters and zero-observation defaults match Python", {
+  cfg <- .dssatcal_defaults()
+  expect_true("ignore_zero_observations" %in% names(cfg$objective))
+  cfg$experiments <- list("E1")
+  cfg$parameters <- list(g = list(A = list(active = TRUE, min = 0, max = 1,
+                                               scope = "per_cultivar")))
+  expect_identical(validate_config(cfg), invisible(cfg))
+})
+
+test_that("DSSAT path resolution supports sibling POSIX installations", {
+  cfg_path <- "../../config_hemp.yaml"
+  if (!file.exists(cfg_path)) cfg_path <- "config_hemp.yaml"
+  skip_if_not(file.exists(cfg_path), "config_hemp.yaml not found")
+  cfg <- load_config(cfg_path, validate = FALSE)
+  exe <- resolve_exe(cfg)
+  if (file.exists(exe)) {
+    expect_true(tolower(basename(exe)) %in% c(
+      "dscsm048", "dscsm048.exe", "dscsm048_compiled_4.8.2.with_hm_code.exe"
+    ))
+    expect_true(dir.exists(resolve_dssat_paths(cfg)$genotype))
+  } else {
+    expect_match(exe, "with_HM_code", fixed = TRUE)
+  }
+})

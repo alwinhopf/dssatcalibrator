@@ -77,3 +77,31 @@ test_that("validate_config accepts parameter scope and rejects unknown scope", {
   bad$parameters$genetic_cultivar$CULP$scope <- "plot"
   expect_error(validate_config(bad), "scope 'plot'", fixed = TRUE)
 })
+
+test_that("cultivar-scoped parameters expand, filter, and preserve fixed values", {
+  cfg <- pooled_cfg()
+  cfg$crops <- list(list(cultivar_anchor = "IB1", cultivar_anchors = list("IB1", "IB2")))
+  cfg$parameters$genetic_cultivar$CULP$scope <- "cultivar"
+  cfg$parameters$genetic_cultivar$CULP$start_by_cultivar <- list(IB1 = 12, IB2 = 18)
+  cfg$parameters$genetic_ecotype$FIXED <- list(active = FALSE, fixed = TRUE,
+                                               min = 1, max = 5, start = 3)
+  specs <- expand_parameter_specs(cfg, active_parameters(cfg))
+  expect_true(all(c("CULP__IB1", "CULP__IB2") %in%
+                    vapply(specs, function(s) s$name, character(1))))
+  starts <- setNames(vapply(specs, function(s) as.numeric(s$start), numeric(1)),
+                     vapply(specs, function(s) s$name, character(1)))
+  expect_equal(starts[c("CULP__IB1", "CULP__IB2")], c(CULP__IB1 = 12, CULP__IB2 = 18))
+
+  fixed <- expand_parameter_specs(cfg, fixed_parameters(cfg))
+  theta <- list(CULP__IB1 = 11, CULP__IB2 = 19)
+  groups <- .partition_theta(theta, c(specs, fixed), exp_id = "E1", cultivars = "IB1")
+  expect_equal(groups$genetic_cultivar_by_cultivar$IB1, list(CULP = 11))
+  expect_null(groups$genetic_cultivar_by_cultivar$IB2)
+  expect_equal(groups$genetic_ecotype$FIXED, 3)
+})
+
+test_that("treatment selections use distinct cache directories", {
+  expect_equal(.treatment_run_key(c(2, 1, 2)), "T1-2")
+  expect_equal(.treatment_run_key(2), "T2")
+  expect_null(.treatment_run_key(NULL))
+})

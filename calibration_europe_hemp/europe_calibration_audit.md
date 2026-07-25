@@ -317,6 +317,11 @@ already exceeded the expected 1-2 hour runtime on this machine.
 - `GWAD` and `FLWAD` observations are not used in this Stage 2 objective because
   the China biomass stage also focuses on biomass, leaf, stem, height, LAI, and
   phenology. Mapping these would be a Stage 3/all-observed extension.
+- The later global joint-calibration audit confirmed that `FLWAD` must remain
+  excluded. CROPGRO-Hemp does not emit `FLWAD`, and every non-missing
+  `UKAB2101.HMT` `FLWAD` value is an exact duplicate of an `ITPIT210.HMT`
+  `LWAD` value, including records before observed UK flowering. These are
+  contaminated observations, not calibratable flower biomass.
 
 ## Verification
 

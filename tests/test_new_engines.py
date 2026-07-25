@@ -69,6 +69,20 @@ def test_optimizer_finds_minimum(method):
     assert res.best_score < 1.0 and res.n_eval > 0
 
 
+def test_diffevo_bounds_evaluation_batch_size():
+    space = make_space()
+    seen = []
+
+    def score_batch(thetas):
+        seen.append(len(thetas))
+        return [(t["a"] - 3.0) ** 2 + (t["b"] - 7.0) ** 2 for t in thetas]
+
+    run_optimizer(space, score_batch, method="diffevo", seed=1, maxiter=1,
+                  popsize=4, eval_batch_size=3)
+    assert seen
+    assert max(seen) <= 3
+
+
 # ---------------------------------------------------------------------- sensitivity
 def test_morris_ranks_influential_first():
     space = make_space()

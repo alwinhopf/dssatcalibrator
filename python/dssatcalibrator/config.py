@@ -160,7 +160,7 @@ def load_config(path: str | Path, *, validate: bool = True) -> dict:
 
 # Allowed vocabularies, kept here so both the validator and the docs cite one
 # source. These mirror the Python engine code paths (and the R twin).
-PRESETS = {"A", "B", "C", "D"}
+PRESETS = {"A", "B", "C", "D", "CUSTOM"}
 WEIGHTING_MODES = {"unified", "sigma", "user", "count_scale", "agmip_wls"}
 CV_SCHEMES = {"none", "loeo", "year", "site", "random"}
 PRIOR_DISTS = {"uniform", "normal", "lognormal", "triangular"}

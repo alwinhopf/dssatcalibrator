@@ -19,6 +19,12 @@ def test_validate_config_accepts_reference_config():
     assert cfgmod.validate_config(cfg) is cfg
 
 
+def test_validate_config_accepts_custom_pipeline():
+    cfg = deepcopy(cfgmod.load_config(HEMP_CFG))
+    cfg["method"]["preset"] = "custom"
+    assert cfgmod.validate_config(cfg) is cfg
+
+
 def test_validate_config_collects_all_problems():
     bad = {
         "method": {"preset": "Z", "validation": {"scheme": "weekly"}},

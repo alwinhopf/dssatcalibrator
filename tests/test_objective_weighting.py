@@ -47,3 +47,14 @@ def test_obs_autocorr_downweights_timeseries():
     w_base = base[base["kind"] == "timeseries"]["weight"].sum()
     w_aut = aut[aut["kind"] == "timeseries"]["weight"].sum()
     assert w_aut < w_base        # serial-correlation down-weighting shrank the series
+
+
+def test_row_level_weights_affect_unified_score():
+    obs = _obs()
+    obs.loc[0, "weight"] = 0.01
+    sim = [300.0, 200.0, 300.0, 400.0, 500.0]
+
+    downweighted = obj.score(_results(sim), obs, CFG)
+    equal = obj.score(_results(sim), _obs(), CFG)
+
+    assert downweighted.score < equal.score

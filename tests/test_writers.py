@@ -46,6 +46,20 @@ def test_edit_cultivar_changes_only_targeted(tmp_path):
         assert after[k] == before[k], k
 
 
+def test_read_cultivar_recovers_overflowed_numeric_cell(tmp_path):
+    cul = tmp_path / "overflow.CUL"
+    cul.write_text(
+        "@VAR#  VAR-NAME........ EXPNO   ECO#  CSDL PPSEN EM-FL FL-SH FL-SD SD-PM FL-LF LFMAX SLAVR SIZLF  XFRT WTPSD SFDUR SDPDV PODUR THRSH SDPRO SDLIP\n"
+        "IB0008 YUNMA8               . HM0003 12.80 0.90   30.0  10.0  15.0 50.00 40.00 1.400  250. 250.0  0.60  0.035 20.0   1.0  30.0  80.0  .256  .319\n",
+        encoding="utf-8",
+    )
+
+    values = read_cultivar_values(cul, "IB0008")
+
+    assert values["WTPSD"] == 0.035
+    assert values["SFDUR"] == 20.0
+
+
 def test_edit_cultivar_rejects_unknown(tmp_path):
     import pytest
     cul = _cul(tmp_path)

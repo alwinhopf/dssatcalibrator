@@ -54,7 +54,11 @@ def test_make_report_writes_manifest_and_objective_breakdown(tmp_path, monkeypat
                 "status": ["success", "success"],
                 "run_dir": ["runs/E1", "runs/E2"],
                 "theta_json": ['{"P1": 1.0}', '{"P1": 1.0}'],
-            })
+            }),
+            "optimizer_history": [
+                {"iter": 16, "score": 2.0},
+                {"iter": 32, "score": 1.0},
+            ],
         },
     )
 
@@ -63,6 +67,12 @@ def test_make_report_writes_manifest_and_objective_breakdown(tmp_path, monkeypat
     assert paths["manifest"].name == "manifest.csv"
     assert (tmp_path / "manifest.json").exists()
     assert (tmp_path / "objective_breakdown.csv").exists()
+    assert paths["optimizer_history"].name == "optimizer_history.csv"
+    history = pd.read_csv(paths["optimizer_history"])
+    assert history.to_dict(orient="records") == [
+        {"iter": 16, "score": 2.0},
+        {"iter": 32, "score": 1.0},
+    ]
     manifest = pd.read_csv(tmp_path / "manifest.csv")
     breakdown = pd.read_csv(tmp_path / "objective_breakdown.csv")
     assert manifest.shape[0] == 2

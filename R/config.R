@@ -144,7 +144,7 @@ validate_config <- function(cfg) {
   # Allowed vocabularies — mirror config.py. Kept local so sourcing all R/ files
   # into one environment can't clash with engine constants (e.g. orchestrator's
   # `.PRESETS` stage map).
-  PRESETS            <- c("A", "B", "C", "D")
+  PRESETS            <- c("A", "B", "C", "D", "CUSTOM")
   WEIGHTING_MODES    <- c("unified", "sigma", "user", "count_scale", "agmip_wls")
   CV_SCHEMES         <- c("none", "loeo", "year", "site", "random")
   PRIOR_DISTS        <- c("uniform", "normal", "lognormal", "triangular")

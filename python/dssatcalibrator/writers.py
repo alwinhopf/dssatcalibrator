@@ -157,6 +157,15 @@ def read_cultivar_values(cul_path: str | Path, anchor_code: str) -> dict[str, fl
     out = {}
     for name, (lo, hi) in fmap.items():
         out[name] = _parse(line[lo:hi]) if len(line) >= hi else None
+    # Recover legacy rows where one coefficient overflowed its fixed-width cell
+    # and shifted every following value.  The coefficient order is still
+    # unambiguous after ECO#, so an ordered numeric-token parse is safer than
+    # returning partly shifted values (for example YUNMA8 WTPSD/SFDUR).
+    if any(value is None for value in out.values()):
+        first_col = min(lo for lo, _ in fmap.values())
+        numeric = [float(m.group(0)) for m in _NUM_RE.finditer(line[first_col:])]
+        if len(numeric) >= len(fmap):
+            out = {name: numeric[i] for i, name in enumerate(fmap)}
     return out
 
 

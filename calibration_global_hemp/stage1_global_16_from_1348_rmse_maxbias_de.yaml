@@ -1,0 +1,622 @@
+calibrator:
+  name: global_16_from_1348_rmse_maxbias_de
+  seed: 1348
+  workdir: results/_workdir_global_16_from_1348_rmse_maxbias_de
+  results_dir: results/global_hemp_calibration
+  figures_dir: figures/global_hemp_calibration
+  dssat_exe: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/dscsm048_compiled_4.8.2.with_HM_code.exe
+  dssat_dir: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp
+  num_cores: 0
+  cache_spawns: false
+  cache_evaluations: false
+  evaluation_cache_dir: ''
+  evaluation_cache_salt: ''
+  keep_run_dirs: false
+  batch_size: 20
+  spawn_timeout: 60
+method:
+  preset: custom
+  sample:
+    engine: none
+    active: false
+  validation:
+    scheme: none
+  sensitivity:
+    engine: none
+    active: false
+  select:
+    engine: none
+    active: false
+  surrogate:
+    engine: none
+    active: false
+  bayesian:
+    engine: none
+  optimizer:
+    engine: diffevo
+    popsize: 2
+    maxiter: 5
+    tol: 0.001
+  multiobjective:
+    engine: none
+objective:
+  weighting: unified
+  weights:
+    anthesis: 1.0
+  error_model:
+    anthesis:
+      type: absolute
+      value: 1
+  likelihood:
+    type: gaussian
+  model_discrepancy: {}
+  ignore_zero_observations: []
+  score_metric: rmse
+  obs_autocorr: false
+  max_bias_penalty:
+    variable: anthesis
+    lambda: 0.5
+    sigma: 1.0
+    power: 1.0
+    tolerance: 0.0
+parameters:
+  genetic_cultivar:
+    CSDL:
+      active: true
+      min: 11.6586644
+      max: 16.97465745
+      start: 16.17465745
+      prior:
+        dist: uniform
+      scope: cultivar
+      start_by_cultivar:
+        IB0001: 14.641339982266228
+        IB0002: 13.408726277526974
+        IB0007: 16.177430784800663
+        IB0008: 12.756418972589303
+      min_by_cultivar:
+        IB0001: 14.401339982266228
+        IB0002: 13.168726277526973
+        IB0007: 15.985430784800663
+        IB0008: 12.516418972589303
+      max_by_cultivar:
+        IB0001: 14.881339982266228
+        IB0002: 13.648726277526974
+        IB0007: 16.369430784800663
+        IB0008: 12.996418972589304
+    PPSEN:
+      active: true
+      min: 0.001
+      max: 0.8
+      start: 0.05281406
+      prior:
+        dist: uniform
+      scope: cultivar
+      start_by_cultivar:
+        IB0001: 0.449696600765996
+        IB0002: 0.1863532813489323
+        IB0007: 0.0372669106911762
+        IB0008: 0.6446397430658007
+      min_by_cultivar:
+        IB0001: 0.413696600765996
+        IB0002: 0.1605683857489323
+        IB0007: 0.0214492234911762
+        IB0008: 0.6157815262658007
+      max_by_cultivar:
+        IB0001: 0.46761109
+        IB0002: 0.2121381769489323
+        IB0007: 0.0530845978911762
+        IB0008: 0.6734979598658007
+    EM-FL:
+      active: true
+      min: 6.974957
+      max: 57.08227227
+      start: 25.91596685
+      prior:
+        dist: uniform
+      scope: cultivar
+      start_by_cultivar:
+        IB0001: 26.10819022345978
+        IB0002: 15.594022010967173
+        IB0007: 18.085020576873664
+        IB0008: 49.12561414441362
+      min_by_cultivar:
+        IB0001: 23.70819022345978
+        IB0002: 13.194022010967172
+        IB0007: 17.91596685
+        IB0008: 46.72561414441362
+      max_by_cultivar:
+        IB0001: 28.508190223459778
+        IB0002: 17.99402201096717
+        IB0007: 20.00502057687366
+        IB0008: 51.525614144413616
+    FL-SH:
+      active: false
+      min: 0.1
+      max: 30.0
+      start: 8.0
+      prior:
+        dist: uniform
+      scope: cultivar
+    FL-SD:
+      active: false
+      min: 0.1
+      max: 40.0
+      start: 12.0
+      prior:
+        dist: uniform
+      scope: cultivar
+    SD-PM:
+      active: false
+      min: 5.0
+      max: 50.0
+      start: 35.0
+      prior:
+        dist: uniform
+      scope: cultivar
+    FL-LF:
+      active: false
+      min: 1.0
+      max: 80.0
+      start: 30.0
+      prior:
+        dist: uniform
+      scope: cultivar
+  genetic_ecotype:
+    THVAR:
+      active: true
+      min: 0.0
+      max: 0.46638929
+      start: 0.38638929
+      prior:
+        dist: uniform
+      scope: cultivar
+      start_by_cultivar:
+        IB0001: 0.1514377519784546
+        IB0002: 0.0962983687563768
+        IB0007: 0.4040855874875553
+        IB0008: 0.0016573739890777
+      min_by_cultivar:
+        IB0001: 0.1291656535784546
+        IB0002: 0.0695212675563768
+        IB0007: 0.3848855874875553
+        IB0008: 0.0
+      max_by_cultivar:
+        IB0001: 0.1737098503784546
+        IB0002: 0.1230754699563768
+        IB0007: 0.4232855874875553
+        IB0008: 0.023910382789077696
+    PL-EM:
+      active: true
+      min: 0.0
+      max: 15.80160928
+      start: 13.30160928
+      prior:
+        dist: uniform
+      scope: cultivar
+      start_by_cultivar:
+        IB0001: 5.792837897326883
+        IB0002: 5.994843943893347
+        IB0007: 11.8534408589007
+        IB0008: 5.41773880977137
+      min_by_cultivar:
+        IB0001: 4.832837897326883
+        IB0002: 5.034843943893347
+        IB0007: 11.253440858900701
+        IB0008: 4.56504770337137
+      max_by_cultivar:
+        IB0001: 6.7528378973268826
+        IB0002: 6.954843943893347
+        IB0007: 12.4534408589007
+        IB0008: 6.27042991617137
+    EM-V1:
+      active: true
+      min: 0.0
+      max: 18.55902476
+      start: 8.52201729
+      prior:
+        dist: uniform
+      scope: cultivar
+      start_by_cultivar:
+        IB0001: 12.54476748960638
+        IB0002: 1.5881642160384812
+        IB0007: 6.194053432624786
+        IB0008: 8.55020327112781
+      min_by_cultivar:
+        IB0001: 11.584767489606381
+        IB0002: 0.8915453928384812
+        IB0007: 5.52201729
+        IB0008: 7.59020327112781
+      max_by_cultivar:
+        IB0001: 13.50476748960638
+        IB0002: 2.2847830392384814
+        IB0007: 6.914053432624786
+        IB0008: 9.51020327112781
+    V1-JU:
+      active: true
+      min: 0.0
+      max: 32.3869007
+      start: 26.3869007
+      prior:
+        dist: uniform
+      scope: cultivar
+      start_by_cultivar:
+        IB0001: 0.461015142929048
+        IB0002: 4.9733097361127445
+        IB0007: 26.344913337666483
+        IB0008: 9.903910706338818
+      min_by_cultivar:
+        IB0001: 0.0
+        IB0002: 3.839960978512744
+        IB0007: 24.904913337666486
+        IB0008: 7.983910706338818
+      max_by_cultivar:
+        IB0001: 1.5976931013290478
+        IB0002: 6.106658493712745
+        IB0007: 27.78491333766648
+        IB0008: 11.823910706338818
+    JU-R0:
+      active: true
+      min: 4.34597975
+      max: 36.3380109
+      start: 29.25027731
+      prior:
+        dist: uniform
+      scope: cultivar
+      start_by_cultivar:
+        IB0001: 19.152728009643752
+        IB0002: 12.527291824744609
+        IB0007: 30.787331548796
+        IB0008: 22.626461187985832
+      min_by_cultivar:
+        IB0001: 16.752728009643754
+        IB0002: 10.127291824744608
+        IB0007: 29.347331548796
+        IB0008: 20.226461187985834
+      max_by_cultivar:
+        IB0001: 21.55272800964375
+        IB0002: 14.927291824744609
+        IB0007: 32.227331548796
+        IB0008: 25.02646118798583
+    R1PPO:
+      active: false
+      min: 0.43744697
+      max: 3.0
+      start: 2.52408513
+      prior:
+        dist: uniform
+      scope: cultivar
+      start_by_cultivar:
+        IB0001: 2.80883498
+        IB0002: 0.88744697
+        IB0007: 2.52408513
+        IB0008: 2.04459529
+      min_by_cultivar:
+        IB0001: 2.35883498
+        IB0002: 0.43744697
+        IB0007: 2.17408513
+        IB0008: 1.59459529
+      max_by_cultivar:
+        IB0001: 3.0
+        IB0002: 1.33744697
+        IB0007: 2.87408513
+        IB0008: 2.49459529
+    R7-R8:
+      active: false
+      min: 0.1
+      max: 60.0
+      start: 25.0
+      prior:
+        dist: uniform
+      scope: cultivar
+    FL-VS:
+      active: false
+      min: 0.1
+      max: 80.0
+      start: 35.0
+      prior:
+        dist: uniform
+      scope: cultivar
+    OPTBI:
+      active: true
+      min: 3.0
+      max: 15.88224173
+      start: 4.83659804
+      prior:
+        dist: uniform
+      scope: cultivar
+      start_by_cultivar:
+        IB0001: 6.970422350618894
+        IB0002: 12.557729366027823
+        IB0007: 5.12602487266993
+        IB0008: 12.043139850369377
+      min_by_cultivar:
+        IB0001: 6.250965223418894
+        IB0002: 11.837729366027823
+        IB0007: 4.6656331078699305
+        IB0008: 11.323139850369376
+      max_by_cultivar:
+        IB0001: 7.689879477818894
+        IB0002: 13.277729366027824
+        IB0007: 5.58641663746993
+        IB0008: 12.763139850369377
+    SLOBI:
+      active: true
+      min: 0.0
+      max: 0.08
+      start: 0.01259011
+      prior:
+        dist: uniform
+      scope: cultivar
+      start_by_cultivar:
+        IB0001: 0.0413696668215152
+        IB0002: 0.0490414713570602
+        IB0007: 0.0139220537787574
+        IB0008: 0.0622925094282977
+      min_by_cultivar:
+        IB0001: 0.036569666821515204
+        IB0002: 0.044509101357060196
+        IB0007: 0.0106112405787574
+        IB0008: 0.0596584782282977
+      max_by_cultivar:
+        IB0001: 0.0461696668215152
+        IB0002: 0.0535738413570602
+        IB0007: 0.0172328669787574
+        IB0008: 0.0649265406282977
+  genetic_species:
+    TB1:
+      active: true
+      min: 1.271195331276272
+      max: 1.751195331276272
+      start: 1.511195331276272
+      prior:
+        dist: uniform
+      spe_key: VEGETATIVE DEVELOPMENT
+      spe_index: 0
+    TO1_1:
+      active: true
+      min: 20.543002555178827
+      max: 21.503002555178828
+      start: 21.023002555178827
+      prior:
+        dist: uniform
+      spe_key: VEGETATIVE DEVELOPMENT
+      spe_index: 1
+    TO2_1:
+      active: true
+      min: 20.751878867886642
+      max: 22.19187886788664
+      start: 21.47187886788664
+      prior:
+        dist: uniform
+      spe_key: VEGETATIVE DEVELOPMENT
+      spe_index: 2
+    TM1:
+      active: true
+      min: 36.59922038764739
+      max: 38.03922038764739
+      start: 37.31922038764739
+      prior:
+        dist: uniform
+      spe_key: VEGETATIVE DEVELOPMENT
+      spe_index: 3
+    TB2:
+      active: true
+      min: 1.4191441974887455
+      max: 1.8991441974887455
+      start: 1.6591441974887455
+      prior:
+        dist: uniform
+      spe_key: EARLY REPRODUCTIVE DEVELOPMENT
+      spe_index: 0
+    TO1_2:
+      active: true
+      min: 15.040766783818203
+      max: 16.000766783818204
+      start: 15.520766783818203
+      prior:
+        dist: uniform
+      spe_key: EARLY REPRODUCTIVE DEVELOPMENT
+      spe_index: 1
+    TO2_2:
+      active: true
+      min: 21.816363291763523
+      max: 23.25636329176352
+      start: 22.53636329176352
+      prior:
+        dist: uniform
+      spe_key: EARLY REPRODUCTIVE DEVELOPMENT
+      spe_index: 2
+    TM2:
+      active: true
+      min: 44.43883562856516
+      max: 46.35883562856516
+      start: 45.39883562856516
+      prior:
+        dist: uniform
+      spe_key: EARLY REPRODUCTIVE DEVELOPMENT
+      spe_index: 3
+    TB3:
+      active: false
+      min: 1.92802905
+      max: 2.92802905
+      start: 2.42802905
+      prior:
+        dist: uniform
+      spe_key: LATE REPRODUCTIVE DEVELOPMENT
+      spe_index: 0
+    TO1_3:
+      active: false
+      min: 21.92750472
+      max: 24.92750472
+      start: 23.42750472
+      prior:
+        dist: uniform
+      spe_key: LATE REPRODUCTIVE DEVELOPMENT
+      spe_index: 1
+    TO2_3:
+      active: false
+      min: 31.9160423
+      max: 34.9160423
+      start: 33.4160423
+      prior:
+        dist: uniform
+      spe_key: LATE REPRODUCTIVE DEVELOPMENT
+      spe_index: 2
+    TM3:
+      active: false
+      min: 35.3737473
+      max: 38.3737473
+      start: 36.8737473
+      prior:
+        dist: uniform
+      spe_key: LATE REPRODUCTIVE DEVELOPMENT
+      spe_index: 3
+crops:
+- code: HM
+  model: CRGRO048
+  genotype_stem: HMGRO048
+  cultivar_anchor: IB0008
+  cultivar_anchors:
+  - IB0001
+  - IB0002
+  - IB0007
+  - IB0008
+  ecotype: HM0003
+  filex_ext: HMX
+  stage_scale: cropgro
+  cultivar_ecotypes:
+    IB0001: HM0001
+    IB0002: HM0002
+    IB0007: HM0005
+    IB0008: HM0003
+  calibration_cultivars:
+  - IB0001
+  - IB0002
+  - IB0007
+  - IB0008
+experiments:
+- UFJA2101
+- UFJA2201
+- UFCI2101
+- UFCI2201
+- ITPI2001
+- ITPI2101
+- UKAB2101
+- YUBA2101
+- YUFE2101
+- YUFE2201
+- YUKU2101
+- YUKU2201
+execution:
+  backend: native
+templates:
+  template_dir: ''
+gating:
+  cultivar: free
+  ecotype: gated
+  species: free
+management_options:
+  use_source_planting_date: false
+weather:
+  provider: file
+  gap_fill: none
+  horizon: 0
+  cache_dir: weather_cache
+soil:
+  provider: file
+  source: ssurgo
+  cache_dir: soil_cache
+forecast:
+  active: false
+  variables:
+  - LAID
+  n_ensemble: 0
+  anchor_continuity: true
+  decay_days: 21
+diagnostics:
+  active: false
+observation_sources: {}
+fusion:
+  conflict_resolution: keep_all
+  source_priority: []
+assimilation:
+  active: false
+  mode: recalibration
+  allow_uncoupled: false
+  recalibration:
+    engine: glue
+    recal_sample_size: 100
+    warm_start: true
+    update_frequency: on_observation
+  enkf:
+    n_ensemble: 50
+    inflation: 1.05
+    state_variables:
+    - LAID
+    - CWAD
+  forcing:
+    min_confidence: 0.8
+    smoothing: true
+sparse:
+  delta_from_analog:
+    active: false
+  hierarchical_priors:
+    active: false
+  trait_priors:
+    active: false
+  identifiability_gate:
+    active: false
+  observation_design:
+    active: false
+source:
+  hemp_dir: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/Hemp
+  observations: dssat
+calibration_treatments_by_experiment:
+  UFJA2101:
+  - 2
+  - 4
+  UFJA2201:
+  - 2
+  - 4
+  UFCI2101:
+  - 1
+  - 3
+  UFCI2201:
+  - 2
+  - 4
+  ITPI2001:
+  - 1
+  ITPI2101:
+  - 1
+  UKAB2101:
+  - 1
+  YUBA2101:
+  - 1
+  YUFE2101:
+  - 1
+  YUFE2201:
+  - 1
+  YUKU2101:
+  - 1
+  YUKU2201:
+  - 1
+filex_overrides:
+  all:
+  - section: SIMULATION CONTROLS
+    header_prefix: '@N OPTIONS'
+    field: WATER
+    value: N
+    type: code
+    required: true
+  - section: SIMULATION CONTROLS
+    header_prefix: '@N OPTIONS'
+    field: NITRO
+    value: N
+    type: code
+    required: true
+engine:
+  run_mode: experiment
+  timeseries_outputs: {}
+  scalar_outputs:
+    anthesis: ADAP

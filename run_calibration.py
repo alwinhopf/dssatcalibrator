@@ -99,6 +99,16 @@ def main():
     ap.add_argument("--no-progress", action="store_true")
     ap.add_argument("--combine", nargs="+", default=None,
                     help="list of result directories to combine (loads design.csv from each)")
+    ap.add_argument("--generate-design", default=None, metavar="CSV",
+                    help="write the configured sampled design to CSV and exit")
+    ap.add_argument("--design-csv", default=None, metavar="CSV",
+                    help="evaluate parameter rows from a pre-generated design CSV")
+    ap.add_argument("--design-start", type=int, default=0,
+                    help="first zero-based design row to evaluate (inclusive)")
+    ap.add_argument("--design-stop", type=int, default=None,
+                    help="last zero-based design row to evaluate (exclusive)")
+    ap.add_argument("--design-only", action="store_true",
+                    help="for fixed-design chunks, write resumable tables without figures")
     args = ap.parse_args()
 
     cfg = load_config(args.config)
@@ -139,6 +149,25 @@ def main():
     outdir = Path(args.outdir or f"{cfg['calibrator'].get('results_dir', 'results')}/{name}")
     figdir = Path(cfg["calibrator"].get("figures_dir", "figures")) / name
 
+    if args.generate_design:
+        from dssatcalibrator.samplers import sample
+        from dssatcalibrator.spaces import ParameterSpace
+        space = ParameterSpace.from_config(cfg)
+        sample_cfg = cfg.get("method", {}).get("sample", {}) or {}
+        design = sample(
+            space,
+            n=int(sample_cfg.get("n", 200)),
+            engine=str(sample_cfg.get("engine", "lhs")),
+            seed=int(cfg["calibrator"].get("seed", 42)),
+            include_start=bool(sample_cfg.get("include_start", True)),
+        )
+        path = Path(args.generate_design)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        design.insert(0, "design_id", range(len(design)))
+        design.to_csv(path, index=False)
+        print(f"Wrote {len(design)} fixed design rows -> {path.resolve()}")
+        return
+
     if args.nowcast:
         res = orchestrator.nowcast(cfg, args.nowcast, progress=not args.no_progress)
         _write_forecast(res.get("forecast", {}), outdir)
@@ -175,14 +204,43 @@ def main():
     if args.combine:
         print(f"Combining {len(args.combine)} runs: {args.combine}")
         result = orchestrator.combine_runs(cfg, args.combine)
+    elif args.design_csv:
+        raw_design = pd.read_csv(args.design_csv)
+        start = max(0, int(args.design_start))
+        stop = len(raw_design) if args.design_stop is None else min(len(raw_design), int(args.design_stop))
+        if stop <= start:
+            raise ValueError(f"Empty design slice [{start}:{stop}] for {len(raw_design)} rows")
+        print(f"Calibrating '{name}' from fixed design rows [{start}:{stop}] of {len(raw_design)}")
+        result = orchestrator.calibrate_fixed_design(
+            cfg, raw_design.iloc[start:stop], progress=not args.no_progress
+        )
     else:
         bayes = cfg["method"].get("bayesian", {}).get("engine", "glue")
-        if bayes == "smc_pf":
+        optimizer = cfg["method"].get("optimizer", {}).get("engine", "none")
+        if str(bayes).lower() in ("none", "") and str(optimizer).lower() not in ("none", ""):
+            size = f"{optimizer}, maxiter={cfg['method'].get('optimizer', {}).get('maxiter', 'default')}"
+        elif bayes == "smc_pf":
             size = f"smc_pf, n_particles={cfg['method'].get('bayesian', {}).get('n_particles', 200)}"
         else:
-            size = f"glue, n={cfg['method']['sample']['n']}"
+            size = f"glue, n={cfg['method'].get('sample', {}).get('n', 200)}"
         print(f"Calibrating '{cfg['calibrator']['name']}' (preset {cfg['method'].get('preset')}; {size})")
         result = orchestrator.calibrate(cfg, progress=not args.no_progress)
+
+    if args.design_only:
+        outdir.mkdir(parents=True, exist_ok=True)
+        result.design.to_csv(outdir / "design.csv", index=False)
+        manifest = (result.extras or {}).get("spawn_manifest")
+        if manifest is not None:
+            manifest.to_csv(outdir / "manifest.csv", index=False)
+        with open(outdir / "best_theta.json", "w", encoding="utf-8") as fh:
+            json.dump(result.best_theta, fh, indent=2)
+        print(f"Fixed-design checkpoint -> {outdir.resolve()}")
+        if not cfg["calibrator"].get("keep_run_dirs", False):
+            workdir = Path(cfg["calibrator"].get("workdir", "results/_workdir"))
+            if workdir.exists():
+                import shutil
+                shutil.rmtree(workdir, ignore_errors=True)
+        return
 
     best_spawns = orchestrator.spawn_results_for(cfg, result.best_theta, result.experiments)
     paths = viz.make_report(result, outdir, best_spawns=best_spawns, figdir=figdir)

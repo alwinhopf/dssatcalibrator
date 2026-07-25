@@ -542,7 +542,10 @@ def _estimate_optimizer(work_cfg, space, setup, method, *, seed, n_workers, extr
     score_batch = lambda ths: [r.score for r in scorer(ths)]   # noqa: E731
     ores = run_optimizer(space, score_batch, method=opt, seed=seed,
                          maxiter=ocfg.get("maxiter"), popsize=int(ocfg.get("popsize", 15)),
-                         restarts=int(ocfg.get("restarts", 1)), progress=progress)
+                         restarts=int(ocfg.get("restarts", 1)),
+                         tol=float(ocfg.get("tol", 1e-4)),
+                         eval_batch_size=int(ocfg.get("eval_batch_size", 32)),
+                         progress=progress)
     best = scorer([ores.best_theta])[0]
     # Represent the optimiser's trace as a one-row "design" so reporting works.
     design = pd.DataFrame([{"sample_id": 0, **ores.best_theta, "score": best.score,
@@ -633,6 +636,45 @@ def _estimate_glue(work_cfg, space, setup, method, *, seed, n_workers, extras, p
     return CalibrationResult(cfg=work_cfg, space=space, obs=obs, experiments=experiments,
                              design=glue.design, obj_results=obj_results,
                              best_theta=glue.best_theta, best=best, glue=glue, extras=extras)
+
+
+def calibrate_fixed_design(cfg: dict, samples: pd.DataFrame, *, progress=True) -> CalibrationResult:
+    """Evaluate a caller-supplied design through the standard GLUE/report path.
+
+    This is the resumable large-run entry point: generate one reproducible LHS,
+    evaluate non-overlapping row chunks, then combine the chunk result folders.
+    It deliberately bypasses screening and resampling so a resumed chunk cannot
+    silently draw a different design.
+    """
+    from .engines import run_glue
+    from .sparse import apply_sparse_config
+
+    work_cfg = cfg if cfg.get("_sparse_applied", False) else apply_sparse_config(cfg)
+    work_cfg = _apply_staging(work_cfg)
+    space = ParameterSpace.from_config(work_cfg)
+    missing = [name for name in space.names if name not in samples.columns]
+    if missing:
+        raise ValueError(f"Fixed design is missing active parameter columns: {missing}")
+    samples = samples.loc[:, space.names].copy().reset_index(drop=True)
+    if samples.empty:
+        raise ValueError("Fixed design contains no rows to evaluate.")
+
+    setup = _setup(work_cfg)
+    _warn_unmatched(setup[5], work_cfg)
+    design, obj_results, (_, obs, experiments) = evaluate_design(
+        work_cfg, samples, progress=progress
+    )
+    spawn_manifest = design.attrs.get("spawn_manifest")
+    glue = run_glue(design, space.names, work_cfg, space=space)
+    best = obj_results[glue.best_sample_id]
+    extras = {"engine": "glue", "fixed_design": True}
+    if spawn_manifest is not None:
+        extras["spawn_manifest"] = spawn_manifest
+    return CalibrationResult(
+        cfg=work_cfg, space=space, obs=obs, experiments=experiments,
+        design=glue.design, obj_results=obj_results, best_theta=glue.best_theta,
+        best=best, glue=glue, extras=extras,
+    )
 
 
 def calibrate(cfg: dict, *, progress=True) -> CalibrationResult:

@@ -140,6 +140,26 @@ def _weighted_loss(resid: pd.DataFrame, cfg: dict) -> pd.Series:
     return pd.Series(_standardized_loss(z, cfg), index=resid.index)
 
 
+def _group_loss(group: pd.DataFrame, cfg: dict) -> float:
+    """Aggregate standardized point losses for one output variable.
+
+    ``score_metric: rmse`` is useful for calibration objectives stated directly
+    as RMSE.  The default remains mean squared standardized error for backwards
+    compatibility with existing configurations and Bayesian likelihoods.
+    """
+    loss = group["_loss"].to_numpy(dtype=float)
+    weights = group.get("weight", pd.Series(1.0, index=group.index)).to_numpy(dtype=float)
+    valid = np.isfinite(loss) & np.isfinite(weights) & (weights > 0)
+    if valid.any():
+        mean_loss = float(np.average(loss[valid], weights=weights[valid]))
+    else:
+        mean_loss = float(np.mean(loss))
+    metric = str((cfg.get("objective", {}) or {}).get("score_metric", "mse")).lower()
+    if metric in ("rmse", "root_mean_square", "root_mean_squared_error"):
+        return float(np.sqrt(max(mean_loss, 0.0)))
+    return mean_loss
+
+
 def _drop_configured_zero_observations(resid: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     """Drop exact-zero observations for configured variables before scoring.
 
@@ -261,8 +281,8 @@ def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.Dat
         scalar_obs = obs_table[obs_table["kind"].isin(["scalar", "phenology"])]
         for exp, res in results.items():
             ev = getattr(res, "evaluate", None)
-            if ev is None or ev.empty:
-                continue
+            if ev is None:
+                ev = pd.DataFrame()
             o = scalar_obs[scalar_obs["exp_id"] == exp]
             if o.empty:
                 continue
@@ -288,7 +308,8 @@ def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.Dat
                 dssat_var = r["dssat"]
                 if dssat_var not in sc_inv:
                     continue
-                if dssat_var not in set(ev["variable"]):
+                available = set(ev["variable"]) if "variable" in ev else set()
+                if dssat_var not in available:
                     if pd.isna(r["value"]):
                         continue
                     key = (exp, int(r["treatment"]), user_var, r["kind"])
@@ -320,8 +341,6 @@ def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.Dat
         ts_obs = obs_table[obs_table["kind"] == "timeseries"]
         for exp, res in results.items():
             pg = getattr(res, "plantgro", None)
-            if pg is None or pg.empty:
-                continue
             o = ts_obs[ts_obs["exp_id"] == exp]
             if o.empty:
                 continue
@@ -330,11 +349,14 @@ def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.Dat
                 col = r["variable"]
                 if col not in ts_inv:
                     continue
-                if col not in pg.columns:
-                    continue
-                simv = _timeseries_sim_value(pg, int(r["treatment"]), r["date"], col)
+                if pg is None or pg.empty or col not in pg.columns:
+                    simv = np.nan
+                else:
+                    simv = _timeseries_sim_value(pg, int(r["treatment"]), r["date"], col)
                 if pd.isna(simv):
-                    continue
+                    simv = float(r["value"]) + float(
+                        (cfg.get("objective", {}) or {}).get("missing_simulation_penalty", 1000.0)
+                    )
                 rows.append(dict(exp_id=exp, treatment=int(r["treatment"]),
                                  user_var=ts_inv.get(col, col), dssat=col, kind="timeseries",
                                  date=r["date"], obs=float(r["value"]), sim=float(simv)))
@@ -350,10 +372,13 @@ def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.Dat
     if obs_table is not None and not obs_table.empty and "sigma" in obs_table.columns:
         lookup = {}
         for _, r in obs_table.iterrows():
+            obs_var = str(r["variable"])
+            if str(r.get("kind", "")) in ("scalar", "phenology"):
+                _, obs_var = _scalar_observation_mapping(obs_var, sc_map, sc_inv)
             if pd.isna(r["date"]):
-                key = (r["exp_id"], int(r["treatment"]), r["variable"])
+                key = (r["exp_id"], int(r["treatment"]), obs_var)
             else:
-                key = (r["exp_id"], int(r["treatment"]), r["variable"], pd.Timestamp(r["date"]).date())
+                key = (r["exp_id"], int(r["treatment"]), obs_var, pd.Timestamp(r["date"]).date())
             lookup[key] = (r["sigma"], r["weight"])
             
         def get_obs_params(row):
@@ -453,12 +478,12 @@ def score(results: dict, obs_table: pd.DataFrame, cfg: dict) -> ObjectiveResult:
         # no automatic balancing of counts or scales.
         sc = 0.0
         for uv, g in resid.groupby("user_var"):
-            sc += float(wts.get(uv, 1.0)) * float(np.mean(g["_loss"]))
+            sc += float(wts.get(uv, 1.0)) * _group_loss(g, cfg)
     elif weighting == "count_scale":
         # Each variable contributes the AVERAGE normalised squared error of its own
         # points (count-balanced: a 100-point series can't drown a 1-point yield),
         # then we average ACROSS variables -> a clean 'mean per-variable misfit'.
-        per = [float(wts.get(uv, 1.0)) * float(np.mean(g["_loss"]))
+        per = [float(wts.get(uv, 1.0)) * _group_loss(g, cfg)
                for uv, g in resid.groupby("user_var")]
         sc = float(np.mean(per)) if per else float("inf")
     else:  # "unified" (default) and "agmip_wls"
@@ -468,8 +493,7 @@ def score(results: dict, obs_table: pd.DataFrame, cfg: dict) -> ObjectiveResult:
         # the per-variable weights to 1 / residual-variance (see pipeline).
         sc = 0.0
         for uv, g in resid.groupby("user_var"):
-            mse = float(np.mean(g["_loss"]))
-            sc += float(wts.get(uv, 1.0)) * mse
+            sc += float(wts.get(uv, 1.0)) * _group_loss(g, cfg)
 
     penalty_cfg = (cfg.get("objective", {}) or {}).get("max_bias_penalty", {}) or {}
     if penalty_cfg:
@@ -482,7 +506,8 @@ def score(results: dict, obs_table: pd.DataFrame, cfg: dict) -> ObjectiveResult:
                 tolerance = float(penalty_cfg.get("tolerance", penalty_cfg.get("target", 0.0)) or 0.0)
                 sigma = float(penalty_cfg.get("sigma", 1.0) or 1.0)
                 excess = max(0.0, max_abs - tolerance)
-                sc += lam * float((excess / max(sigma, 1e-12)) ** 2)
+                power = float(penalty_cfg.get("power", 2.0))
+                sc += lam * float((excess / max(sigma, 1e-12)) ** power)
 
     per_var = {uv: metrics(g["obs"], g["sim"]) for uv, g in resid.groupby("user_var")}
     pev = (resid.groupby(["exp_id", "user_var"])

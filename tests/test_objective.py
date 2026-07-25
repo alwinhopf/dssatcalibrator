@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from dssatcalibrator import objective as obj
 from dssatcalibrator.observations import SCHEMA
@@ -174,3 +175,40 @@ def test_weighting_modes_run():
         cfg = {**CFG, "objective": {**CFG["objective"], "weighting": mode}}
         r = obj.score(results, _obs(), cfg)
         assert np.isfinite(r.score) and r.score > 0
+
+
+def test_rmse_score_with_linear_max_bias_penalty():
+    cfg = {
+        "engine": {"timeseries_outputs": {}, "scalar_outputs": {"anthesis": "ADAP"}},
+        "objective": {
+            "weighting": "unified",
+            "score_metric": "rmse",
+            "weights": {"anthesis": 1.0},
+            "error_model": {"anthesis": {"type": "absolute", "value": 1.0}},
+            "max_bias_penalty": {
+                "variable": "anthesis", "lambda": 0.5, "sigma": 1.0, "power": 1.0,
+            },
+        },
+    }
+    results = {
+        "E1": _result(78.0, 1000.0, [5000.0, 8000.0]),
+        "E2": _result(79.0, 1000.0, [5000.0, 8000.0]),
+    }
+
+    scored = obj.score(results, pd.DataFrame(columns=SCHEMA), cfg)
+
+    expected = np.sqrt((3.0 ** 2 + 4.0 ** 2) / 2.0) + 0.5 * 4.0
+    assert scored.score == pytest.approx(expected)
+
+
+def test_missing_outputs_are_penalized_and_retained():
+    obs = pd.DataFrame([
+        ("E1", 1, "CWAD", "timeseries", DATES[0], 5000.0, np.nan, 1.0),
+    ], columns=SCHEMA)
+    result = SimpleNamespace(evaluate=pd.DataFrame(), plantgro=pd.DataFrame())
+
+    resid = obj.build_residuals({"E1": result}, obs, CFG)
+
+    assert len(resid) == 1
+    assert resid.iloc[0]["user_var"] == "biomass"
+    assert resid.iloc[0]["sim"] - resid.iloc[0]["obs"] == 1000.0

@@ -107,6 +107,19 @@ metrics <- function(obs, sim) {
   z^2
 }
 
+.group_loss <- function(group, cfg) {
+  loss <- as.numeric(group$`_loss`)
+  weights <- if ("weight" %in% names(group)) as.numeric(group$weight) else rep(1.0, length(loss))
+  valid <- is.finite(loss) & is.finite(weights) & weights > 0
+  mean_loss <- if (any(valid)) weighted.mean(loss[valid], weights[valid]) else mean(loss)
+  metric <- tolower(as.character(.cfg_get(.cfg_get(cfg, "objective", list()),
+                                           "score_metric", "mse")))
+  if (metric %in% c("rmse", "root_mean_square", "root_mean_squared_error")) {
+    return(sqrt(max(mean_loss, 0.0)))
+  }
+  mean_loss
+}
+
 .drop_configured_zero_observations <- function(resid, cfg) {
   ocfg <- .cfg_get(cfg, "objective", list())
   raw <- .cfg_get(ocfg, "ignore_zero_observations",
@@ -264,7 +277,7 @@ build_residuals <- function(results, obs_table, cfg) {
     scalar_obs <- obs_table[obs_table$kind %in% c("scalar", "phenology"), , drop = FALSE]
     for (exp in names(results)) {
       ev <- results[[exp]]$evaluate
-      if (is.null(ev) || nrow(ev) == 0) next
+      if (is.null(ev)) ev <- data.frame()
       o <- scalar_obs[scalar_obs$exp_id == exp, , drop = FALSE]
       if (nrow(o) == 0) next
       pg <- results[[exp]]$plantgro
@@ -292,7 +305,9 @@ build_residuals <- function(results, obs_table, cfg) {
         if (is.na(obs_value) || is.null(sc_inv[[dssat_var]])) next
         key <- paste(exp, as.integer(r$treatment), user_var, r$kind, sep = "\r")
         if (key %in% seen_scalar) next
-        sub <- ev[ev$treatment == r$treatment & ev$variable == dssat_var, , drop = FALSE]
+        sub <- if (nrow(ev) && all(c("treatment", "variable", "sim") %in% names(ev))) {
+          ev[ev$treatment == r$treatment & ev$variable == dssat_var, , drop = FALSE]
+        } else data.frame()
         sim_value <- if (nrow(sub) == 0 || is.na(sub$sim[1])) obs_value + 1000.0 else as.numeric(sub$sim[1])
         add(data.frame(exp_id = exp, treatment = as.integer(r$treatment),
                        user_var = user_var, dssat = dssat_var, kind = r$kind,
@@ -308,7 +323,6 @@ build_residuals <- function(results, obs_table, cfg) {
     ts_obs <- obs_table[obs_table$kind == "timeseries", , drop = FALSE]
     for (exp in names(results)) {
       pg <- results[[exp]]$plantgro
-      if (is.null(pg) || nrow(pg) == 0) next
       o <- ts_obs[ts_obs$exp_id == exp, , drop = FALSE]
       if (nrow(o) == 0) next
       agg <- aggregate(value ~ treatment + date + variable, data = o, FUN = mean)
@@ -318,9 +332,15 @@ build_residuals <- function(results, obs_table, cfg) {
         # PlantGro may contain many columns that are intentionally outside this
         # calibration. Only variables explicitly mapped by the active config are
         # scorable, matching the Python objective contract.
-        if (!col %in% names(ts_inv) || !col %in% names(pg)) next
-        simv <- .timeseries_sim_value(pg, r$treatment, r$date, col)
-        if (is.na(simv)) next
+        if (!col %in% names(ts_inv)) next
+        simv <- if (!is.null(pg) && nrow(pg) && col %in% names(pg)) {
+          .timeseries_sim_value(pg, r$treatment, r$date, col)
+        } else NA_real_
+        if (is.na(simv)) {
+          penalty <- as.numeric(.cfg_get(.cfg_get(cfg, "objective", list()),
+                                         "missing_simulation_penalty", 1000.0))
+          simv <- as.numeric(r$value) + penalty
+        }
         uv <- ts_inv[[col]]
         add(data.frame(exp_id = exp, treatment = as.integer(r$treatment),
                        user_var = uv, dssat = col, kind = "timeseries",
@@ -352,7 +372,11 @@ build_residuals <- function(results, obs_table, cfg) {
     lookup <- new.env(hash = TRUE, parent = emptyenv())
     for (i in seq_len(nrow(obs_table))) {
       r <- obs_table[i, , drop = FALSE]
-      key <- lookup_key(r$exp_id, r$treatment, r$variable, r$date)
+      obs_var <- as.character(r$variable)
+      if (as.character(r$kind) %in% c("scalar", "phenology")) {
+        obs_var <- .scalar_observation_mapping(obs_var, sc_map, sc_inv)$dssat_var
+      }
+      key <- lookup_key(r$exp_id, r$treatment, obs_var, r$date)
       wt <- if ("weight" %in% names(r)) r$weight else NA_real_
       assign(key, list(sigma = suppressWarnings(as.numeric(r$sigma)),
                        weight = suppressWarnings(as.numeric(wt))), envir = lookup)
@@ -407,19 +431,36 @@ score <- function(results, obs_table, cfg) {
     sc <- 0.0
     for (uv in names(by_var)) {
       g <- by_var[[uv]]
-      sc <- sc + w(uv) * mean(g$`_loss`)
+      sc <- sc + w(uv) * .group_loss(g, cfg)
     }
   } else if (weighting == "count_scale") {
     per <- vapply(names(by_var), function(uv) {
-      g <- by_var[[uv]]; w(uv) * mean(g$`_loss`)
+      g <- by_var[[uv]]; w(uv) * .group_loss(g, cfg)
     }, numeric(1))
     sc <- if (length(per)) mean(per) else Inf
   } else {  # "unified" (default) and "agmip_wls"
     sc <- 0.0
     for (uv in names(by_var)) {
       g <- by_var[[uv]]
-      mse <- mean(g$`_loss`)
-      sc <- sc + w(uv) * mse
+      sc <- sc + w(uv) * .group_loss(g, cfg)
+    }
+  }
+
+  penalty_cfg <- .cfg_get(.cfg_get(cfg, "objective", list()),
+                          "max_bias_penalty", list())
+  if (length(penalty_cfg)) {
+    variable <- as.character(.cfg_get(penalty_cfg, "variable", "anthesis"))
+    lambda <- as.numeric(.cfg_get(penalty_cfg, "lambda",
+                                  .cfg_get(penalty_cfg, "weight", 0.0)))
+    g <- resid[as.character(resid$user_var) == variable, , drop = FALSE]
+    if (is.finite(lambda) && lambda > 0 && nrow(g)) {
+      max_abs <- max(abs(as.numeric(g$resid)), na.rm = TRUE)
+      tolerance <- as.numeric(.cfg_get(penalty_cfg, "tolerance",
+                                       .cfg_get(penalty_cfg, "target", 0.0)))
+      sigma <- max(as.numeric(.cfg_get(penalty_cfg, "sigma", 1.0)), 1e-12)
+      power <- as.numeric(.cfg_get(penalty_cfg, "power", 2.0))
+      excess <- max(0.0, max_abs - tolerance)
+      sc <- sc + lambda * (excess / sigma)^power
     }
   }
 

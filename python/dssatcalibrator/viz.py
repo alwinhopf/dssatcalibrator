@@ -1047,6 +1047,11 @@ def make_report(result, outdir, best_spawns=None, figdir=None) -> dict:
     if chain is not None and not chain.empty:
         chain.round(4).to_csv(outdir / "mcmc_chain.csv", index=False)
         paths["mcmc_chain"] = outdir / "mcmc_chain.csv"
+    optimizer_history = (result.extras or {}).get("optimizer_history")
+    if optimizer_history:
+        history = pd.DataFrame(optimizer_history)
+        history.to_csv(outdir / "optimizer_history.csv", index=False)
+        paths["optimizer_history"] = outdir / "optimizer_history.csv"
 
     plot_param_posteriors(result, figdir / "fig_param_posteriors.png")
     plot_score_funnel(result, figdir / "fig_score_funnel.png")

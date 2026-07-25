@@ -50,6 +50,7 @@ class OptimizerResult:
 def run_optimizer(space, score_batch: Callable[[list[dict]], list[float]], *,
                   method: str = "diffevo", seed: int = 42, maxiter: int | None = None,
                   popsize: int = 15, restarts: int = 1, tol: float = 1e-4,
+                  eval_batch_size: int = 32,
                   progress: bool = False) -> OptimizerResult:
     """Minimise ``score_batch`` over ``space`` and return the best parameter set."""
     from scipy.optimize import differential_evolution, minimize
@@ -86,19 +87,28 @@ def run_optimizer(space, score_batch: Callable[[list[dict]], list[float]], *,
     elif method in ("diffevo", "differential_evolution", "de"):
         def cost_vec(X):
             # SciPy hands us X with shape (n_params, n_population): one column per
-            # candidate. Score the whole population in a single parallel batch.
+            # candidate. Bound scoring batches because one objective result may
+            # retain detailed DSSAT output tables for every experiment.
             thetas = [space.to_theta(np.clip(X[:, j], space.low, space.high))
                       for j in range(X.shape[1])]
-            scores = score_batch(thetas)
-            arr = np.array([float(s) if np.isfinite(s) else _FAIL for s in scores])
-            state["n"] += len(thetas)
-            j = int(np.argmin(arr))
-            _note(thetas[j], float(arr[j]))
-            return arr
+            batch_size = max(1, int(eval_batch_size))
+            values = []
+            for start in range(0, len(thetas), batch_size):
+                batch = thetas[start:start + batch_size]
+                scores = score_batch(batch)
+                batch_values = [
+                    float(s) if np.isfinite(s) else _FAIL for s in scores
+                ]
+                values.extend(batch_values)
+                state["n"] += len(batch)
+                j = int(np.argmin(batch_values))
+                _note(batch[j], float(batch_values[j]))
+            return np.asarray(values, dtype=float)
 
         differential_evolution(cost_vec, bounds, seed=seed, vectorized=True,
                                updating="deferred", maxiter=maxiter or 30,
-                               popsize=popsize, tol=tol, polish=False, init="sobol")
+                               popsize=popsize, tol=tol, polish=False, init="sobol",
+                               x0=np.asarray(space.start, float))
 
     elif method in ("cmaes", "cma_es", "cma"):
         def score_pop(thetas):

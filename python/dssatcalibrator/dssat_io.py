@@ -86,7 +86,7 @@ def _derive_date_columns(df: pd.DataFrame) -> pd.DataFrame:
         yr = pd.to_numeric(out["YEAR"], errors="coerce").astype("Int64")
         doy = pd.to_numeric(out["DOY"], errors="coerce").astype("Int64")
         out["date"] = pd.to_datetime(
-            yr.astype("string") + "-" + doy.astype("string"),
+            yr.astype(str) + "-" + doy.astype(str),
             format="%Y-%j", errors="coerce",
         )
     elif "DATE" in out.columns:
@@ -150,7 +150,7 @@ def parse_plantgro(path: str | Path) -> pd.DataFrame:
         yr = out["YEAR"].astype("Int64")
         doy = out["DOY"].astype("Int64")
         out["date"] = pd.to_datetime(
-            yr.astype("string") + "-" + doy.astype("string"),
+            yr.astype(str) + "-" + doy.astype(str),
             format="%Y-%j", errors="coerce",
         )
     out["run"] = out["run"].astype("Int64")
@@ -180,7 +180,8 @@ def parse_evaluate(path: str | Path) -> pd.DataFrame:
     data = [ln.split() for ln in lines[hdr_idx + 1:] if re.match(r"\s*\d", ln)]
     if not data:
         return pd.DataFrame(columns=["treatment", "run", "variable", "sim", "meas"])
-    wide = pd.DataFrame(data, columns=header[: len(data[0])])
+    cols = (header + [f"COL_{i}" for i in range(len(header), len(data[0]))])[: len(data[0])]
+    wide = pd.DataFrame(data, columns=cols)
 
     id_cols = {"RUN", "EXCODE", "TN", "RN", "CR"}
     sim_cols = [c for c in wide.columns if c.endswith("S") and c[:-1] + "M" in wide.columns

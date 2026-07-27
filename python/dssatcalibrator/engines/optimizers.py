@@ -86,9 +86,15 @@ def run_optimizer(space, score_batch: Callable[[list[dict]], list[float]], *,
 
     elif method in ("diffevo", "differential_evolution", "de"):
         def cost_vec(X):
-            # SciPy hands us X with shape (n_params, n_population): one column per
-            # candidate. Bound scoring batches because one objective result may
-            # retain detailed DSSAT output tables for every experiment.
+            X = np.asarray(X)
+            if X.ndim == 1:
+                theta = space.to_theta(np.clip(X, space.low, space.high))
+                score = score_batch([theta])[0]
+                val = float(score) if np.isfinite(score) else _FAIL
+                state["n"] += 1
+                _note(theta, val)
+                return val
+
             thetas = [space.to_theta(np.clip(X[:, j], space.low, space.high))
                       for j in range(X.shape[1])]
             batch_size = max(1, int(eval_batch_size))
@@ -105,10 +111,13 @@ def run_optimizer(space, score_batch: Callable[[list[dict]], list[float]], *,
                 _note(batch[j], float(batch_values[j]))
             return np.asarray(values, dtype=float)
 
-        differential_evolution(cost_vec, bounds, seed=seed, vectorized=True,
+
+        differential_evolution(cost_vec, bounds, seed=seed,
                                updating="deferred", maxiter=maxiter or 30,
-                               popsize=popsize, tol=tol, polish=False, init="sobol",
-                               x0=np.asarray(space.start, float))
+                               popsize=popsize, tol=tol, polish=False, init="latinhypercube")
+
+
+
 
     elif method in ("cmaes", "cma_es", "cma"):
         def score_pop(thetas):

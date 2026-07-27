@@ -510,8 +510,13 @@ def score(results: dict, obs_table: pd.DataFrame, cfg: dict) -> ObjectiveResult:
                 sc += lam * float((excess / max(sigma, 1e-12)) ** power)
 
     per_var = {uv: metrics(g["obs"], g["sim"]) for uv, g in resid.groupby("user_var")}
-    pev = (resid.groupby(["exp_id", "user_var"])
-           .apply(lambda g: pd.Series(metrics(g["obs"], g["sim"])), include_groups=False)
-           .reset_index())
+    try:
+        pev = (resid.groupby(["exp_id", "user_var"])
+               .apply(lambda g: pd.Series(metrics(g["obs"], g["sim"])), include_groups=False)
+               .reset_index())
+    except TypeError:
+        pev = (resid.groupby(["exp_id", "user_var"])
+               .apply(lambda g: pd.Series(metrics(g["obs"], g["sim"])))
+               .reset_index())
     return ObjectiveResult(score=float(sc), loglik=loglik, residuals=resid,
                            per_var=per_var, per_exp_var=pev)

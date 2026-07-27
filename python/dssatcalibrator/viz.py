@@ -80,8 +80,15 @@ def plot_score_funnel(result, path):
     glue = result.glue
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
 
-    scores = design["score"].replace([np.inf, -np.inf], np.nan).dropna()
-    ax1.hist(scores, bins=30, color="#C9C7E8", edgecolor="white")
+    try:
+        if len(scores) > 0 and (scores.max() - scores.min()) > 1e-12:
+            ax1.hist(scores, bins=min(30, max(5, len(scores))), color="#C9C7E8", edgecolor="white")
+        elif len(scores) > 0:
+            ax1.hist(scores, bins=1, color="#C9C7E8", edgecolor="white")
+    except Exception:
+        ax1.text(0.5, 0.5, "Uniform score distribution", ha="center", va="center")
+
+
     if glue is not None and np.isfinite(glue.threshold):
         ax1.axvline(glue.threshold, color=_OBS, lw=2,
                     label=f"behavioural threshold\n(q={result.cfg['method'].get('bayesian',{}).get('behavioural_quantile',0.1)})")
@@ -473,7 +480,7 @@ def _plot_series_panel(ax, sim_long: pd.DataFrame, obs: pd.DataFrame, exp_id: st
         if not g.empty:
             g = _daily_series(g, spec)
             xcol = "date" if "date" in g.columns and g["date"].notna().any() else "DAP"
-            groups = g.groupby("treatment", dropna=False) if "treatment" in g.columns else [(None, g)]
+            groups = g.groupby("treatment") if "treatment" in g.columns else [(None, g)]
             for _trt, gg in groups:
                 gg = gg.sort_values(xcol)
                 ax.plot(gg[xcol], gg["value"], color=color, lw=1.2, alpha=0.75, label=f"sim {label}")
@@ -730,7 +737,7 @@ def objective_breakdown_table(result) -> pd.DataFrame:
         df["weight"] = 1.0
     group_cols = [c for c in ("exp_id", "user_var", "kind") if c in df.columns]
     rows = []
-    for keys, g in df.groupby(group_cols, dropna=False):
+    for keys, g in df.groupby(group_cols):
         if not isinstance(keys, tuple):
             keys = (keys,)
         rec = dict(zip(group_cols, keys))
@@ -930,7 +937,7 @@ def balanced_candidates_table(result) -> pd.DataFrame:
         return pd.DataFrame(columns=[
             "sample_id", "n", "max_abs_bias", "RMSE", "MBE", "score",
         ])
-    grouped = phen.groupby("sample_id", dropna=False)
+    grouped = phen.groupby("sample_id")
     rows = []
     score_map = {}
     if hasattr(result, "design") and result.design is not None and not result.design.empty:

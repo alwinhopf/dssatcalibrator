@@ -11,7 +11,10 @@ import itertools
 
 import numpy as np
 import pandas as pd
-from scipy.stats import qmc
+try:
+    from scipy.stats import qmc
+except ImportError:
+    qmc = None
 
 from .spaces import ParameterSpace
 
@@ -29,9 +32,17 @@ def sample(space: ParameterSpace, n: int, engine: str = "lhs",
     engine = engine.lower()
 
     if engine == "lhs":
-        unit = qmc.LatinHypercube(d=d, seed=seed).random(n)
+        if qmc is not None:
+            unit = qmc.LatinHypercube(d=d, seed=seed).random(n)
+        else:
+            unit = np.zeros((n, d))
+            for i in range(d):
+                unit[:, i] = (rng.permutation(n) + rng.random(n)) / n
     elif engine == "sobol":
-        unit = qmc.Sobol(d=d, scramble=True, seed=seed).random(n)
+        if qmc is not None:
+            unit = qmc.Sobol(d=d, scramble=True, seed=seed).random(n)
+        else:
+            unit = rng.random((n, d))
     elif engine == "montecarlo":
         unit = rng.random((n, d))
     elif engine == "grid":
@@ -43,7 +54,7 @@ def sample(space: ParameterSpace, n: int, engine: str = "lhs",
     else:
         raise ValueError(f"unknown sampler engine: {engine}")
 
-    scaled = qmc.scale(unit, space.low, space.high)
+    scaled = space.low + unit * (space.high - space.low)
     df = pd.DataFrame(scaled, columns=space.names)
 
     if include_start:

@@ -20,3 +20,15 @@ Module map:
 """
 
 __version__ = "0.0.1"
+
+from .config import active_parameters, load_config, validate_config
+
+__all__ = ["__version__", "active_parameters", "load_config", "validate_config",
+           "calibrate", "calibrate_fixed_design", "validate_loeo"]
+
+
+def __getattr__(name):
+    if name in {"calibrate", "calibrate_fixed_design", "validate_loeo"}:
+        from . import orchestrator
+        return getattr(orchestrator, name)
+    raise AttributeError(name)

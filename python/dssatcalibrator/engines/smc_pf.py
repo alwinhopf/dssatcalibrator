@@ -140,7 +140,14 @@ def run_smc_pf(cfg: dict, progress: bool = True) -> SmcResult:
                 p_results[exp] = res
         
         theta = space.to_theta(samples.loc[sid].to_numpy())
-        resid_df = obj.build_residuals(p_results, obs.table, cfg)
+        selected_obs = obs.table.copy()
+        if {"exp_id", "treatment"}.issubset(selected_obs.columns):
+            keep = pd.Series(False, index=selected_obs.index)
+            for exp, trts in treatments.items():
+                keep |= ((selected_obs["exp_id"].astype(str) == str(exp)) &
+                         pd.to_numeric(selected_obs["treatment"], errors="coerce").isin(trts))
+            selected_obs = selected_obs[keep]
+        resid_df = obj.build_residuals(p_results, selected_obs, cfg)
         
         particles.append({
             "theta": theta,
@@ -216,11 +223,17 @@ def run_smc_pf(cfg: dict, progress: bool = True) -> SmcResult:
         return sd
 
     def perturb_theta(parent_theta: dict[str, float], sd: dict[str, float]) -> dict[str, float]:
+        def reflect(value, low, high):
+            width = high - low
+            if width <= 0:
+                return low
+            y = (value - low) % (2 * width)
+            return low + (y if y <= width else 2 * width - y)
         mutated = {}
         for name, val in parent_theta.items():
             spec = next(s for s in space.specs if s["name"] == name)
             low, high = float(spec["min"]), float(spec["max"])
-            mutated[name] = float(np.clip(val + rng.normal(0.0, sd[name]), low, high))
+            mutated[name] = float(reflect(val + rng.normal(0.0, sd[name]), low, high))
         return mutated
 
     # 5. Sequential Assimilation Loop

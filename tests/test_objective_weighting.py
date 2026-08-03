@@ -41,9 +41,10 @@ def test_count_scale_differs_from_unified():
 
 
 def test_obs_autocorr_downweights_timeseries():
-    base = obj.build_residuals(_results([100.0, 200.0, 300.0, 400.0, 500.0]), _obs(), CFG)
+    simulated = [110.0, 220.0, 330.0, 440.0, 550.0]
+    base = obj.build_residuals(_results(simulated), _obs(), CFG)
     cfg2 = {**CFG, "objective": {**CFG["objective"], "obs_autocorr": True}}
-    aut = obj.build_residuals(_results([100.0, 200.0, 300.0, 400.0, 500.0]), _obs(), cfg2)
+    aut = obj.build_residuals(_results(simulated), _obs(), cfg2)
     w_base = base[base["kind"] == "timeseries"]["weight"].sum()
     w_aut = aut[aut["kind"] == "timeseries"]["weight"].sum()
     assert w_aut < w_base        # serial-correlation down-weighting shrank the series

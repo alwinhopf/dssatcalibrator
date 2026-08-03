@@ -31,8 +31,9 @@ class InSeasonRecalibrator:
         """
         ts_limit = pd.Timestamp(current_date)
 
-        # Keep rows that have no date (scalars) or whose date is <= ts_limit
-        filtered_table = obs_df[obs_df["date"].isna() | (obs_df["date"] <= ts_limit)].copy()
+        # Undated scalars are end-of-season FileA outcomes and are unavailable
+        # at an in-season checkpoint.
+        filtered_table = obs_df[obs_df["date"].notna() & (obs_df["date"] <= ts_limit)].copy()
 
         logger.info(f"Recalibrating with {len(filtered_table)} observations up to {current_date}")
 

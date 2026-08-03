@@ -158,3 +158,13 @@ ps_to_theta <- function(space, vector) {
 ps_clip <- function(space, vector) {
   pmin(pmax(as.numeric(vector), space$low), space$high)
 }
+
+#' Reflect a vector at box boundaries, preserving a symmetric random-walk kernel.
+#' @export
+ps_reflect <- function(space, vector) {
+  x <- as.numeric(vector)
+  width <- space$high - space$low
+  safe <- ifelse(width > 0, width, 1)
+  y <- (x - space$low) %% (2 * safe)
+  ifelse(width > 0, space$low + ifelse(y <= safe, y, 2 * safe - y), space$low)
+}

@@ -62,8 +62,11 @@ def test_partition_theta_routes_cultivar_scoped_values():
 
 
 def test_theta_hash_supports_filex_code_values():
-    assert theta_hash({"irrig_code": "IR004", "x": 1.0}) == "31684502a7"
-    assert theta_hash({"x": 1, "irrig_code": "IR004"}) == "31684502a7"
+    value = theta_hash({"irrig_code": "IR004", "x": 1.0})
+    assert len(value) == 16
+    assert value == theta_hash({"x": 1.0, "irrig_code": "IR004"})
+    assert value != theta_hash({"irrig_code": "IR004", "x": 1.0000001})
+    assert theta_hash({"x": 1, "irrig_code": "IR004"}) == "06a431c288780c62"
     assert theta_hash({"irrig_code": "IR005", "x": 1.0}) != "31684502a7"
 
 

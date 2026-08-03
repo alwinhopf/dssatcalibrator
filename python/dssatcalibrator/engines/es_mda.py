@@ -52,7 +52,11 @@ def _obs_vectors(results, names_key="user_var"):
         for _, row in rd.iterrows():
             key = (row["exp_id"], int(row["treatment"]), row["dssat"],
                    str(row["date"]) if not pd.isna(row["date"]) else "NA")
-            m[key] = (float(row["sim"]), float(row["obs"]), float(row["sigma"]))
+            weight = max(float(row.get("weight", 1.0)), 1e-12)
+            # ES-MDA uses an observation-error covariance; objective weights are
+            # equivalent to shrinking sigma by sqrt(weight).
+            m[key] = (float(row["sim"]), float(row["obs"]),
+                      float(row["sigma"]) / np.sqrt(weight))
         per_member.append(m)
 
     common = None
@@ -105,11 +109,11 @@ def run_es_mda(cfg: dict, score_results, space, *, progress: bool = True) -> Mcm
             if progress:
                 print("  no common observations across members; stopping ES-MDA.", flush=True)
             break
-        # Replace any NaN sim (failed member at a key) with the observation
-        # (zero residual) so a single failure can't poison the covariance.
+        # Failed members must be penalised, never made identical to observations.
         bad = ~np.isfinite(d_sim)
         if bad.any():
-            d_sim[bad] = np.take(d_obs, np.where(bad)[1])
+            cols = np.where(bad)[1]
+            d_sim[bad] = np.take(d_obs + 10.0 * np.maximum(sigma, 1e-6), cols)
 
         theta_mean = ens.mean(axis=0)
         d_mean = d_sim.mean(axis=0)

@@ -654,7 +654,7 @@ run_dream <- function(cfg, score_results, space, progress = TRUE) {
       ab <- sample(others, 2L)
       gamma <- if (runif(1) < snooker) 1.0 else gamma_default
       jump <- gamma * (cur_vecs[[ab[1]]] - cur_vecs[[ab[2]]]) + eps * ranges * rnorm(d)
-      prop[[c]] <- ps_to_theta(space, ps_clip(space, cur_vecs[[c]] + jump))
+      prop[[c]] <- ps_to_theta(space, ps_reflect(space, cur_vecs[[c]] + jump))
     }
     lp_prop <- vapply(prop, function(t) log_prior_vec(space, t), numeric(1))
     idx_in <- which(is.finite(lp_prop))

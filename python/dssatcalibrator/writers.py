@@ -25,7 +25,7 @@ def _fmt(value: float, width: int) -> str:
         s = f"{value:.{dec}f}"
         if len(s) <= width:
             return s.rjust(width)
-    return f"{value:.0f}".rjust(width)[:width]
+    raise OverflowError(f"Value {value!r} cannot fit DSSAT fixed-width field of {width} characters")
 
 
 def _fmt_like_token(value: float, token: str) -> str:
@@ -600,6 +600,24 @@ def edit_soil(sol_path: str | Path, profile_id: str,
                     lines[k] = "".join(chars)
                 break
 
+    # Enforce DSSAT hydraulic ordering after all edits.
+    for j in range(start, end):
+        if lines[j].lstrip().startswith("@") and "SDUL" in lines[j] and "SLB" in lines[j]:
+            fmap = parse_header_boundaries(lines[j])
+            for row in lines[j + 1:end]:
+                if row.lstrip().startswith(("@", "*")):
+                    break
+                if not row.strip() or row.lstrip().startswith("!"):
+                    continue
+                vals = {name: _parse(row[lo:hi]) for name, (lo, hi) in fmap.items()
+                        if name in {"SLLL", "SDUL", "SSAT"}}
+                if all(vals.get(name) is not None and vals[name] != -99 for name in ("SLLL", "SDUL", "SSAT")):
+                    if not vals["SLLL"] < vals["SDUL"] < vals["SSAT"]:
+                        raise ValueError(
+                            f"Soil edit violates SLLL < SDUL < SSAT in profile {profile_id}: {vals}"
+                        )
+            break
+
     sol_path.write_text("\n".join(lines) + "\n")
 
 
@@ -639,6 +657,14 @@ def edit_weather(wth_path: str | Path, ops: dict) -> None:
             if len(chars) < hi:
                 chars += [" "] * (hi - len(chars))
             chars[lo:hi] = list(_fmt_w(new, hi - lo))
+        values = {name: _parse("".join(chars[lo:hi])) for name, (lo, hi) in fmap.items()
+                  if name in {"TMAX", "TMIN", "RAIN", "SRAD"}}
+        if values.get("TMAX") not in (None, -99) and values.get("TMIN") not in (None, -99):
+            if values["TMIN"] > values["TMAX"]:
+                raise ValueError(f"Weather edit makes TMIN > TMAX on data row {i + 1}")
+        for name in ("RAIN", "SRAD"):
+            if values.get(name) not in (None, -99) and values[name] < 0:
+                raise ValueError(f"Weather edit makes {name} negative on data row {i + 1}")
         lines[i] = "".join(chars)
     wth_path.write_text("\n".join(lines) + "\n")
 

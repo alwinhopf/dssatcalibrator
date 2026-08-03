@@ -35,12 +35,51 @@ def theta_hash(theta: dict[str, float]) -> str:
         if isinstance(value, bool):
             return value
         try:
-            return round(float(value), 6)
+            return float(value)
         except (TypeError, ValueError):
             return str(value)
 
     blob = json.dumps({k: normalize(v) for k, v in sorted(theta.items())})
-    return hashlib.sha1(blob.encode()).hexdigest()[:10]
+    return hashlib.sha256(blob.encode()).hexdigest()[:16]
+
+
+def _file_digest(path: Path) -> str | None:
+    if not path.exists() or not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _spawn_provenance(cfg, crop, param_specs, source_filex, geno_dir,
+                      dssat_paths, exe, treatments, effective_theta) -> dict:
+    try:
+        from .writers import parse_fields
+        fields = parse_fields(source_filex)
+    except Exception:
+        fields = {}
+    wsta = fields.get("wsta")
+    payload = {
+        "schema": 2,
+        "theta": {k: v for k, v in sorted(effective_theta.items())},
+        "crop": crop,
+        "specs": param_specs,
+        "treatments": treatments,
+        "filex_sha256": _file_digest(source_filex),
+        "genotype_sha256": {ext: _file_digest(geno_dir / f"{crop['genotype_stem']}.{ext}")
+                             for ext in ("CUL", "ECO", "SPE")},
+        "weather_sha256": _file_digest(dssat_paths["weather"] / f"{wsta}.WTH") if wsta else None,
+        "soil_sha256": _file_digest(dssat_paths["soil"] / "SOIL.SOL"),
+        "exe_sha256": _file_digest(Path(exe)),
+        "execution": cfg.get("execution", {}),
+        "gating": cfg.get("gating", {}),
+        "weather": cfg.get("weather", {}),
+        "soil": cfg.get("soil", {}),
+        "filex_overrides": cfg.get("filex_overrides", {}),
+    }
+    return json.loads(json.dumps(payload, sort_keys=True, default=str))
 
 
 def parse_treatments(filex_path: str | Path) -> list[int]:
@@ -377,22 +416,46 @@ def spawn_and_run(
     exp_cultivars = parse_cultivars(source_filex)
 
     effective_theta = _effective_theta(theta, param_specs, exp_id, exp_cultivars)
+    provenance = _spawn_provenance(
+        cfg, crop, param_specs, source_filex, geno_dir, dssat_paths, exe,
+        treatments, effective_theta,
+    )
     treatment_key = _treatment_run_key(treatments)
+    provenance_blob = json.dumps(provenance, sort_keys=True, separators=(",", ":"), default=str)
+    provenance_hash = hashlib.sha256(provenance_blob.encode("utf-8")).hexdigest()[:12]
     run_dir = run_root / exp_id
     if treatment_key:
         run_dir = run_dir / treatment_key
-    run_dir = run_dir / f"s_{theta_hash(effective_theta)}"
+    # Isolate runs when any template, forcing, executable, parser, gate, or
+    # configuration input changes, even if the coefficient vector is identical.
+    run_dir = run_dir / f"s_{theta_hash(effective_theta)}_{provenance_hash}"
     pg_path = run_dir / "PlantGro.OUT"
+    manifest_path = run_dir / "spawn_manifest.json"
 
-    if cfg["calibrator"].get("cache_spawns", True) and pg_path.exists() and pg_path.stat().st_size > 0:
+    recorded = None
+    try:
+        recorded = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        pass
+    if (cfg["calibrator"].get("cache_spawns", True)
+            and recorded == provenance and pg_path.exists() and pg_path.stat().st_size > 0):
         outputs = dssat_io.collect_run_outputs(run_dir)
         outputs = _stamp_single_treatment(outputs, treatments)
-        return SpawnResult(
-            status="cached", run_dir=run_dir, theta=theta,
-            plantgro=outputs.get("plantgro", dssat_io.parse_plantgro(pg_path)),
-            evaluate=outputs.get("evaluate", dssat_io.parse_evaluate(run_dir / "Evaluate.OUT")),
-            outputs=outputs,
-        )
+        pg_cached = outputs.get("plantgro", dssat_io.parse_plantgro(pg_path))
+        if pg_cached is None or pg_cached.empty:
+            recorded = None
+        else:
+            if treatments and "treatment" in pg_cached.columns:
+                found = set(pd.to_numeric(pg_cached["treatment"], errors="coerce").dropna().astype(int))
+                if not found.issubset(set(map(int, treatments))):
+                    recorded = None
+        if recorded == provenance:
+            return SpawnResult(
+                status="cached", run_dir=run_dir, theta=theta,
+                plantgro=pg_cached,
+                evaluate=outputs.get("evaluate", dssat_io.parse_evaluate(run_dir / "Evaluate.OUT")),
+                outputs=outputs,
+            )
 
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -429,18 +492,20 @@ def spawn_and_run(
     cul_updates = {}
     for g in GENETIC_GROUPS:
         cul_updates.update(groups.get(g, {}))
-    if cul_updates:
+    if cul_updates and str(cfg.get("gating", {}).get("cultivar", "free")).lower() != "blocked":
         anchors = crop.get("cultivar_anchors") or [crop["cultivar_anchor"]]
         for anchor in anchors:
             edit_cultivar(run_dir / f"{stem}.CUL", anchor, cul_updates)
-    for anchor, updates in groups.get("genetic_cultivar_by_cultivar", {}).items():
-        edit_cultivar(run_dir / f"{stem}.CUL", anchor, updates)
+    if str(cfg.get("gating", {}).get("cultivar", "free")).lower() != "blocked":
+        for anchor, updates in groups.get("genetic_cultivar_by_cultivar", {}).items():
+            edit_cultivar(run_dir / f"{stem}.CUL", anchor, updates)
 
     eco_updates = groups.get("genetic_ecotype", {})
-    if eco_updates:
+    if eco_updates and str(cfg.get("gating", {}).get("ecotype", "free")).lower() != "blocked":
         edit_ecotype(run_dir / f"{stem}.ECO", crop["ecotype"], eco_updates)
     cultivar_ecotypes = _cultivar_ecotype_map(crop)
-    for anchor, updates in groups.get("genetic_ecotype_by_cultivar", {}).items():
+    for anchor, updates in (groups.get("genetic_ecotype_by_cultivar", {}).items()
+                            if str(cfg.get("gating", {}).get("ecotype", "free")).lower() != "blocked" else []):
         eco_anchor = cultivar_ecotypes.get(anchor)
         if eco_anchor is None:
             raise ValueError(
@@ -451,7 +516,7 @@ def spawn_and_run(
     # species (.SPE) coefficients — gated: only written when gating.species == "free"
     # (physiology-defining; for new-species adaptation from an analog template).
     spe_updates = groups.get("genetic_species", {})
-    if spe_updates and str(cfg.get("gating", {}).get("species", "blocked")).lower() == "free":
+    if spe_updates and str(cfg.get("gating", {}).get("species", "blocked")).lower() != "blocked":
         from .writers import edit_species
         spe_file = run_dir / f"{stem}.SPE"
         if spe_file.exists():
@@ -661,6 +726,8 @@ def spawn_and_run(
     ev = dssat_io.parse_evaluate(run_dir / "Evaluate.OUT")
     outputs = dssat_io.collect_run_outputs(run_dir)
     outputs = _stamp_single_treatment(outputs, treatments)
+    manifest_path.write_text(json.dumps(provenance, indent=2, sort_keys=True, default=str) + "\n",
+                             encoding="utf-8")
 
     if not cfg["calibrator"].get("keep_run_dirs", False):
         if not cfg["calibrator"].get("cache_spawns", True):

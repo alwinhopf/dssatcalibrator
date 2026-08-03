@@ -4,8 +4,9 @@ calibrator:
   workdir: results/_workdir
   results_dir: results
   figures_dir: figures
-  dssat_exe: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/dscsm048_compiled_4.8.2.with_HM_code.exe
-  dssat_dir: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp
+  # Set DSSATCAL_DSSAT_EXE and DSSATCAL_DSSAT_DIR for a local DSSAT build.
+  dssat_exe: ''
+  dssat_dir: ''
   num_cores: 0
   cache_spawns: false
   keep_run_dirs: false
@@ -14,7 +15,8 @@ execution:
 templates:
   template_dir: ''
 source:
-  hemp_dir: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/Hemp
+  # Set DSSATCAL_HEMP_DIR to the crop-module data directory.
+  hemp_dir: ''
   observations: dssat
 experiments:
 - CNKU2101
@@ -458,7 +460,7 @@ parameters:
 observation_sources:
   field_measurements:
     active: false
-    hemp_dir: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/Hemp
+    hemp_dir: ''
     crop_ext: HM
   sentinel2_lai:
     active: false

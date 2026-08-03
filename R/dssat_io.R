@@ -28,7 +28,8 @@ yyddd_to_date <- function(code) {
     year <- as.integer(substr(s7, 1, 4))
     doy <- as.integer(substr(s7, 5, 7))
   }
-  if (is.na(doy) || doy < 1L || doy > 366L) return(as.Date(NA))
+  leap <- (year %% 4L == 0L && year %% 100L != 0L) || year %% 400L == 0L
+  if (is.na(doy) || doy < 1L || doy > if (leap) 366L else 365L) return(as.Date(NA))
   as.Date(sprintf("%04d-01-01", year)) + (doy - 1L)
 }
 

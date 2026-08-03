@@ -265,6 +265,19 @@ def validate_config(cfg: dict) -> dict:
                 errors.append(f"{tag}: scope '{scope}' requires at least one configured experiment.")
             if spec.get("active", False):
                 n_active += 1
+                gate_by_group = {
+                    "genetic_cultivar": "cultivar",
+                    "genetic_ecotype": "ecotype",
+                    "genetic_species": "species",
+                }
+                base_group = str(group).replace("_by_cultivar", "")
+                gate_name = gate_by_group.get(base_group)
+                gate_value = str((cfg.get("gating") or {}).get(gate_name, "free")).lower() if gate_name else "free"
+                if gate_name and gate_value == "blocked":
+                    errors.append(
+                        f"{tag}: active parameter is blocked by gating.{gate_name}; "
+                        "set that gate to 'gated'/'free' or deactivate the parameter."
+                    )
 
     if n_active == 0:
         errors.append("No active parameters: at least one parameter must have "

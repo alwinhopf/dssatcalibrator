@@ -163,6 +163,12 @@ def read_csv(path: str | Path) -> pd.DataFrame:
     ren = {"experiment": "exp_id", "exp": "exp_id", "trt": "treatment",
            "var": "variable", "obs": "value", "val": "value"}
     df = df.rename(columns={k: v for k, v in ren.items() if k in df.columns})
+    required = {"exp_id", "variable", "value"}
+    missing = sorted(required - set(df.columns))
+    if missing:
+        raise ValueError(f"Observation CSV is missing required columns: {missing}")
+    if "treatment" not in df.columns:
+        df["treatment"] = 1
     if "kind" not in df.columns:
         df["kind"] = np.where(df.get("date").notna() if "date" in df.columns else False,
                               "timeseries", "scalar")

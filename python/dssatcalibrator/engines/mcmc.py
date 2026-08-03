@@ -57,6 +57,44 @@ class McmcResult:
     acceptance: float
     chain: pd.DataFrame = field(default_factory=pd.DataFrame)
     initial_design: pd.DataFrame = None
+    rhat: float = float("nan")
+
+
+def chain_diagnostics(chain: pd.DataFrame, names: list[str], burn: int = 0) -> tuple[float, float]:
+    """Return conservative minimum bulk ESS and maximum split-chain R-hat."""
+    kept = chain[chain["step"] >= burn] if "step" in chain.columns else chain
+    walkers = sorted(kept["walker"].unique()) if "walker" in kept.columns else [0]
+    ess_values, rhat_values = [], []
+    for name in names:
+        series = [kept[kept["walker"] == w].sort_values("step")[name].to_numpy(float)
+                  for w in walkers]
+        n = min((len(x) for x in series), default=0)
+        if n < 3:
+            continue
+        series = [x[:n] for x in series]
+        taus = []
+        for x in series:
+            centered = x - x.mean()
+            var = np.dot(centered, centered) / n
+            if var <= 0:
+                taus.append(1.0)
+                continue
+            rho_sum = 0.0
+            for lag in range(1, n):
+                rho = np.dot(centered[:-lag], centered[lag:]) / ((n - lag) * var)
+                if not np.isfinite(rho) or rho <= 0:
+                    break
+                rho_sum += rho
+            taus.append(max(1.0, 1.0 + 2.0 * rho_sum))
+        ess_values.append(sum(n / tau for tau in taus))
+        if len(series) >= 2:
+            means = np.array([x.mean() for x in series])
+            within = np.mean([np.var(x, ddof=1) for x in series])
+            between = n * np.var(means, ddof=1)
+            var_hat = ((n - 1) / n) * within + between / n
+            rhat_values.append(np.sqrt(var_hat / within) if within > 0 else 1.0)
+    return (float(min(ess_values)) if ess_values else float("nan"),
+            float(max(rhat_values)) if rhat_values else float("nan"))
 
 
 def run_mcmc(cfg: dict, score_results, space, *, progress: bool = True) -> McmcResult:
@@ -152,8 +190,10 @@ def run_mcmc(cfg: dict, score_results, space, *, progress: bool = True) -> McmcR
     threshold = float(valid["score"].quantile(q)) if not valid.empty else float("inf")
     behavioural = design[design["score"] <= threshold].copy()
 
+    chain_df = pd.DataFrame(chain_rows)
+    ess, rhat = chain_diagnostics(chain_df, names, burn=burn)
     return McmcResult(design=design, behavioural=behavioural, best_theta=best_theta,
                       best_sample_id=best_sample_id, threshold=threshold,
-                      ess=float(len(design)), obj_results=obj_results, best=best,
+                      ess=ess, obj_results=obj_results, best=best,
                       acceptance=accepts / max(proposals, 1),
-                      chain=pd.DataFrame(chain_rows), initial_design=initial_design)
+                      chain=chain_df, initial_design=initial_design, rhat=rhat)

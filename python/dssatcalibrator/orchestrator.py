@@ -64,6 +64,12 @@ class CalibrationResult:
 
 def _setup(cfg: dict):
     space = ParameterSpace.from_config(cfg)
+    crop_codes = {str(c.get("code")) for c in (cfg.get("crops") or []) if c.get("code")}
+    if len(crop_codes) > 1:
+        raise ValueError(
+            "Mixed-crop calibration is not yet a valid execution mode. Split the "
+            "run by crop; using the first crop for every experiment would corrupt results."
+        )
     crop = crop_for(cfg, (cfg.get("crops") or [{}])[0].get("code", "HM"))
     exe = resolve_exe(cfg)
     specs = space.specs + expand_parameter_specs(cfg, fixed_parameters(cfg))
@@ -424,6 +430,7 @@ def _apply_staging(cfg: dict) -> dict:
         for name, spec in params.items():
             if isinstance(spec, dict) and spec.get("active", False) and (group in fg or name in fp):
                 spec["active"] = False
+                spec["fixed"] = True
                 frozen.append(name)
     if frozen:
         logger.info("Staging: froze %d parameter(s): %s", len(frozen), frozen)
@@ -444,7 +451,7 @@ def _apply_active_subset(cfg: dict, keep: list[str]) -> dict:
             continue
         for name, spec in params.items():
             if isinstance(spec, dict) and spec.get("active", False):
-                spec["active"] = name in keep
+                spec["active"] = name in keep or any(k.startswith(f"{name}__") for k in keep)
     return out
 
 
@@ -496,16 +503,23 @@ def _resolve_estimator(method: dict) -> str:
 
 @_register_estimator("surrogate")
 def _estimate_surrogate(work_cfg, space, setup, method, *, seed, n_workers, extras, progress):
-    from .engines import run_glue, run_surrogate
+    from .engines import run_surrogate
     _, _crop, _exe, _specs, _run_root, obs, experiments, _trts = setup
     scorer = _results_scorer(work_cfg, setup, n_workers)
     sur = run_surrogate(work_cfg, space, scorer, progress=progress)
-    glue = run_glue(sur.design, space.names, work_cfg, space=space)
-    best = sur.obj_results[glue.best_sample_id]
-    extras["surrogate_info"] = sur.info
+    valid = sur.design[np.isfinite(sur.design["score"])]
+    if valid.empty:
+        raise RuntimeError("Surrogate search produced no successful real-model evaluations")
+    best_id = int(valid["score"].idxmin())
+    best_theta = {name: float(sur.design.loc[best_id, name]) for name in space.names}
+    best = sur.obj_results[best_id]
+    extras["surrogate_info"] = {
+        **sur.info,
+        "inference": "adaptive optimization only; no GLUE posterior weights",
+    }
     return CalibrationResult(cfg=work_cfg, space=space, obs=obs, experiments=experiments,
-                             design=glue.design, obj_results=sur.obj_results,
-                             best_theta=glue.best_theta, best=best, glue=glue, extras=extras)
+                             design=sur.design, obj_results=sur.obj_results,
+                             best_theta=best_theta, best=best, glue=None, extras=extras)
 
 
 @_register_estimator("smc_pf")
@@ -526,7 +540,8 @@ def _estimate_mcmc(work_cfg, space, setup, method, *, seed, n_workers, extras, p
     scorer = _results_scorer(work_cfg, setup, n_workers)
     mc = run_mcmc(work_cfg, scorer, space, progress=progress)
     extras.update(initial_design=mc.initial_design, engine="mcmc",
-                  mcmc_chain=mc.chain, acceptance=mc.acceptance)
+                  mcmc_chain=mc.chain, acceptance=mc.acceptance,
+                  ess=mc.ess, rhat=mc.rhat)
     return CalibrationResult(cfg=work_cfg, space=space, obs=obs, experiments=experiments,
                              design=mc.design, obj_results=mc.obj_results,
                              best_theta=mc.best_theta, best=mc.best, glue=mc, extras=extras)
@@ -562,8 +577,9 @@ def _estimate_dream(work_cfg, space, setup, method, *, seed, n_workers, extras, 
     _, _crop, _exe, _specs, _run_root, obs, experiments, _trts = setup
     scorer = _results_scorer(work_cfg, setup, n_workers)
     mc = run_dream(work_cfg, scorer, space, progress=progress)
-    extras.update(initial_design=mc.initial_design, engine="dream",
-                  mcmc_chain=mc.chain, acceptance=mc.acceptance)
+    extras.update(initial_design=mc.initial_design, engine="de_mc",
+                  mcmc_chain=mc.chain, acceptance=mc.acceptance,
+                  ess=mc.ess, rhat=mc.rhat)
     return CalibrationResult(cfg=work_cfg, space=space, obs=obs, experiments=experiments,
                              design=mc.design, obj_results=mc.obj_results,
                              best_theta=mc.best_theta, best=mc.best, glue=mc, extras=extras)
@@ -927,6 +943,12 @@ def validate_cv(cfg: dict, *, scheme: str | None = None, progress=False) -> pd.D
     or ``site`` folds and read the gap between splits as your overfit signal.
     """
     space, crop, exe, specs, run_root, obs, experiments, treatments = _setup(cfg)
+    scoped = [s["name"] for s in space.specs if s.get("scope") == "experiment"]
+    if scoped:
+        raise ValueError(
+            "Cross-validation cannot transfer experiment-scoped parameters to a "
+            f"held-out environment: {scoped}. Use global/cultivar scope for CV."
+        )
     n_workers = resolve_cores(cfg["calibrator"].get("num_cores", 0))
     method = cfg.get("method", {})
     n = int(method.get("sample", {}).get("n", 100))
@@ -941,11 +963,12 @@ def validate_cv(cfg: dict, *, scheme: str | None = None, progress=False) -> pd.D
         if not train or not held:
             continue
         cfg_train = {**cfg, "experiments": train}
-        samples = sample(space, n=n, engine=method.get("sample", {}).get("engine", "lhs"),
+        train_space = ParameterSpace.from_config(cfg_train)
+        samples = sample(train_space, n=n, engine=method.get("sample", {}).get("engine", "lhs"),
                          seed=seed, include_start=True)
         design, obj_results, _ = evaluate_design(cfg_train, samples, progress=progress)
         from .engines import run_glue
-        glue = run_glue(design, space.names, cfg_train, space=space)
+        glue = run_glue(design, train_space.names, cfg_train, space=train_space)
         best_theta = glue.best_theta
         cal = obj_results[glue.best_sample_id]
         ev = _score_theta(best_theta, held, cfg={**cfg, "experiments": held}, crop=crop,
@@ -993,7 +1016,9 @@ def nowcast(cfg: dict, as_of_date, *, progress=True) -> dict:
 
     obs_all = _setup(cfg)[5].table
     ts = pd.Timestamp(as_of_date)
-    filtered = obs_all[obs_all["date"].isna() | (obs_all["date"] <= ts)].copy()
+    # Undated FileA scalars are end-of-season outcomes. Including them in an
+    # early-season nowcast leaks future yield/biomass into the calibration.
+    filtered = obs_all[obs_all["date"].notna() & (obs_all["date"] <= ts)].copy()
     if progress:
         print(f"Nowcast as of {ts.date()}: {len(filtered)} observations in scope", flush=True)
 

@@ -34,12 +34,16 @@ import numpy as np
 import pandas as pd
 
 from .. import priors
-from .mcmc import McmcResult
+from .mcmc import McmcResult, chain_diagnostics
 
 
 def run_dream(cfg: dict, score_results, space, *, progress: bool = True) -> McmcResult:
-    """Run DREAM(ZS). ``score_results(list_of_theta) -> list[ObjectiveResult]`` is
-    the framework's parallel evaluator; one generation is one parallel batch."""
+    """Run DE-MC through the legacy ``dream`` configuration name.
+
+    This implementation does not include the archive machinery required to
+    claim full DREAM(ZS). ``score_results(list_of_theta)`` is the framework's
+    parallel evaluator; one generation is one parallel batch.
+    """
     bcfg = cfg.get("method", {}).get("bayesian", {})
     n_chains = int(bcfg.get("n_chains", max(2 * space.ndim, 6)))
     n_gen = int(bcfg.get("n_generations", bcfg.get("n_steps", 400)))
@@ -54,6 +58,12 @@ def run_dream(cfg: dict, score_results, space, *, progress: bool = True) -> Mcmc
     d = space.ndim
     ranges = space.high - space.low
     gamma_default = 2.38 / np.sqrt(2 * d)
+
+    def reflect(values):
+        width = space.high - space.low
+        safe = np.where(width > 0, width, 1.0)
+        y = np.mod(values - space.low, 2 * safe)
+        return np.where(width > 0, space.low + np.where(y <= safe, y, 2 * safe - y), space.low)
 
     def vec(theta):
         return np.array([theta[n] for n in names], dtype=float)
@@ -71,7 +81,7 @@ def run_dream(cfg: dict, score_results, space, *, progress: bool = True) -> Mcmc
     initial_design = pd.DataFrame([{"sample_id": c, **cur_theta[c]} for c in range(n_chains)])
 
     if progress:
-        print(f"Running DREAM(ZS): {n_chains} chains x {n_gen} generations "
+        print(f"Running DE-MC: {n_chains} chains x {n_gen} generations "
               f"(burn-in {burn}, thin {thin})...", flush=True)
 
     chain_rows, samples = [], []
@@ -87,7 +97,7 @@ def run_dream(cfg: dict, score_results, space, *, progress: bool = True) -> Mcmc
             a, b = rng.choice(others, size=2, replace=False)
             gamma = 1.0 if rng.uniform() < snooker else gamma_default
             jump = gamma * (cur_vecs[a] - cur_vecs[b]) + eps * ranges * rng.standard_normal(d)
-            prop.append(space.to_theta(np.clip(cur_vecs[c] + jump, space.low, space.high)))
+            prop.append(space.to_theta(reflect(cur_vecs[c] + jump)))
 
         lp_prop = np.array([priors.log_prior_vec(space, t) for t in prop])
         idx_in = [c for c in range(n_chains) if np.isfinite(lp_prop[c])]
@@ -133,8 +143,10 @@ def run_dream(cfg: dict, score_results, space, *, progress: bool = True) -> Mcmc
     threshold = float(valid["score"].quantile(q)) if not valid.empty else float("inf")
     behavioural = design[design["score"] <= threshold].copy()
 
+    chain_df = pd.DataFrame(chain_rows)
+    ess, rhat = chain_diagnostics(chain_df, names, burn=burn)
     return McmcResult(design=design, behavioural=behavioural, best_theta=best_theta,
                       best_sample_id=best_sample_id, threshold=threshold,
-                      ess=float(len(design)), obj_results=obj_results, best=best,
+                      ess=ess, obj_results=obj_results, best=best,
                       acceptance=accepts / max(proposals, 1),
-                      chain=pd.DataFrame(chain_rows), initial_design=initial_design)
+                      chain=chain_df, initial_design=initial_design, rhat=rhat)

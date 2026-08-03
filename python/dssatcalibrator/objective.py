@@ -239,9 +239,8 @@ def _timeseries_sim_value(pg: pd.DataFrame, treatment: int, date, col: str):
     if not exact.empty:
         return exact.iloc[0][col]
     ok = dates.notna()
-    if ok.any() and target > dates[ok].max():
-        tail = sub.loc[ok].assign(_date=dates[ok]).sort_values("_date").iloc[-1]
-        return tail[col]
+    # Observations after model termination are unmatched, not equal to the last
+    # simulated state. Carry-forward biases late observations toward agreement.
     return np.nan
 
 
@@ -370,7 +369,7 @@ def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.Dat
 
     # Attempt to join original sigmas/weights from obs_table if they exist
     if obs_table is not None and not obs_table.empty and "sigma" in obs_table.columns:
-        lookup = {}
+        lookup_values = {}
         for _, r in obs_table.iterrows():
             obs_var = str(r["variable"])
             if str(r.get("kind", "")) in ("scalar", "phenology"):
@@ -379,7 +378,17 @@ def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.Dat
                 key = (r["exp_id"], int(r["treatment"]), obs_var)
             else:
                 key = (r["exp_id"], int(r["treatment"]), obs_var, pd.Timestamp(r["date"]).date())
-            lookup[key] = (r["sigma"], r["weight"])
+            lookup_values.setdefault(key, []).append((r["sigma"], r["weight"]))
+        lookup = {}
+        for key, values in lookup_values.items():
+            sigmas = np.array([v[0] for v in values], dtype=float)
+            weights = np.array([v[1] for v in values], dtype=float)
+            finite_sigma = sigmas[np.isfinite(sigmas)]
+            sigma_mean = (float(np.sqrt(np.sum(finite_sigma ** 2)) / len(values))
+                          if len(finite_sigma) == len(values) else np.nan)
+            finite_weight = weights[np.isfinite(weights)]
+            lookup[key] = (sigma_mean,
+                           float(np.mean(finite_weight)) if len(finite_weight) else np.nan)
             
         def get_obs_params(row):
             var = row["dssat"]
@@ -433,7 +442,9 @@ def _downweight_autocorr(df: pd.DataFrame) -> pd.DataFrame:
     for (_exp, _uv, _trt), g in ts.groupby(["exp_id", "user_var", "treatment"]):
         if len(g) < 3:
             continue
-        x = g.sort_values("date")["obs"].to_numpy(dtype=float)
+        # Estimate serial dependence from model residuals, not from the crop's
+        # naturally monotonic observed trajectory.
+        x = g.sort_values("date")["resid"].to_numpy(dtype=float)
         x = x - x.mean()
         denom = float(np.sum(x * x))
         if denom <= 0:

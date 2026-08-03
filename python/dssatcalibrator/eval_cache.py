@@ -20,7 +20,7 @@ import pandas as pd
 from . import objective as obj
 from .config import resolve_dssat_paths
 
-CACHE_SCHEMA_VERSION = 1
+CACHE_SCHEMA_VERSION = 2
 
 
 def _normalise(value: Any) -> Any:
@@ -222,6 +222,25 @@ class EvaluationCache:
             }
             for exp in experiments
         }
+        try:
+            from .writers import parse_fields
+            dssat_paths = resolve_dssat_paths(cfg)
+            for exp in experiments:
+                filex = hemp_dir / f"{exp}.{filex_ext}"
+                fields = parse_fields(filex)
+                wsta = fields.get("wsta")
+                input_files["experiments"][exp]["weather"] = (
+                    _file_fingerprint(dssat_paths["weather"] / f"{wsta}.WTH") if wsta else None
+                )
+            input_files["soil_library"] = _file_fingerprint(dssat_paths["soil"] / "SOIL.SOL")
+            input_files["dssat_profile"] = next(
+                (_file_fingerprint(dssat_paths["root"] / name)
+                 for name in ("DSSATPRO.V48", "DSSATPRO.L48", "DSCSM048.CTR")
+                 if (dssat_paths["root"] / name).exists()), None)
+        except Exception as exc:
+            input_files["support_error"] = str(exc)
+        input_files["parser"] = _file_fingerprint(Path(__file__).with_name("dssat_io.py"))
+        input_files["objective"] = _file_fingerprint(Path(__file__).with_name("objective.py"))
 
         context = {
             "schema": CACHE_SCHEMA_VERSION,

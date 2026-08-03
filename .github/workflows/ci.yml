@@ -9,13 +9,14 @@ on:
 jobs:
   python:
     name: Python tests (py${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         # Span versions so numpy/pandas API drift (e.g. read-only `.values`)
         # is caught here, not in a user's run.
         python-version: ["3.10", "3.12"]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -31,15 +32,19 @@ jobs:
 
   r-parity:
     name: R parity tests
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: r-lib/actions/setup-r@v2
         with:
           use-public-rspm: true
-      - name: Install R parity dependencies
-        # Sobol parity tests execute real designs and require `sensitivity`.
-        run: Rscript -e 'install.packages(c("testthat","jsonlite","yaml","digest","sensitivity"))'
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::testthat, any::jsonlite, any::yaml, any::digest, any::sensitivity
       - name: Run R parity suite
         run: Rscript run_r_tests.R
 

@@ -33,5 +33,8 @@ Suggests:
     parallel,
     testthat (>= 3.0.0),
     jsonlite
+Remotes:
+    alwinhopf/dssatengine@be06ba0268d51dd1ec6f6baa62ea5ed7869165a9,
+    alwinhopf/dssatutils@v0.4.0
 Config/testthat/edition: 3
 RoxygenNote: 7.3.1

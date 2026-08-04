@@ -44,7 +44,16 @@ jobs:
           use-public-rspm: true
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
+          # The parity runner sources R/ directly and requires only Imports plus
+          # the explicitly listed test packages. Installing every Suggests entry
+          # would also pull the optional GitHub-only shared DSSAT backends and
+          # unrelated calibration engines into this lightweight job.
+          dependencies: '"hard"'
           extra-packages: any::testthat, any::jsonlite, any::yaml, any::digest, any::sensitivity
+          # No R Markdown/Quarto files are built in this parity job. Avoid the
+          # action's separate all-dependencies Pandoc probe, which would pull
+          # the optional GitHub-only DSSAT backends back into resolution.
+          install-pandoc: false
       - name: Run R parity suite
         run: Rscript run_r_tests.R
 

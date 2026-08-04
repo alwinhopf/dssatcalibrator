@@ -8,32 +8,42 @@
 GENETIC_GROUPS <- c("genetic_cultivar")
 BATCH_FILE <- "DSSBatch.V48"
 
-# Python-repr-compatible number formatting for theta_hash blob parity.
+# Python-float-compatible JSON number formatting for theta_hash blob parity.
 .py_num <- function(x) {
-  v <- round(as.numeric(x), 6)
-  if (abs(v - round(v)) < 1e-9 && abs(v) < 1e15) return(sprintf("%.1f", v))
-  s <- formatC(v, format = "f", digits = 6)
-  s <- sub("0+$", "", s); s <- sub("\\.$", ".0", s)
-  s
+  v <- as.numeric(x)
+  if (is.nan(v)) return("NaN")
+  if (is.infinite(v)) return(if (v > 0) "Infinity" else "-Infinity")
+  # Python normalizes every numeric theta value with float(), so integral
+  # values retain a decimal point in json.dumps(). Keep the non-integral
+  # representation unrounded: differences below 1e-6 are cache-significant.
+  if (v == trunc(v) && abs(v) < 1e16) return(sprintf("%.1f", v))
+  as.character(jsonlite::toJSON(v, auto_unbox = TRUE, digits = NA))
 }
 
 .py_json_value <- function(x) {
+  if (length(x) == 1L && is.logical(x) && !is.na(x)) {
+    return(if (isTRUE(x)) "true" else "false")
+  }
   v <- suppressWarnings(as.numeric(x))
   if (length(v) == 1L && !is.na(v) && !isTRUE(is.logical(x))) return(.py_num(x))
   jsonlite::toJSON(as.character(x), auto_unbox = TRUE)
 }
 
-#' Stable 10-char hash of a (rounded) theta. Mirrors spawn.py:theta_hash.
-#' Builds the identical JSON blob (sorted keys, ", "/": " separators) and SHA-1s it.
+#' Stable 16-character hash of a normalized theta. Mirrors spawn.py:theta_hash.
+#' Builds the identical JSON blob (sorted keys, ", "/": " separators) and
+#' returns the first 16 hexadecimal characters of its SHA-256 digest.
 #' @export
 theta_hash <- function(theta) {
   keys <- sort(names(theta), method = "radix")
-  parts <- vapply(keys, function(k) sprintf('"%s": %s', k, .py_json_value(theta[[k]])), character(1))
+  parts <- vapply(keys, function(k) {
+    key_json <- jsonlite::toJSON(k, auto_unbox = TRUE)
+    sprintf('%s: %s', key_json, .py_json_value(theta[[k]]))
+  }, character(1))
   blob <- paste0("{", paste(parts, collapse = ", "), "}")
   if (!requireNamespace("digest", quietly = TRUE)) {
     stop("theta_hash requires the 'digest' package.")
   }
-  substr(digest::digest(blob, algo = "sha1", serialize = FALSE), 1, 10)
+  substr(digest::digest(blob, algo = "sha256", serialize = FALSE), 1, 16)
 }
 
 #' Return the treatment numbers from a FileX `*TREATMENTS` section.

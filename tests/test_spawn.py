@@ -20,6 +20,22 @@ HEMP_CFG = REPO / "config_hemp.yaml"
 @pytest.fixture
 def hemp_setup(hemp_dir):
     cfg = load_config(HEMP_CFG)
+    # The maintained example config is intentionally machine-neutral. This
+    # integration fixture has already discovered a local, optional hemp DSSAT
+    # installation, so inject that installation explicitly for the real run.
+    dssat_root = hemp_dir.parent
+    local_executables = [
+        dssat_root / "dscsm048_compiled_4.8.2.with_HM_code.exe",
+        dssat_root / "dscsm048",
+        dssat_root / "DSCSM048.EXE",
+        dssat_root / "dscsm048.exe",
+    ]
+    local_exe = next((path for path in local_executables if path.is_file()), None)
+    if local_exe is None:
+        pytest.skip(f"DSSAT hemp executable not found under: {dssat_root}")
+    cfg["calibrator"]["dssat_dir"] = str(dssat_root)
+    cfg["calibrator"]["dssat_exe"] = str(local_exe)
+    cfg["source"]["hemp_dir"] = str(hemp_dir)
     exe = resolve_exe(cfg)
     if not Path(exe).exists():
         pytest.skip(f"DSSAT exe not found: {exe}")

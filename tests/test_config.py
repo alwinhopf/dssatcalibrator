@@ -174,12 +174,10 @@ def test_zero_num_cores_uses_all_logical_cores(monkeypatch):
 def test_resolve_exe():
     cfg = cfgmod.load_config(HEMP_CFG)
     exe = cfgmod.resolve_exe(cfg)
-    # Retain a valid explicit executable, but fall back from a foreign Windows
-    # path to the sibling POSIX DSSAT48 install when available.
-    if exe.exists():
-        assert exe.name.lower() in {"dscsm048", "dscsm048.exe", "dscsm048_compiled_4.8.2.with_hm_code.exe"}
-    else:
-        assert "with_HM_code" in str(exe)
+    # The portable example has no machine-specific executable. Resolve a
+    # discovered sibling install when available, otherwise return the canonical
+    # DSSAT executable path that validation can report to the user.
+    assert exe.name.lower() in {"dscsm048", "dscsm048.exe"}
 
 
 def test_resolve_exe_retains_custom_name_when_native_discovery_fails(monkeypatch):

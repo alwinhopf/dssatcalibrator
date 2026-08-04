@@ -38,7 +38,7 @@ test_that("parse_summary matches Python", {
   expect_equal(as.numeric(sm$HWAM), as.numeric(unlist(gold$HWAM)), tolerance = 1e-9)
 })
 
-test_that("theta_hash matches Python (identical SHA-1 of identical blob)", {
+test_that("theta_hash matches Python (identical SHA-256 of identical blob)", {
   skip_if_not_installed("digest")
   gold <- read_fix("spawn_helpers.json")
   for (k in names(gold$thetas)) {
@@ -48,9 +48,10 @@ test_that("theta_hash matches Python (identical SHA-1 of identical blob)", {
 
 test_that("theta_hash supports FileX code values", {
   skip_if_not_installed("digest")
-  expect_equal(theta_hash(list(irrig_code = "IR004", x = 1.0)), "31684502a7")
-  expect_equal(theta_hash(list(x = 1L, irrig_code = "IR004")), "31684502a7")
-  expect_false(theta_hash(list(irrig_code = "IR005", x = 1.0)) == "31684502a7")
+  expect_equal(theta_hash(list(irrig_code = "IR004", x = 1.0)), "06a431c288780c62")
+  expect_equal(theta_hash(list(x = 1L, irrig_code = "IR004")), "06a431c288780c62")
+  expect_false(theta_hash(list(irrig_code = "IR004", x = 1.0000001)) == "06a431c288780c62")
+  expect_false(theta_hash(list(irrig_code = "IR005", x = 1.0)) == "06a431c288780c62")
 })
 
 test_that("write_dssbatch and normalize_treatments match Python", {

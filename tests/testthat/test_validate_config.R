@@ -47,19 +47,15 @@ test_that("cultivar-scoped parameters and zero-observation defaults match Python
   expect_identical(validate_config(cfg), invisible(cfg))
 })
 
-test_that("DSSAT path resolution supports sibling POSIX installations", {
+test_that("portable DSSAT path resolution uses a canonical executable name", {
   cfg_path <- "../../config_hemp.yaml"
   if (!file.exists(cfg_path)) cfg_path <- "config_hemp.yaml"
   skip_if_not(file.exists(cfg_path), "config_hemp.yaml not found")
   cfg <- load_config(cfg_path, validate = FALSE)
   exe <- resolve_exe(cfg)
+  expect_true(tolower(basename(exe)) %in% c("dscsm048", "dscsm048.exe"))
   if (file.exists(exe)) {
-    expect_true(tolower(basename(exe)) %in% c(
-      "dscsm048", "dscsm048.exe", "dscsm048_compiled_4.8.2.with_hm_code.exe"
-    ))
     expect_true(dir.exists(resolve_dssat_paths(cfg)$genotype))
-  } else {
-    expect_match(exe, "with_HM_code", fixed = TRUE)
   }
 })
 

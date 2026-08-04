@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from copy import deepcopy
 import json
+import math
 from pathlib import Path
 
 import yaml
@@ -68,6 +69,9 @@ def _activate_growth_specs(cfg: dict, donor: dict, fraction: float) -> None:
             donor_spec = donor["parameters"][group][name]
             global_lo = float(donor_spec["min"])
             global_hi = float(donor_spec["max"])
+            spec["min"] = global_lo
+            spec["max"] = global_hi
+            spec["start"] = float(donor_spec.get("start", 0.5 * (global_lo + global_hi)))
             for cultivar in cultivars:
                 values = (read_cultivar_values(cul_path, cultivar) if group == "genetic_cultivar"
                           else read_ecotype_values(eco_path, eco_map[cultivar]))
@@ -81,6 +85,18 @@ def _activate_growth_specs(cfg: dict, donor: dict, fraction: float) -> None:
 
     for name in LATE_SPE:
         cfg["parameters"]["genetic_species"][name]["active"] = True
+    for spec in cfg["parameters"]["genetic_species"].values():
+        if spec.get("active", False) and "DEVELOPMENT" in str(spec.get("spe_key", "")).upper():
+            spec["step"] = 0.1
+            step = float(spec["step"])
+            spec["min"] = math.floor(float(spec["min"]) / step + 1e-9) * step
+            spec["max"] = math.ceil(float(spec["max"]) / step - 1e-9) * step
+            spec["start"] = round(float(spec["start"]) / step) * step
+            if spec["min"] >= spec["max"]:
+                raise ValueError(
+                    f"{spec.get('spe_key')} token {spec.get('spe_index', 0)} has "
+                    "fewer than two writable values in its requested range."
+                )
 
 
 def main() -> None:
@@ -124,6 +140,8 @@ def main() -> None:
         "weighting": "unified",
         "score_metric": "rmse",
         "obs_autocorr": True,
+        "missing_simulation_policy": "reject",
+        "timeseries_after_simulation_policy": "carry_forward",
         "ignore_zero_observations": ["grain"],
         "weights": {
             "anthesis": 3.0, "biomass": 1.0, "grain": 1.0, "LAI": 0.75,

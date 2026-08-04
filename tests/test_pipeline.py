@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from dssatcalibrator import orchestrator
 from dssatcalibrator.observations import Observations
@@ -108,3 +109,16 @@ def test_pipeline_optimizer():
     res = _calibrate(METHODS["optimizer"])
     _check(res)
     assert (res.extras or {}).get("engine") == "optimizer"
+
+
+def test_target_coverage_rejects_missing_selected_treatment():
+    obs = pd.DataFrame({
+        "exp_id": ["E1"],
+        "treatment": [1],
+        "variable": ["CWAD"],
+    })
+
+    with pytest.raises(ValueError, match="E1:T2"):
+        orchestrator._validate_target_coverage(
+            obs, ["E1"], {"E1": [1, 2]}
+        )

@@ -438,6 +438,12 @@ score <- function(results, obs_table, cfg) {
       g <- by_var[[uv]]; w(uv) * .group_loss(g, cfg)
     }, numeric(1))
     sc <- if (length(per)) mean(per) else Inf
+  } else if (weighting == "site_variable") {
+    by_exp_var <- split(resid, list(resid$exp_id, resid$user_var), drop = TRUE)
+    per <- vapply(by_exp_var, function(g) {
+      w(as.character(g$user_var[1])) * .group_loss(g, cfg)
+    }, numeric(1))
+    sc <- if (length(per)) mean(per) else Inf
   } else {  # "unified" (default) and "agmip_wls"
     sc <- 0.0
     for (uv in names(by_var)) {

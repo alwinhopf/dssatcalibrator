@@ -5,7 +5,9 @@ from pathlib import Path
 from dssatcalibrator.writers import edit_cultivar, edit_species, read_cultivar_values, cultivar_field_map
 
 REPO = Path(__file__).resolve().parents[1]
-GENO = REPO.parent / "DSSAT48" / "Genotype" / "HMGRO048.CUL"
+GENO = REPO.parent / "DSSAT48Hemp" / "Genotype" / "HMGRO048.CUL"
+if not GENO.exists():
+    GENO = REPO.parent / "DSSAT48" / "Genotype" / "HMGRO048.CUL"
 if not GENO.exists():
     GENO = Path("C:/DSSAT48/Genotype/HMGRO048.CUL")
 
@@ -56,6 +58,23 @@ def test_read_cultivar_recovers_overflowed_numeric_cell(tmp_path):
 
     values = read_cultivar_values(cul, "IB0008")
 
+    assert values["WTPSD"] == 0.035
+    assert values["SFDUR"] == 20.0
+
+
+def test_installed_ib0008_wtpsd_does_not_overflow_into_sfdur(tmp_path):
+    cul = _cul(tmp_path)
+    if _anchor(cul) != "IB0008":
+        return
+    fmap = cultivar_field_map(cul)
+    row = next(line for line in cul.read_text(errors="replace").splitlines()
+               if line.startswith("IB0008"))
+    wtpsd = row[slice(*fmap["WTPSD"])]
+    sfdur = row[slice(*fmap["SFDUR"])]
+
+    assert len(wtpsd.strip().split()) == 1
+    assert len(sfdur.strip().split()) == 1
+    values = read_cultivar_values(cul, "IB0008")
     assert values["WTPSD"] == 0.035
     assert values["SFDUR"] == 20.0
 

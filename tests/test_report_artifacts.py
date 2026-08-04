@@ -121,7 +121,10 @@ def test_make_report_falls_back_to_best_spawn_manifest(tmp_path, monkeypatch):
     assert manifest["sample_id"].tolist() == ["best", "best"]
     assert manifest["exp_id"].tolist() == ["E1", "E2"]
     assert manifest["status"].tolist() == ["success", "success"]
-    assert {"theta_hash", "theta_json", "theta_P1"} <= set(manifest.columns)
+    assert {
+        "theta_hash", "full_theta_hash", "effective_theta_hash",
+        "theta_json", "effective_theta_json", "theta_P1",
+    } <= set(manifest.columns)
     assert (tmp_path / "manifest.json").exists()
 
 

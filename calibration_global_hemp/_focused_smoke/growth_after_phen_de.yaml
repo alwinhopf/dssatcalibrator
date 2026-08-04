@@ -1,7 +1,7 @@
 calibrator:
-  name: global_16_joint_growth_from_phen_de_lhs5000
+  name: focused_smoke_growth_after_phen_de
   seed: 1348
-  workdir: results/_workdir_global_16_joint_growth_from_phen_de_lhs5000
+  workdir: results/_workdir_focused_smoke_growth_after_phen_de
   results_dir: results/global_hemp_calibration
   figures_dir: figures/global_hemp_calibration
   dssat_exe: C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/dscsm048_compiled_4.8.2.with_HM_code.exe
@@ -18,7 +18,7 @@ method:
   preset: custom
   sample:
     engine: lhs
-    n: 4999
+    n: 1
     include_start: true
   sensitivity:
     engine: none
@@ -39,12 +39,6 @@ method:
     engine: none
 objective:
   weighting: unified
-  score_metric: rmse
-  obs_autocorr: true
-  missing_simulation_policy: reject
-  timeseries_after_simulation_policy: carry_forward
-  ignore_zero_observations:
-  - grain
   weights:
     anthesis: 3.0
     biomass: 1.0
@@ -87,6 +81,15 @@ objective:
     leaf_number:
       type: relative
       value: 0.15
+  likelihood:
+    type: gaussian
+  model_discrepancy: {}
+  ignore_zero_observations:
+  - grain
+  missing_simulation_policy: reject
+  timeseries_after_simulation_policy: carry_forward
+  score_metric: rmse
+  obs_autocorr: true
   max_bias_penalty:
     variable: anthesis
     lambda: 0.5
@@ -96,7 +99,7 @@ objective:
 parameters:
   genetic_cultivar:
     CSDL:
-      active: true
+      active: false
       min: 11.6586644
       max: 16.97465745
       start: 16.17465745
@@ -104,22 +107,23 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 14.648410301985221
-        IB0002: 13.399847631284448
-        IB0007: 16.052266100862635
-        IB0008: 12.826617477621275
+        IB0001: 14.84
+        IB0002: 13.37
+        IB0007: 15.846048535430205
+        IB0008: 12.84832383739895
       min_by_cultivar:
         IB0001: 14.448410301985222
         IB0002: 13.199847631284449
-        IB0007: 15.892266100862635
+        IB0007: 15.846048535430205
         IB0008: 12.626617477621275
       max_by_cultivar:
         IB0001: 14.84841030198522
         IB0002: 13.599847631284447
         IB0007: 16.212266100862635
         IB0008: 13.026617477621274
+      fixed: true
     PPSEN:
-      active: true
+      active: false
       min: 0.001
       max: 0.8
       start: 0.05281406
@@ -127,10 +131,10 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 0.4355443809168671
-        IB0002: 0.17916416209045122
-        IB0007: 0.032944052958347354
-        IB0008: 0.6719380326743069
+        IB0001: 0.4163
+        IB0002: 0.1798
+        IB0007: 0.0539935665289312
+        IB0008: 0.669863194407579
       min_by_cultivar:
         IB0001: 0.40554438091686706
         IB0002: 0.1576767490904512
@@ -139,10 +143,11 @@ parameters:
       max_by_cultivar:
         IB0001: 0.4655443809168671
         IB0002: 0.20065157509045123
-        IB0007: 0.046125458958347354
+        IB0007: 0.0539935665289312
         IB0008: 0.6959865466743068
+      fixed: true
     EM-FL:
-      active: true
+      active: false
       min: 6.974957
       max: 57.08227227
       start: 25.91596685
@@ -150,22 +155,23 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 25.874627060030626
-        IB0002: 14.761379253152452
-        IB0007: 19.544938449215163
-        IB0008: 49.6623191158002
+        IB0001: 24.816828190249087
+        IB0002: 13.8
+        IB0007: 14.228728480127968
+        IB0008: 51.07894214411429
       min_by_cultivar:
         IB0001: 23.874627060030626
         IB0002: 12.761379253152452
-        IB0007: 17.944938449215165
+        IB0007: 14.228728480127968
         IB0008: 47.6623191158002
       max_by_cultivar:
         IB0001: 27.874627060030626
         IB0002: 16.76137925315245
         IB0007: 21.14493844921516
         IB0008: 51.6623191158002
+      fixed: true
     FL-SH:
-      active: true
+      active: false
       min: 0.1
       max: 30.0
       start: 8.0
@@ -173,10 +179,10 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 9.0
-        IB0002: 6.0
-        IB0007: 10.0
-        IB0008: 10.0
+        IB0001: 9.253
+        IB0002: 6.004
+        IB0007: 9.787
+        IB0008: 9.963
       min_by_cultivar:
         IB0001: 2.7750000000000004
         IB0002: 0.1
@@ -187,8 +193,9 @@ parameters:
         IB0002: 12.225
         IB0007: 16.225
         IB0008: 16.225
+      fixed: true
     FL-SD:
-      active: true
+      active: false
       min: 0.1
       max: 40.0
       start: 12.0
@@ -196,10 +203,10 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 15.0
-        IB0002: 10.0
-        IB0007: 15.0
-        IB0008: 15.0
+        IB0001: 11.93
+        IB0002: 3.093
+        IB0007: 19.31
+        IB0008: 12.5
       min_by_cultivar:
         IB0001: 6.275
         IB0002: 1.2750000000000004
@@ -210,6 +217,7 @@ parameters:
         IB0002: 18.725
         IB0007: 23.725
         IB0008: 23.725
+      fixed: true
     SD-PM:
       active: true
       min: 0.1
@@ -219,10 +227,10 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 53.0
-        IB0002: 30.0
-        IB0007: 35.0
-        IB0008: 50.0
+        IB0001: 64.68
+        IB0002: 15.02
+        IB0007: 53.2
+        IB0008: 66.43
       min_by_cultivar:
         IB0001: 30.525
         IB0002: 7.524999999999999
@@ -230,11 +238,18 @@ parameters:
         IB0008: 27.525
       max_by_cultivar:
         IB0001: 75.475
-        IB0002: 52.475
+        IB0002: 24.009999999999998
         IB0007: 57.475
         IB0008: 72.475
+      fixed: true
+      cultivars:
+      - IB0002
+      fixed_cultivars:
+      - IB0001
+      - IB0007
+      - IB0008
     FL-LF:
-      active: true
+      active: false
       min: 1.0
       max: 80.0
       start: 30.0
@@ -242,10 +257,10 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 30.0
-        IB0002: 25.0
-        IB0007: 45.0
-        IB0008: 40.0
+        IB0001: 34.59
+        IB0002: 36.37
+        IB0007: 59.49
+        IB0008: 43.43
       min_by_cultivar:
         IB0001: 11.25
         IB0002: 6.25
@@ -256,6 +271,7 @@ parameters:
         IB0002: 43.75
         IB0007: 63.75
         IB0008: 58.75
+      fixed: true
     LFMAX:
       active: true
       role: candidate
@@ -266,20 +282,27 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 1.3
-        IB0002: 1.3
-        IB0007: 1.4
-        IB0008: 1.4
+        IB0001: 1.256
+        IB0002: 1.068
+        IB0007: 1.738
+        IB0008: 0.9249
       min_by_cultivar:
         IB0001: 0.75
-        IB0002: 0.75
-        IB0007: 0.8499999999999999
+        IB0002: 0.8480000000000001
+        IB0007: 1.518
         IB0008: 0.8499999999999999
       max_by_cultivar:
         IB0001: 1.85
-        IB0002: 1.85
+        IB0002: 1.288
         IB0007: 1.95
-        IB0008: 1.95
+        IB0008: 1.1449
+      fixed: true
+      cultivars:
+      - IB0002
+      - IB0007
+      - IB0008
+      fixed_cultivars:
+      - IB0001
     SLAVR:
       active: true
       role: candidate
@@ -290,20 +313,27 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 240.0
-        IB0002: 230.0
-        IB0007: 300.0
-        IB0008: 250.0
+        IB0001: 125.2
+        IB0002: 136.8
+        IB0007: 185.8
+        IB0008: 127.9
       min_by_cultivar:
         IB0001: 115.0
         IB0002: 105.0
         IB0007: 175.0
         IB0008: 125.0
       max_by_cultivar:
-        IB0001: 365.0
-        IB0002: 355.0
-        IB0007: 425.0
-        IB0008: 375.0
+        IB0001: 175.2
+        IB0002: 186.8
+        IB0007: 235.8
+        IB0008: 177.9
+      fixed: true
+      cultivars:
+      - IB0001
+      - IB0002
+      - IB0007
+      - IB0008
+      fixed_cultivars: []
     SIZLF:
       active: true
       role: candidate
@@ -314,20 +344,27 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 220.0
-        IB0002: 220.0
-        IB0007: 250.0
-        IB0008: 250.0
+        IB0001: 129.9
+        IB0002: 250.7
+        IB0007: 204.4
+        IB0008: 282.0
       min_by_cultivar:
         IB0001: 95.0
         IB0002: 95.0
-        IB0007: 125.0
+        IB0007: 154.4
         IB0008: 125.0
       max_by_cultivar:
-        IB0001: 345.0
+        IB0001: 179.9
         IB0002: 345.0
-        IB0007: 375.0
+        IB0007: 254.4
         IB0008: 375.0
+      fixed: true
+      cultivars:
+      - IB0001
+      - IB0007
+      fixed_cultivars:
+      - IB0002
+      - IB0008
     XFRT:
       active: true
       role: candidate
@@ -338,20 +375,27 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 0.4
-        IB0002: 0.7
-        IB0007: 0.1
-        IB0008: 0.6
+        IB0001: 0.2331
+        IB0002: 0.7732
+        IB0007: 0.2255
+        IB0008: 0.7199
       min_by_cultivar:
         IB0001: 0.17500000000000004
         IB0002: 0.475
         IB0007: 0.05
         IB0008: 0.375
       max_by_cultivar:
-        IB0001: 0.625
+        IB0001: 0.3231
         IB0002: 0.9249999999999999
         IB0007: 0.32499999999999996
         IB0008: 0.825
+      fixed: true
+      cultivars:
+      - IB0001
+      fixed_cultivars:
+      - IB0002
+      - IB0007
+      - IB0008
     WTPSD:
       active: true
       role: candidate
@@ -362,20 +406,27 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 0.02
-        IB0002: 0.02
-        IB0007: 0.04
-        IB0008: 0.035
+        IB0001: 0.1685
+        IB0002: 0.0976
+        IB0007: 0.1138
+        IB0008: 0.0709
       min_by_cultivar:
-        IB0001: 0.01
-        IB0002: 0.01
-        IB0007: 0.01
+        IB0001: 0.10700000000000001
+        IB0002: 0.03610000000000001
+        IB0007: 0.04830000000000001
         IB0008: 0.01
       max_by_cultivar:
-        IB0001: 0.3175
-        IB0002: 0.3175
-        IB0007: 0.33749999999999997
-        IB0008: 0.3325
+        IB0001: 0.23
+        IB0002: 0.15910000000000002
+        IB0007: 0.1793
+        IB0008: 0.13540000000000002
+      fixed: true
+      cultivars:
+      - IB0001
+      - IB0002
+      - IB0007
+      - IB0008
+      fixed_cultivars: []
     SFDUR:
       active: true
       role: candidate
@@ -386,22 +437,29 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 20.0
-        IB0002: 20.0
-        IB0007: 15.0
-        IB0008: 20.0
+        IB0001: 23.1
+        IB0002: 26.03
+        IB0007: 8.082
+        IB0008: 27.68
       min_by_cultivar:
         IB0001: 6.25
         IB0002: 6.25
         IB0007: 5.0
-        IB0008: 6.25
+        IB0008: 22.18
       max_by_cultivar:
         IB0001: 33.75
         IB0002: 33.75
         IB0007: 28.75
-        IB0008: 33.75
+        IB0008: 33.18
+      fixed: true
+      cultivars:
+      - IB0008
+      fixed_cultivars:
+      - IB0001
+      - IB0002
+      - IB0007
     SDPDV:
-      active: true
+      active: false
       role: candidate
       min: 1.0
       max: 100.0
@@ -410,10 +468,10 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 1.0
-        IB0002: 1.0
-        IB0007: 20.0
-        IB0008: 1.0
+        IB0001: 25.06
+        IB0002: 6.707
+        IB0007: 4.762
+        IB0008: 21.87
       min_by_cultivar:
         IB0001: 1.0
         IB0002: 1.0
@@ -424,8 +482,9 @@ parameters:
         IB0002: 25.75
         IB0007: 44.75
         IB0008: 25.75
+      fixed: true
     PODUR:
-      active: true
+      active: false
       role: candidate
       min: 1.0
       max: 60.0
@@ -434,10 +493,10 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 30.0
-        IB0002: 25.0
-        IB0007: 10.0
-        IB0008: 30.0
+        IB0001: 34.23
+        IB0002: 22.42
+        IB0007: 18.41
+        IB0008: 37.77
       min_by_cultivar:
         IB0001: 15.25
         IB0002: 10.25
@@ -448,8 +507,9 @@ parameters:
         IB0002: 39.75
         IB0007: 24.75
         IB0008: 44.75
+      fixed: true
     THRSH:
-      active: true
+      active: false
       role: candidate
       min: 50.0
       max: 95.0
@@ -458,10 +518,10 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 80.0
-        IB0002: 80.0
-        IB0007: 80.0
-        IB0008: 80.0
+        IB0001: 73.11
+        IB0002: 80.84
+        IB0007: 79.33
+        IB0008: 80.64
       min_by_cultivar:
         IB0001: 68.75
         IB0002: 68.75
@@ -472,9 +532,10 @@ parameters:
         IB0002: 91.25
         IB0007: 91.25
         IB0008: 91.25
+      fixed: true
   genetic_ecotype:
     THVAR:
-      active: true
+      active: false
       min: 0.0
       max: 0.46638929
       start: 0.38638929
@@ -482,10 +543,10 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 0.1430560077414327
-        IB0002: 0.11174201085015435
-        IB0007: 0.409856681895793
-        IB0008: 0.016617887342835213
+        IB0001: 0.1558
+        IB0002: 0.1059
+        IB0007: 0.418
+        IB0008: 0.0088
       min_by_cultivar:
         IB0001: 0.1244959257414327
         IB0002: 0.08942775985015436
@@ -496,8 +557,9 @@ parameters:
         IB0002: 0.13405626185015435
         IB0007: 0.425856681895793
         IB0008: 0.03516206134283521
+      fixed: true
     PL-EM:
-      active: true
+      active: false
       min: 0.0
       max: 15.80160928
       start: 13.30160928
@@ -505,10 +567,10 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 4.961228517474183
-        IB0002: 5.316327405038814
-        IB0007: 11.577850601202456
-        IB0008: 6.25054554034793
+        IB0001: 4.588737503818302
+        IB0002: 5.666
+        IB0007: 11.709728351089431
+        IB0008: 6.006744903222826
       min_by_cultivar:
         IB0001: 4.161228517474183
         IB0002: 4.94080072
@@ -519,8 +581,9 @@ parameters:
         IB0002: 6.116327405038814
         IB0007: 12.077850601202456
         IB0008: 6.96112146234793
+      fixed: true
     EM-V1:
-      active: true
+      active: false
       min: 0.0
       max: 18.55902476
       start: 8.52201729
@@ -528,10 +591,10 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 12.109007035070897
-        IB0002: 1.0902916646221046
-        IB0007: 6.752640055690753
-        IB0008: 8.33086407419429
+        IB0001: 11.82
+        IB0002: 0.9674
+        IB0007: 6.343
+        IB0008: 8.548
       min_by_cultivar:
         IB0001: 11.309007035070897
         IB0002: 0.5097759786221046
@@ -542,8 +605,9 @@ parameters:
         IB0002: 1.6708073506221046
         IB0007: 7.3526400556907525
         IB0008: 9.13086407419429
+      fixed: true
     V1-JU:
-      active: true
+      active: false
       min: 0.0
       max: 32.3869007
       start: 26.3869007
@@ -551,10 +615,10 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 0.5417036899297301
-        IB0002: 4.17660465822513
-        IB0007: 25.370625349170453
-        IB0008: 8.404422559355266
+        IB0001: 0.9316
+        IB0002: 4.855632620961969
+        IB0007: 25.296616002932364
+        IB0008: 9.920026223588494
       min_by_cultivar:
         IB0001: 0.0
         IB0002: 3.2321473602251296
@@ -565,8 +629,9 @@ parameters:
         IB0002: 5.12106195622513
         IB0007: 26.570625349170452
         IB0008: 10.004422559355266
+      fixed: true
     JU-R0:
-      active: true
+      active: false
       min: 4.34597975
       max: 36.3380109
       start: 29.25027731
@@ -574,10 +639,10 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 18.077879520426308
-        IB0002: 12.524232019508876
-        IB0007: 31.23025103660456
-        IB0008: 23.720076070283838
+        IB0001: 17.81
+        IB0002: 10.551637603597063
+        IB0007: 30.85
+        IB0008: 22.24
       min_by_cultivar:
         IB0001: 16.077879520426308
         IB0002: 10.524232019508876
@@ -588,8 +653,9 @@ parameters:
         IB0002: 14.524232019508876
         IB0007: 32.43025103660456
         IB0008: 25.720076070283838
+      fixed: true
     R1PPO:
-      active: true
+      active: false
       min: 0.0
       max: 1.2
       start: 0.504
@@ -597,10 +663,10 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 0.504
-        IB0002: 0.504
-        IB0007: 0.504
-        IB0008: 0.504
+        IB0001: 0.7083
+        IB0002: 0.6876
+        IB0007: 0.499
+        IB0008: 0.2607
       min_by_cultivar:
         IB0001: 0.20400000000000001
         IB0002: 0.20400000000000001
@@ -611,6 +677,7 @@ parameters:
         IB0002: 0.804
         IB0007: 0.804
         IB0008: 0.804
+      fixed: true
     R7-R8:
       active: false
       min: 0.1
@@ -619,8 +686,9 @@ parameters:
       prior:
         dist: uniform
       scope: cultivar
+      fixed: true
     FL-VS:
-      active: true
+      active: false
       min: 0.1
       max: 80.0
       start: 35.0
@@ -628,10 +696,10 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 53.0
-        IB0002: 34.0
-        IB0007: 10.0
-        IB0008: 50.0
+        IB0001: 59.6
+        IB0002: 33.18
+        IB0007: 23.6
+        IB0008: 62.53
       min_by_cultivar:
         IB0001: 35.5
         IB0002: 16.5
@@ -642,8 +710,9 @@ parameters:
         IB0002: 51.5
         IB0007: 27.5
         IB0008: 67.5
+      fixed: true
     OPTBI:
-      active: true
+      active: false
       min: 3.0
       max: 15.88224173
       start: 4.83659804
@@ -651,10 +720,10 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 7.481421806416139
-        IB0002: 11.899336211997404
-        IB0007: 4.772956988635833
-        IB0008: 12.706909225306196
+        IB0001: 7.99
+        IB0002: 12.05
+        IB0007: 4.893
+        IB0008: 13.11
       min_by_cultivar:
         IB0001: 6.8818742004161395
         IB0002: 11.299336211997405
@@ -665,8 +734,9 @@ parameters:
         IB0002: 12.499336211997404
         IB0007: 5.156616792635833
         IB0008: 13.306909225306196
+      fixed: true
     SLOBI:
-      active: true
+      active: false
       min: 0.0
       max: 0.08
       start: 0.01259011
@@ -674,10 +744,10 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 0.04154636538203355
-        IB0002: 0.046270872801053055
-        IB0007: 0.016383164350040367
-        IB0008: 0.06076663076254591
+        IB0001: 0.0385
+        IB0002: 0.0468
+        IB0007: 0.0175
+        IB0008: 0.0621
       min_by_cultivar:
         IB0001: 0.037546365382033556
         IB0002: 0.04249389780105305
@@ -688,8 +758,9 @@ parameters:
         IB0002: 0.05004784780105306
         IB0007: 0.01914217535004037
         IB0008: 0.0629616567625459
+      fixed: true
     PM09:
-      active: true
+      active: false
       min: 0.2
       max: 1.0
       start: 0.8
@@ -697,10 +768,10 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 0.8
-        IB0002: 0.8
-        IB0007: 0.75
-        IB0008: 0.8
+        IB0001: 0.7681
+        IB0002: 0.9004
+        IB0007: 0.596
+        IB0008: 0.8306
       min_by_cultivar:
         IB0001: 0.6000000000000001
         IB0002: 0.6000000000000001
@@ -711,8 +782,9 @@ parameters:
         IB0002: 1.0
         IB0007: 0.95
         IB0008: 1.0
+      fixed: true
     LNGSH:
-      active: true
+      active: false
       min: 1.0
       max: 15.0
       start: 5.0
@@ -720,10 +792,10 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 5.0
-        IB0002: 5.0
-        IB0007: 10.0
-        IB0008: 5.0
+        IB0001: 6.904
+        IB0002: 8.345
+        IB0007: 12.55
+        IB0008: 5.438
       min_by_cultivar:
         IB0001: 1.5
         IB0002: 1.5
@@ -734,6 +806,7 @@ parameters:
         IB0002: 8.5
         IB0007: 13.5
         IB0008: 8.5
+      fixed: true
     TRIFL:
       active: true
       min: 0.1
@@ -743,22 +816,29 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 0.28
-        IB0002: 0.31
-        IB0007: 0.3
-        IB0008: 0.25
+        IB0001: 0.3184
+        IB0002: 0.3423
+        IB0007: 0.2997
+        IB0008: 0.3509
       min_by_cultivar:
         IB0001: 0.15500000000000003
-        IB0002: 0.185
+        IB0002: 0.2923
         IB0007: 0.175
-        IB0008: 0.125
+        IB0008: 0.3009
       max_by_cultivar:
         IB0001: 0.405
-        IB0002: 0.435
+        IB0002: 0.3923
         IB0007: 0.425
         IB0008: 0.375
+      fixed: true
+      cultivars:
+      - IB0002
+      - IB0008
+      fixed_cultivars:
+      - IB0001
+      - IB0007
     RWDTH:
-      active: true
+      active: false
       min: 0.5
       max: 2.0
       start: 1.0
@@ -766,10 +846,10 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 1.0
-        IB0002: 1.0
-        IB0007: 1.0
-        IB0008: 1.0
+        IB0001: 0.7164
+        IB0002: 0.9479
+        IB0007: 0.8358
+        IB0008: 1.338
       min_by_cultivar:
         IB0001: 0.625
         IB0002: 0.625
@@ -780,8 +860,9 @@ parameters:
         IB0002: 1.375
         IB0007: 1.375
         IB0008: 1.375
+      fixed: true
     RHGHT:
-      active: true
+      active: false
       min: 0.4
       max: 3.0
       start: 1.5
@@ -789,10 +870,10 @@ parameters:
         dist: uniform
       scope: cultivar
       start_by_cultivar:
-        IB0001: 1.2
-        IB0002: 0.8
-        IB0007: 1.5
-        IB0008: 1.5
+        IB0001: 1.365
+        IB0002: 0.6419
+        IB0007: 1.477
+        IB0008: 1.884
       min_by_cultivar:
         IB0001: 0.5499999999999999
         IB0002: 0.4
@@ -803,79 +884,87 @@ parameters:
         IB0002: 1.4500000000000002
         IB0007: 2.15
         IB0008: 2.15
+      fixed: true
   genetic_species:
     TB1:
-      active: true
+      active: false
       step: 0.1
       min: 1.3
       max: 1.8
-      start: 1.5
+      start: 1.4
       prior:
         dist: uniform
       spe_key: VEGETATIVE DEVELOPMENT
       spe_index: 0
+      fixed: true
     TO1_1:
-      active: true
+      active: false
       step: 0.1
       min: 20.9
       max: 21.7
-      start: 21.4
+      start: 21.2
       prior:
         dist: uniform
       spe_key: VEGETATIVE DEVELOPMENT
       spe_index: 1
+      fixed: true
     TO2_1:
-      active: true
+      active: false
       step: 0.1
       min: 21.5
       max: 22.8
-      start: 22.1
+      start: 21.6
       prior:
         dist: uniform
       spe_key: VEGETATIVE DEVELOPMENT
       spe_index: 2
+      fixed: true
     TM1:
-      active: true
+      active: false
       step: 0.1
       min: 36.0
       max: 37.3
-      start: 36.6
+      start: 36.3
       prior:
         dist: uniform
       spe_key: VEGETATIVE DEVELOPMENT
       spe_index: 3
+      fixed: true
     TB2:
-      active: true
+      active: false
       step: 0.1
       min: 1.2
       max: 1.7
-      start: 1.5
+      start: 1.7
       prior:
         dist: uniform
       spe_key: EARLY REPRODUCTIVE DEVELOPMENT
       spe_index: 0
+      fixed: true
     TO1_2:
-      active: true
+      active: false
       step: 0.1
       min: 15.0
       max: 15.9
-      start: 15.5
+      start: 15.6
       prior:
         dist: uniform
       spe_key: EARLY REPRODUCTIVE DEVELOPMENT
       spe_index: 1
+      fixed: true
     TO2_2:
-      active: true
+      active: false
       step: 0.1
       min: 22.5
       max: 23.8
-      start: 23.2
+      start: 23.6
       prior:
         dist: uniform
       spe_key: EARLY REPRODUCTIVE DEVELOPMENT
       spe_index: 2
+      fixed: true
     TM2:
-      active: true
+      active: false
       step: 0.1
       min: 45.0
       max: 46.7
@@ -884,46 +973,51 @@ parameters:
         dist: uniform
       spe_key: EARLY REPRODUCTIVE DEVELOPMENT
       spe_index: 3
+      fixed: true
     TB3:
-      active: true
+      active: false
       step: 0.1
       min: 1.9
       max: 3.0
-      start: 2.4
+      start: 2.2
       prior:
         dist: uniform
       spe_key: LATE REPRODUCTIVE DEVELOPMENT
       spe_index: 0
+      fixed: true
     TO1_3:
-      active: true
+      active: false
       step: 0.1
       min: 21.9
       max: 25.0
-      start: 23.4
+      start: 24.3
       prior:
         dist: uniform
       spe_key: LATE REPRODUCTIVE DEVELOPMENT
       spe_index: 1
+      fixed: true
     TO2_3:
-      active: true
+      active: false
       step: 0.1
       min: 31.9
       max: 35.0
-      start: 33.4
+      start: 32.8
       prior:
         dist: uniform
       spe_key: LATE REPRODUCTIVE DEVELOPMENT
       spe_index: 2
+      fixed: true
     TM3:
-      active: true
+      active: false
       step: 0.1
       min: 35.3
       max: 38.4
-      start: 36.9
+      start: 36.2
       prior:
         dist: uniform
       spe_key: LATE REPRODUCTIVE DEVELOPMENT
       spe_index: 3
+      fixed: true
 crops:
 - code: HM
   model: CRGRO048

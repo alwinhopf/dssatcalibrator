@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 
 import numpy as np
 
@@ -148,6 +149,25 @@ class ParameterSpace:
     high: np.ndarray
     start: np.ndarray
     specs: list[dict]
+    step: np.ndarray | None = None
+
+    def _writable_bounds(self) -> tuple[np.ndarray, np.ndarray]:
+        """Return the first and last writer-grid values inside each bound."""
+        low = self.low.copy()
+        high = self.high.copy()
+        if self.step is None:
+            return low, high
+        active = np.isfinite(self.step) & (self.step > 0)
+        tolerance = np.maximum(np.abs(self.step), 1.0) * 1e-12
+        low[active] = (
+            np.ceil((low[active] - tolerance[active]) / self.step[active])
+            * self.step[active]
+        )
+        high[active] = (
+            np.floor((high[active] + tolerance[active]) / self.step[active])
+            * self.step[active]
+        )
+        return low, high
 
     @property
     def ndim(self) -> int:
@@ -155,7 +175,20 @@ class ParameterSpace:
 
     def to_theta(self, vector) -> dict[str, float]:
         """Map a 1-D parameter vector (in native units) to a named theta dict."""
-        return {n: float(v) for n, v in zip(self.names, vector)}
+        values = np.clip(np.asarray(vector, dtype=float), self.low, self.high)
+        if self.step is not None:
+            stepped = np.asarray(self.step, dtype=float)
+            active = np.isfinite(stepped) & (stepped > 0)
+            values = values.copy()
+            values[active] = np.round(values[active] / stepped[active]) * stepped[active]
+            writable_low, writable_high = self._writable_bounds()
+            values[active] = np.clip(
+                values[active], writable_low[active], writable_high[active]
+            )
+            for index in np.flatnonzero(active):
+                decimals = max(0, -Decimal(str(stepped[index])).as_tuple().exponent)
+                values[index] = round(float(values[index]), decimals)
+        return {n: float(v) for n, v in zip(self.names, values)}
 
     def clip(self, vector) -> np.ndarray:
         return np.clip(np.asarray(vector, float), self.low, self.high)
@@ -170,4 +203,33 @@ class ParameterSpace:
         high = np.array([float(s["max"]) for s in specs])
         start = np.array([float(s.get("start", 0.5 * (lo + hi)))
                           for s, lo, hi in zip(specs, low, high)])
-        return cls(names=names, low=low, high=high, start=np.clip(start, low, high), specs=specs)
+        step = np.array([float(s.get("step", np.nan)) for s in specs])
+        start = np.clip(start, low, high)
+        active_step = np.isfinite(step) & (step > 0)
+        tolerance = np.maximum(np.abs(step), 1.0) * 1e-12
+        writable_low = low.copy()
+        writable_high = high.copy()
+        writable_low[active_step] = (
+            np.ceil((low[active_step] - tolerance[active_step]) / step[active_step])
+            * step[active_step]
+        )
+        writable_high[active_step] = (
+            np.floor((high[active_step] + tolerance[active_step]) / step[active_step])
+            * step[active_step]
+        )
+        invalid = active_step & (writable_low > writable_high + tolerance)
+        if invalid.any():
+            bad = ", ".join(names[index] for index in np.flatnonzero(invalid))
+            raise ValueError(
+                f"Parameter range contains no value on its declared writer grid: {bad}"
+            )
+        start[active_step] = np.round(start[active_step] / step[active_step]) * step[active_step]
+        start[active_step] = np.clip(
+            start[active_step], writable_low[active_step], writable_high[active_step]
+        )
+        for index in np.flatnonzero(active_step):
+            decimals = max(0, -Decimal(str(step[index])).as_tuple().exponent)
+            start[index] = round(float(start[index]), decimals)
+        return cls(
+            names=names, low=low, high=high, start=start, specs=specs, step=step
+        )

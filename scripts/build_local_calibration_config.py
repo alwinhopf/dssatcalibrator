@@ -32,6 +32,7 @@ def main() -> None:
     ap.add_argument("--samples", type=int, default=5000)
     ap.add_argument("--de-popsize", type=int, default=3)
     ap.add_argument("--de-maxiter", type=int, default=7)
+    ap.add_argument("--seed", type=int)
     args = ap.parse_args()
 
     cfg = load_config(args.base)
@@ -60,6 +61,8 @@ def main() -> None:
         _set_scoped(base_spec, "max", hi, cultivar)
 
     cfg["calibrator"]["name"] = args.name
+    if args.seed is not None:
+        cfg["calibrator"]["seed"] = int(args.seed)
     cfg["calibrator"]["workdir"] = f"results/_workdir_{args.name}"
     cfg["calibrator"]["cache_spawns"] = False
     cfg["calibrator"]["cache_evaluations"] = False

@@ -145,7 +145,8 @@ validate_config <- function(cfg) {
   # into one environment can't clash with engine constants (e.g. orchestrator's
   # `.PRESETS` stage map).
   PRESETS            <- c("A", "B", "C", "D", "CUSTOM")
-  WEIGHTING_MODES    <- c("unified", "sigma", "user", "count_scale", "agmip_wls")
+  WEIGHTING_MODES    <- c("unified", "sigma", "user", "count_scale",
+                          "site_variable", "agmip_wls")
   CV_SCHEMES         <- c("none", "loeo", "year", "site", "random")
   PRIOR_DISTS        <- c("uniform", "normal", "lognormal", "triangular")
   GATING_LEVELS      <- c("free", "gated", "blocked")

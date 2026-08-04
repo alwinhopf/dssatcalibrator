@@ -973,20 +973,32 @@ def spawn_manifest_table(result, best_spawns=None) -> pd.DataFrame:
         return manifest.copy()
     if not best_spawns:
         return pd.DataFrame(columns=[
-            "sample_id", "exp_id", "theta_hash", "status", "message", "run_dir", "theta_json",
+            "sample_id", "exp_id", "theta_hash", "full_theta_hash",
+            "effective_theta_hash", "status", "message", "run_dir", "theta_json",
+            "effective_theta_json",
         ])
     theta = getattr(result, "best_theta", {}) or {}
     theta_jsonable = {k: (v.item() if hasattr(v, "item") else v) for k, v in theta.items()}
     rows = []
     for exp_id, res in best_spawns.items():
+        effective_theta = dict(getattr(res, "effective_theta", {}) or {})
+        effective_jsonable = {
+            k: (v.item() if hasattr(v, "item") else v)
+            for k, v in effective_theta.items()
+        }
         rows.append({
             "sample_id": "best",
             "exp_id": exp_id,
             "theta_hash": theta_hash(theta) if theta else "",
+            "full_theta_hash": theta_hash(theta) if theta else "",
+            "effective_theta_hash": (
+                theta_hash(effective_theta) if effective_theta else ""
+            ),
             "status": getattr(res, "status", ""),
             "message": getattr(res, "message", ""),
             "run_dir": str(getattr(res, "run_dir", "")),
             "theta_json": json.dumps(theta_jsonable, sort_keys=True),
+            "effective_theta_json": json.dumps(effective_jsonable, sort_keys=True),
             **{f"theta_{k}": v for k, v in theta.items()},
         })
     return pd.DataFrame(rows)

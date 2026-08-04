@@ -149,6 +149,11 @@ def _cfg_fingerprint(cfg: dict) -> str:
         "templates": cfg.get("templates", {}),
         "gating": cfg.get("gating", {}),
         "management_options": cfg.get("management_options", {}),
+        "filex_overrides": cfg.get("filex_overrides", {}),
+        "calibration_treatments": cfg.get("calibration_treatments", {}),
+        "calibration_treatments_by_experiment": cfg.get(
+            "calibration_treatments_by_experiment", {}
+        ),
         "weather": cfg.get("weather", {}),
         "soil": cfg.get("soil", {}),
         "observation_sources": cfg.get("observation_sources", {}),
@@ -209,17 +214,24 @@ class EvaluationCache:
                 ext: _file_fingerprint(geno_dir / f"{stem}.{ext}")
                 for ext in ("CUL", "ECO", "SPE")
             }
+            input_files["soil"] = {
+                path.name: _file_fingerprint(path)
+                for path in sorted(dssat_paths["soil"].glob("*.SOL"))
+            }
         except Exception as exc:  # keep cache usable even when setup is mocked
             input_files["genotype_error"] = str(exc)
 
         filex_ext = crop.get("filex_ext", "")
         code = crop.get("code", "")
-        input_files["experiments"] = {
-            exp: {
+        experiment_inputs = {}
+        for exp in experiments:
+            filex = hemp_dir / f"{exp}.{filex_ext}"
+            rec = {
                 "filex": _file_fingerprint(hemp_dir / f"{exp}.{filex_ext}"),
                 "filea": _file_fingerprint(hemp_dir / f"{exp}.{code}A"),
                 "filet": _file_fingerprint(hemp_dir / f"{exp}.{code}T"),
             }
+<<<<<<< Updated upstream
             for exp in experiments
         }
         try:
@@ -241,6 +253,21 @@ class EvaluationCache:
             input_files["support_error"] = str(exc)
         input_files["parser"] = _file_fingerprint(Path(__file__).with_name("dssat_io.py"))
         input_files["objective"] = _file_fingerprint(Path(__file__).with_name("objective.py"))
+=======
+            try:
+                from .writers import parse_fields
+
+                fields = parse_fields(filex)
+                station = fields.get("wsta")
+                if station and "dssat_paths" in locals():
+                    rec["weather"] = _file_fingerprint(
+                        dssat_paths["weather"] / f"{station}.WTH"
+                    )
+            except Exception as exc:
+                rec["field_parse_error"] = str(exc)
+            experiment_inputs[exp] = rec
+        input_files["experiments"] = experiment_inputs
+>>>>>>> Stashed changes
 
         context = {
             "schema": CACHE_SCHEMA_VERSION,

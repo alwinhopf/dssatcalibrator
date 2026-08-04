@@ -91,6 +91,8 @@ objective:
   - grain
   score_metric: rmse
   obs_autocorr: true
+  missing_simulation_policy: reject
+  timeseries_after_simulation_policy: carry_forward
   max_bias_penalty:
     variable: anthesis
     lambda: 0.5
@@ -216,9 +218,9 @@ parameters:
         IB0008: 12.925371275472132
     SD-PM:
       active: true
-      min: 5.0
-      max: 50.0
-      start: 35.0
+      min: 0.1
+      max: 90.0
+      start: 50.0
       prior:
         dist: uniform
       scope: cultivar
@@ -594,9 +596,9 @@ parameters:
         IB0008: 22.324540893953845
     R1PPO:
       active: true
-      min: 0.43744697
-      max: 3.0
-      start: 2.52408513
+      min: 0.0
+      max: 1.2
+      start: 0.504
       prior:
         dist: uniform
       scope: cultivar
@@ -810,108 +812,120 @@ parameters:
   genetic_species:
     TB1:
       active: true
-      min: 1.4740298557850389
-      max: 1.554029855785039
-      start: 1.514029855785039
+      step: 0.1
+      min: 1.4
+      max: 1.6
+      start: 1.5
       prior:
         dist: uniform
       spe_key: VEGETATIVE DEVELOPMENT
       spe_index: 0
     TO1_1:
       active: true
-      min: 21.174202957333527
-      max: 21.3063775601506
-      start: 21.240290258742064
+      step: 0.1
+      min: 21.1
+      max: 21.4
+      start: 21.2
       prior:
         dist: uniform
       spe_key: VEGETATIVE DEVELOPMENT
       spe_index: 1
     TO2_1:
       active: true
-      min: 21.523702160172054
-      max: 21.68564304147912
-      start: 21.56564304147912
+      step: 0.1
+      min: 21.5
+      max: 21.7
+      start: 21.6
       prior:
         dist: uniform
       spe_key: VEGETATIVE DEVELOPMENT
       spe_index: 2
     TM1:
       active: true
-      min: 36.144111989678414
-      max: 36.38411198967841
-      start: 36.26411198967841
+      step: 0.1
+      min: 36.1
+      max: 36.4
+      start: 36.3
       prior:
         dist: uniform
       spe_key: VEGETATIVE DEVELOPMENT
       spe_index: 3
     TB2:
       active: true
-      min: 1.6073078234480636
-      max: 1.6873078234480636
-      start: 1.6473078234480636
+      step: 0.1
+      min: 1.6
+      max: 1.7
+      start: 1.6
       prior:
         dist: uniform
       spe_key: EARLY REPRODUCTIVE DEVELOPMENT
       spe_index: 0
     TO1_2:
       active: true
-      min: 15.467780699313748
-      max: 15.627780699313748
-      start: 15.547780699313748
+      step: 0.1
+      min: 15.4
+      max: 15.7
+      start: 15.5
       prior:
         dist: uniform
       spe_key: EARLY REPRODUCTIVE DEVELOPMENT
       spe_index: 1
     TO2_2:
       active: true
-      min: 23.344854058719683
-      max: 23.584854058719685
-      start: 23.464854058719684
+      step: 0.1
+      min: 23.3
+      max: 23.6
+      start: 23.5
       prior:
         dist: uniform
       spe_key: EARLY REPRODUCTIVE DEVELOPMENT
       spe_index: 2
     TM2:
       active: true
-      min: 45.705666306342565
-      max: 46.02566630634256
-      start: 45.86566630634256
+      step: 0.1
+      min: 45.7
+      max: 46.1
+      start: 45.9
       prior:
         dist: uniform
       spe_key: EARLY REPRODUCTIVE DEVELOPMENT
       spe_index: 3
     TB3:
       active: true
-      min: 2.1200333876724513
-      max: 2.3200333876724515
-      start: 2.2200333876724514
+      step: 0.1
+      min: 2.1
+      max: 2.4
+      start: 2.2
       prior:
         dist: uniform
       spe_key: LATE REPRODUCTIVE DEVELOPMENT
       spe_index: 0
     TO1_3:
       active: true
-      min: 23.8923883349446
-      max: 24.4923883349446
-      start: 24.1923883349446
+      step: 0.1
+      min: 23.8
+      max: 24.5
+      start: 24.2
       prior:
         dist: uniform
       spe_key: LATE REPRODUCTIVE DEVELOPMENT
       spe_index: 1
     TO2_3:
       active: true
-      min: 32.7432196327204
-      max: 33.34321963272039
-      start: 33.043219632720394
+      step: 0.1
+      min: 32.7
+      max: 33.4
+      start: 33.0
       prior:
         dist: uniform
       spe_key: LATE REPRODUCTIVE DEVELOPMENT
       spe_index: 2
     TM3:
       active: true
-      min: 36.14246488419226
-      max: 36.74246488419225
-      start: 36.442464884192255
+      step: 0.1
+      min: 36.1
+      max: 36.8
+      start: 36.4
       prior:
         dist: uniform
       spe_key: LATE REPRODUCTIVE DEVELOPMENT

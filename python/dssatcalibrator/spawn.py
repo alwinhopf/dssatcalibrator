@@ -294,6 +294,7 @@ class SpawnResult:
     evaluate: pd.DataFrame = field(default_factory=pd.DataFrame)
     outputs: dict[str, pd.DataFrame] = field(default_factory=dict)
     message: str = ""
+    effective_theta: dict = field(default_factory=dict)
 
 
 def _spec_applies(spec: dict, exp_id: str | None, cultivars: list[str] | None = None) -> bool:
@@ -378,6 +379,34 @@ def _cultivar_ecotype_map(crop: dict) -> dict[str, str]:
     return mapping
 
 
+def _genotype_gate_allows(cfg: dict, level: str) -> bool:
+    """Return whether an explicitly configured genotype update may be written."""
+    gate = str((cfg.get("gating", {}) or {}).get(level, "free")).lower()
+    if level == "species":
+        return gate == "free"
+    return gate != "blocked"
+
+
+def _missing_requested_treatments(pg: pd.DataFrame, treatments: list[int]) -> list[int]:
+    """Identify requested treatments absent from a parsed PlantGro output."""
+    if pg is None or pg.empty or "treatment" not in pg:
+        return [int(value) for value in treatments]
+    present = {
+        int(value) for value in pd.to_numeric(pg["treatment"], errors="coerce").dropna()
+    }
+    return [int(value) for value in treatments if int(value) not in present]
+
+
+def _run_identity(theta: dict, effective_theta: dict, cache_spawns: bool) -> dict:
+    """Return a collision-free run identity.
+
+    The full candidate is required even with caching: two candidates can differ
+    only in a cultivar irrelevant to this experiment, observe the same empty
+    cache entry, and otherwise race in one effective-theta directory.
+    """
+    return theta
+
+
 def _filex_overrides_for(cfg: dict, exp_id: str) -> list[dict]:
     """Return generic FileX section updates configured for one experiment."""
     block = cfg.get("filex_overrides", {}) or {}
@@ -426,9 +455,21 @@ def spawn_and_run(
     run_dir = run_root / exp_id
     if treatment_key:
         run_dir = run_dir / treatment_key
+<<<<<<< Updated upstream
     # Isolate runs when any template, forcing, executable, parser, gate, or
     # configuration input changes, even if the coefficient vector is identical.
     run_dir = run_dir / f"s_{theta_hash(effective_theta)}_{provenance_hash}"
+=======
+    # Always use the full candidate. Effective-theta hashes remain in the
+    # manifest for traceability, but are unsafe as writable directory identities
+    # when multiple candidates are evaluated concurrently.
+    run_identity = _run_identity(
+        theta,
+        effective_theta,
+        bool(cfg["calibrator"].get("cache_spawns", True)),
+    )
+    run_dir = run_dir / f"s_{theta_hash(run_identity)}"
+>>>>>>> Stashed changes
     pg_path = run_dir / "PlantGro.OUT"
     manifest_path = run_dir / "spawn_manifest.json"
 
@@ -441,6 +482,7 @@ def spawn_and_run(
             and recorded == provenance and pg_path.exists() and pg_path.stat().st_size > 0):
         outputs = dssat_io.collect_run_outputs(run_dir)
         outputs = _stamp_single_treatment(outputs, treatments)
+<<<<<<< Updated upstream
         pg_cached = outputs.get("plantgro", dssat_io.parse_plantgro(pg_path))
         if pg_cached is None or pg_cached.empty:
             recorded = None
@@ -456,6 +498,15 @@ def spawn_and_run(
                 evaluate=outputs.get("evaluate", dssat_io.parse_evaluate(run_dir / "Evaluate.OUT")),
                 outputs=outputs,
             )
+=======
+        return SpawnResult(
+            status="cached", run_dir=run_dir, theta=theta,
+            plantgro=outputs.get("plantgro", dssat_io.parse_plantgro(pg_path)),
+            evaluate=outputs.get("evaluate", dssat_io.parse_evaluate(run_dir / "Evaluate.OUT")),
+            outputs=outputs,
+            effective_theta=effective_theta,
+        )
+>>>>>>> Stashed changes
 
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -492,15 +543,24 @@ def spawn_and_run(
     cul_updates = {}
     for g in GENETIC_GROUPS:
         cul_updates.update(groups.get(g, {}))
+<<<<<<< Updated upstream
     if cul_updates and str(cfg.get("gating", {}).get("cultivar", "free")).lower() != "blocked":
         anchors = crop.get("cultivar_anchors") or [crop["cultivar_anchor"]]
         for anchor in anchors:
             edit_cultivar(run_dir / f"{stem}.CUL", anchor, cul_updates)
     if str(cfg.get("gating", {}).get("cultivar", "free")).lower() != "blocked":
+=======
+    if cul_updates and _genotype_gate_allows(cfg, "cultivar"):
+        anchors = crop.get("cultivar_anchors") or [crop["cultivar_anchor"]]
+        for anchor in anchors:
+            edit_cultivar(run_dir / f"{stem}.CUL", anchor, cul_updates)
+    if _genotype_gate_allows(cfg, "cultivar"):
+>>>>>>> Stashed changes
         for anchor, updates in groups.get("genetic_cultivar_by_cultivar", {}).items():
             edit_cultivar(run_dir / f"{stem}.CUL", anchor, updates)
 
     eco_updates = groups.get("genetic_ecotype", {})
+<<<<<<< Updated upstream
     if eco_updates and str(cfg.get("gating", {}).get("ecotype", "free")).lower() != "blocked":
         edit_ecotype(run_dir / f"{stem}.ECO", crop["ecotype"], eco_updates)
     cultivar_ecotypes = _cultivar_ecotype_map(crop)
@@ -512,11 +572,28 @@ def spawn_and_run(
                 f"No ecotype mapping for cultivar '{anchor}'. Add crops[].cultivar_ecotypes."
             )
         edit_ecotype(run_dir / f"{stem}.ECO", eco_anchor, updates)
+=======
+    if eco_updates and _genotype_gate_allows(cfg, "ecotype"):
+        edit_ecotype(run_dir / f"{stem}.ECO", crop["ecotype"], eco_updates)
+    cultivar_ecotypes = _cultivar_ecotype_map(crop)
+    if _genotype_gate_allows(cfg, "ecotype"):
+        for anchor, updates in groups.get("genetic_ecotype_by_cultivar", {}).items():
+            eco_anchor = cultivar_ecotypes.get(anchor)
+            if eco_anchor is None:
+                raise ValueError(
+                    f"No ecotype mapping for cultivar '{anchor}'. Add crops[].cultivar_ecotypes."
+                )
+            edit_ecotype(run_dir / f"{stem}.ECO", eco_anchor, updates)
+>>>>>>> Stashed changes
 
     # species (.SPE) coefficients — gated: only written when gating.species == "free"
     # (physiology-defining; for new-species adaptation from an analog template).
     spe_updates = groups.get("genetic_species", {})
+<<<<<<< Updated upstream
     if spe_updates and str(cfg.get("gating", {}).get("species", "blocked")).lower() != "blocked":
+=======
+    if spe_updates and _genotype_gate_allows(cfg, "species"):
+>>>>>>> Stashed changes
         from .writers import edit_species
         spe_file = run_dir / f"{stem}.SPE"
         if spe_file.exists():
@@ -634,7 +711,8 @@ def spawn_and_run(
             )
         except Exception as exc:
             return SpawnResult(status="error", run_dir=run_dir, theta=theta,
-                               message=f"soil acquisition failed: {exc}")
+                               message=f"soil acquisition failed: {exc}",
+                               effective_theta=effective_theta)
 
     if weather_provider not in ("", "file", "none"):
         try:
@@ -655,7 +733,8 @@ def spawn_and_run(
             )
         except Exception as exc:
             return SpawnResult(status="error", run_dir=run_dir, theta=theta,
-                               message=f"weather acquisition failed: {exc}")
+                               message=f"weather acquisition failed: {exc}",
+                               effective_theta=effective_theta)
 
     # edit soil (.SOL) and/or weather (.WTH) — DSSAT reads the run dir first, so a
     # local single-profile SOIL.SOL / station .WTH overrides the central copy.
@@ -712,17 +791,30 @@ def spawn_and_run(
         _write_batch(run_dir, filex_name, treatments, backend)
     except Exception as exc:
         return SpawnResult(status="error", run_dir=run_dir, theta=theta,
-                           message=f"batch setup failed: {exc}")
+                           message=f"batch setup failed: {exc}",
+                           effective_theta=effective_theta)
 
     run_error = _run_backend_dssat(run_dir, exe, crop, backend, timeout)
     if run_error:
-        return SpawnResult(status="error", run_dir=run_dir, theta=theta, message=run_error)
+        return SpawnResult(status="error", run_dir=run_dir, theta=theta,
+                           message=run_error, effective_theta=effective_theta)
 
     if not pg_path.exists() or pg_path.stat().st_size == 0:
         return SpawnResult(status="error", run_dir=run_dir, theta=theta,
-                           message="no PlantGro.OUT produced")
+                           message="no PlantGro.OUT produced",
+                           effective_theta=effective_theta)
 
     pg = dssat_io.parse_plantgro(pg_path)
+    missing_treatments = _missing_requested_treatments(pg, treatments)
+    if missing_treatments:
+        return SpawnResult(
+            status="error",
+            run_dir=run_dir,
+            theta=theta,
+            plantgro=pg,
+            message=f"PlantGro.OUT is missing requested treatment(s): {missing_treatments}",
+            effective_theta=effective_theta,
+        )
     ev = dssat_io.parse_evaluate(run_dir / "Evaluate.OUT")
     outputs = dssat_io.collect_run_outputs(run_dir)
     outputs = _stamp_single_treatment(outputs, treatments)
@@ -738,4 +830,7 @@ def spawn_and_run(
                 if f.name not in ("PlantGro.OUT", "Evaluate.OUT", "Summary.OUT"):
                     f.unlink(missing_ok=True)
 
-    return SpawnResult(status="success", run_dir=run_dir, theta=theta, plantgro=pg, evaluate=ev, outputs=outputs)
+    return SpawnResult(
+        status="success", run_dir=run_dir, theta=theta, plantgro=pg,
+        evaluate=ev, outputs=outputs, effective_theta=effective_theta,
+    )

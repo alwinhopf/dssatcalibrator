@@ -42,7 +42,9 @@ DEFAULTS: dict[str, Any] = {
     "objective": {"weighting": "unified", "weights": {}, "error_model": {},
                   "likelihood": {"type": "gaussian"},
                   "model_discrepancy": {},
-                  "ignore_zero_observations": []},
+                  "ignore_zero_observations": [],
+                  "missing_simulation_policy": "penalize",
+                  "timeseries_after_simulation_policy": "carry_forward"},
     "parameters": {},
     "crops": [],
     "experiments": [],
@@ -161,7 +163,9 @@ def load_config(path: str | Path, *, validate: bool = True) -> dict:
 # Allowed vocabularies, kept here so both the validator and the docs cite one
 # source. These mirror the Python engine code paths (and the R twin).
 PRESETS = {"A", "B", "C", "D", "CUSTOM"}
-WEIGHTING_MODES = {"unified", "sigma", "user", "count_scale", "agmip_wls"}
+WEIGHTING_MODES = {
+    "unified", "sigma", "user", "count_scale", "site_variable", "agmip_wls",
+}
 CV_SCHEMES = {"none", "loeo", "year", "site", "random"}
 PRIOR_DISTS = {"uniform", "normal", "lognormal", "triangular"}
 GATING_LEVELS = {"free", "gated", "blocked"}
@@ -206,6 +210,24 @@ def validate_config(cfg: dict) -> dict:
     weighting = str((cfg.get("objective", {}) or {}).get("weighting", "unified")).lower()
     if weighting not in WEIGHTING_MODES:
         errors.append(f"objective.weighting '{weighting}' is not one of {sorted(WEIGHTING_MODES)}.")
+    missing_policy = str(
+        (cfg.get("objective", {}) or {}).get("missing_simulation_policy", "penalize")
+    ).lower()
+    if missing_policy not in {"penalize", "reject"}:
+        errors.append(
+            "objective.missing_simulation_policy "
+            f"'{missing_policy}' is not one of ['penalize', 'reject']."
+        )
+    late_series_policy = str(
+        (cfg.get("objective", {}) or {}).get(
+            "timeseries_after_simulation_policy", "carry_forward"
+        )
+    ).lower()
+    if late_series_policy not in {"carry_forward", "missing"}:
+        errors.append(
+            "objective.timeseries_after_simulation_policy "
+            f"'{late_series_policy}' is not one of ['carry_forward', 'missing']."
+        )
 
     backend = str((cfg.get("execution", {}) or {}).get("backend", "native")).lower()
     if backend not in EXECUTION_BACKENDS:
@@ -252,11 +274,47 @@ def validate_config(cfg: dict) -> dict:
             if start is not None and _is_num(lo) and _is_num(hi) and _is_num(start):
                 if not (lo <= start <= hi):
                     errors.append(f"{tag}: start ({start}) is outside [min={lo}, max={hi}].")
+            scoped_fields = {
+                field: spec.get(f"{field}_by_cultivar", {}) or {}
+                for field in ("min", "max", "start")
+            }
+            scoped_cultivars = set().union(
+                *(values.keys() for values in scoped_fields.values() if isinstance(values, dict))
+            )
+            for cultivar in sorted(scoped_cultivars):
+                scoped_lo = scoped_fields["min"].get(cultivar, lo)
+                scoped_hi = scoped_fields["max"].get(cultivar, hi)
+                scoped_start = scoped_fields["start"].get(cultivar, start)
+                scoped_tag = f"{tag}[{cultivar}]"
+                if not _is_num(scoped_lo) or not _is_num(scoped_hi):
+                    errors.append(f"{scoped_tag}: scoped min/max must both be numeric.")
+                    continue
+                if _is_num(lo) and _is_num(hi) and (
+                    scoped_lo < lo or scoped_hi > hi
+                ):
+                    errors.append(
+                        f"{scoped_tag}: scoped bounds [{scoped_lo}, {scoped_hi}] "
+                        f"must stay within declared bounds [{lo}, {hi}]."
+                    )
+                if scoped_lo >= scoped_hi:
+                    errors.append(
+                        f"{scoped_tag}: scoped min ({scoped_lo}) must be < max ({scoped_hi})."
+                    )
+                if scoped_start is not None and _is_num(scoped_start):
+                    if not (scoped_lo <= scoped_start <= scoped_hi):
+                        errors.append(
+                            f"{scoped_tag}: scoped start ({scoped_start}) is outside "
+                            f"[min={scoped_lo}, max={scoped_hi}]."
+                        )
             prior = spec.get("prior")
             if isinstance(prior, dict):
                 dist = str(prior.get("dist", "uniform")).lower()
                 if dist not in PRIOR_DISTS:
                     errors.append(f"{tag}: prior.dist '{dist}' is not one of {sorted(PRIOR_DISTS)}.")
+            step = spec.get("step")
+            if step is not None:
+                if not _is_num(step) or float(step) <= 0:
+                    errors.append(f"{tag}: step must be a positive number (got {step!r}).")
             scope = str(spec.get("scope", spec.get("pooling", "global"))).lower()
             if scope not in PARAMETER_SCOPES:
                 errors.append(f"{tag}: scope '{scope}' is not one of {sorted(PARAMETER_SCOPES)}.")
@@ -265,6 +323,7 @@ def validate_config(cfg: dict) -> dict:
                 errors.append(f"{tag}: scope '{scope}' requires at least one configured experiment.")
             if spec.get("active", False):
                 n_active += 1
+<<<<<<< Updated upstream
                 gate_by_group = {
                     "genetic_cultivar": "cultivar",
                     "genetic_ecotype": "ecotype",
@@ -278,6 +337,21 @@ def validate_config(cfg: dict) -> dict:
                         f"{tag}: active parameter is blocked by gating.{gate_name}; "
                         "set that gate to 'gated'/'free' or deactivate the parameter."
                     )
+=======
+                gate_name = {
+                    "genetic_cultivar": "cultivar",
+                    "genetic_ecotype": "ecotype",
+                    "genetic_species": "species",
+                }.get(group)
+                if gate_name:
+                    gate = str((cfg.get("gating", {}) or {}).get(gate_name, "free")).lower()
+                    if gate == "blocked" or (gate_name == "species" and gate != "free"):
+                        required = "free" if gate_name == "species" else "free or gated"
+                        errors.append(
+                            f"{tag}: active {gate_name} parameter conflicts with "
+                            f"gating.{gate_name}='{gate}'; use {required}."
+                        )
+>>>>>>> Stashed changes
 
     if n_active == 0:
         errors.append("No active parameters: at least one parameter must have "
@@ -323,7 +397,18 @@ def fixed_parameters(cfg: dict) -> list[dict]:
         if not isinstance(params, dict):
             continue
         for name, spec in params.items():
-            if not isinstance(spec, dict) or spec.get("active", False) or not spec.get("fixed", False):
+            if not isinstance(spec, dict) or not spec.get("fixed", False):
+                continue
+            if spec.get("active", False):
+                fixed_cultivars = spec.get("fixed_cultivars")
+                if not fixed_cultivars:
+                    continue
+                rec = {"group": group, "name": name, "active": False}
+                rec.update(spec)
+                rec["active"] = False
+                rec["cultivars"] = list(fixed_cultivars)
+                rec.pop("fixed_cultivars", None)
+                out.append(rec)
                 continue
             rec = {"group": group, "name": name, "active": False}
             rec.update(spec)

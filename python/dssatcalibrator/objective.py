@@ -229,7 +229,14 @@ def _observed_scalar_value(row: pd.Series, dssat_var: str, pg: pd.DataFrame) -> 
     return float(row["value"])
 
 
-def _timeseries_sim_value(pg: pd.DataFrame, treatment: int, date, col: str):
+def _timeseries_sim_value(
+    pg: pd.DataFrame,
+    treatment: int,
+    date,
+    col: str,
+    *,
+    after_simulation_policy: str = "carry_forward",
+):
     sub = pg[pd.to_numeric(pg["treatment"], errors="coerce") == int(treatment)].copy()
     if sub.empty or col not in sub.columns:
         return np.nan
@@ -239,8 +246,18 @@ def _timeseries_sim_value(pg: pd.DataFrame, treatment: int, date, col: str):
     if not exact.empty:
         return exact.iloc[0][col]
     ok = dates.notna()
+<<<<<<< Updated upstream
     # Observations after model termination are unmatched, not equal to the last
     # simulated state. Carry-forward biases late observations toward agreement.
+=======
+    if (
+        after_simulation_policy == "carry_forward"
+        and ok.any()
+        and target > dates[ok].max()
+    ):
+        tail = sub.loc[ok].assign(_date=dates[ok]).sort_values("_date").iloc[-1]
+        return tail[col]
+>>>>>>> Stashed changes
     return np.nan
 
 
@@ -249,8 +266,26 @@ def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.Dat
     ts_map, sc_map, ts_inv, sc_inv = variable_maps(cfg)
     rows = []
     seen_scalar = set()
+    configured_scalar = set()
+    if obs_table is not None and not obs_table.empty:
+        scalar_obs = obs_table[obs_table["kind"].isin(["scalar", "phenology"])]
+        for _, row in scalar_obs.iterrows():
+            user_var, dssat_var = _scalar_observation_mapping(
+                row["variable"], sc_map, sc_inv
+            )
+            if dssat_var in sc_inv:
+                configured_scalar.add(
+                    (
+                        str(row["exp_id"]),
+                        int(row["treatment"]),
+                        user_var,
+                        str(row["kind"]),
+                    )
+                )
 
-    # scalars / phenology from Evaluate.OUT
+    # Scalars / phenology from Evaluate.OUT. When the central observation table
+    # carries the same target, its value takes precedence so corrected or fused
+    # observations cannot be silently replaced by stale FileA measurements.
     for exp, res in results.items():
         ev = getattr(res, "evaluate", None)
         if ev is None or ev.empty:
@@ -259,20 +294,23 @@ def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.Dat
             base = r["variable"]
             if base not in sc_inv:
                 continue
+            kind = "phenology" if base in ("ADAP", "EDAP", "MDAP") else "scalar"
+            key = (str(exp), int(r["treatment"]), sc_inv[base], kind)
+            if key in configured_scalar:
+                continue
             sim, meas = r["sim"], r["meas"]
             if pd.isna(sim) or pd.isna(meas):
                 if not pd.isna(meas) and pd.isna(sim):
                     # Penalise missing simulation for an observed variable by introducing a large residual
                     penalty_sim = meas + 1000.0
-                    kind = "phenology" if base in ("ADAP", "EDAP", "MDAP") else "scalar"
                     rows.append(dict(exp_id=exp, treatment=int(r["treatment"]), user_var=sc_inv[base],
-                                     dssat=base, kind=kind, date=pd.NaT, obs=float(meas), sim=float(penalty_sim)))
-                    seen_scalar.add((exp, int(r["treatment"]), sc_inv[base], kind))
+                                     dssat=base, kind=kind, date=pd.NaT, obs=float(meas),
+                                     sim=float(penalty_sim), missing_simulation=True))
+                    seen_scalar.add(key)
                 continue
-            kind = "phenology" if base in ("ADAP", "EDAP", "MDAP") else "scalar"
             rows.append(dict(exp_id=exp, treatment=int(r["treatment"]), user_var=sc_inv[base],
                              dssat=base, kind=kind, date=pd.NaT, obs=float(meas), sim=float(sim)))
-            seen_scalar.add((exp, int(r["treatment"]), sc_inv[base], kind))
+            seen_scalar.add(key)
 
     # CSV / fused scalar observations: match observed scalar rows to Evaluate.OUT
     # simulated values even when Evaluate.OUT does not carry measured FileA data.
@@ -317,7 +355,8 @@ def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.Dat
                     rows.append(dict(exp_id=exp, treatment=int(r["treatment"]),
                                      user_var=user_var, dssat=dssat_var, kind=r["kind"],
                                      date=pd.NaT, obs=float(r["value"]),
-                                     sim=float(r["value"]) + 1000.0))
+                                     sim=float(r["value"]) + 1000.0,
+                                     missing_simulation=True))
                     seen_scalar.add(key)
                     continue
                 key = (exp, int(r["treatment"]), user_var, r["kind"])
@@ -332,12 +371,20 @@ def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.Dat
                     sim_value = float(sub.iloc[0]["sim"])
                 rows.append(dict(exp_id=exp, treatment=int(r["treatment"]),
                                  user_var=user_var, dssat=dssat_var, kind=r["kind"],
-                                 date=pd.NaT, obs=float(r["value"]), sim=sim_value))
+                                 date=pd.NaT, obs=float(r["value"]), sim=sim_value,
+                                 missing_simulation=bool(
+                                     sub.empty or pd.isna(sub.iloc[0]["sim"])
+                                 )))
                 seen_scalar.add(key)
 
     # time-series from PlantGro matched to FileT/CSV obs
     if obs_table is not None and not obs_table.empty:
         ts_obs = obs_table[obs_table["kind"] == "timeseries"]
+        late_series_policy = str(
+            (cfg.get("objective", {}) or {}).get(
+                "timeseries_after_simulation_policy", "carry_forward"
+            )
+        ).lower()
         for exp, res in results.items():
             pg = getattr(res, "plantgro", None)
             o = ts_obs[ts_obs["exp_id"] == exp]
@@ -351,18 +398,30 @@ def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.Dat
                 if pg is None or pg.empty or col not in pg.columns:
                     simv = np.nan
                 else:
-                    simv = _timeseries_sim_value(pg, int(r["treatment"]), r["date"], col)
-                if pd.isna(simv):
+                    simv = _timeseries_sim_value(
+                        pg,
+                        int(r["treatment"]),
+                        r["date"],
+                        col,
+                        after_simulation_policy=late_series_policy,
+                    )
+                missing_simulation = bool(pd.isna(simv))
+                if missing_simulation:
                     simv = float(r["value"]) + float(
                         (cfg.get("objective", {}) or {}).get("missing_simulation_penalty", 1000.0)
                     )
                 rows.append(dict(exp_id=exp, treatment=int(r["treatment"]),
                                  user_var=ts_inv.get(col, col), dssat=col, kind="timeseries",
-                                 date=r["date"], obs=float(r["value"]), sim=float(simv)))
+                                 date=r["date"], obs=float(r["value"]), sim=float(simv),
+                                 missing_simulation=missing_simulation))
 
     df = pd.DataFrame(rows)
     if df.empty:
         return df
+    if "missing_simulation" not in df:
+        df["missing_simulation"] = False
+    else:
+        df["missing_simulation"] = df["missing_simulation"].fillna(False).astype(bool)
     df = _drop_configured_zero_observations(df, cfg)
     if df.empty:
         return df
@@ -477,6 +536,34 @@ def score(results: dict, obs_table: pd.DataFrame, cfg: dict) -> ObjectiveResult:
 
     resid = resid.copy()
     resid["_loss"] = _weighted_loss(resid, cfg)
+    failed_spawns = [
+        exp for exp, result in results.items()
+        if str(getattr(result, "status", "")).lower() == "error"
+    ]
+    missing_mask = resid.get(
+        "missing_simulation", pd.Series(False, index=resid.index)
+    ).astype(bool)
+    missing_policy = str(
+        (cfg.get("objective", {}) or {}).get("missing_simulation_policy", "penalize")
+    ).lower()
+    if failed_spawns or (missing_mask.any() and missing_policy == "reject"):
+        return ObjectiveResult(
+            score=float("inf"),
+            loglik=float("-inf"),
+            residuals=resid,
+            per_var={uv: metrics(g["obs"], g["sim"]) for uv, g in resid.groupby("user_var")},
+            per_exp_var=pd.DataFrame(),
+        )
+    if missing_mask.any():
+        standardized_penalty = float(
+            (cfg.get("objective", {}) or {}).get(
+                "missing_simulation_standardized_penalty", 1000.0
+            )
+        )
+        resid.loc[missing_mask, "_loss"] = np.maximum(
+            resid.loc[missing_mask, "_loss"],
+            standardized_penalty ** 2,
+        )
     loglik = float(-0.5 * np.sum(resid["_loss"] * resid["weight"]))
 
     if weighting == "sigma":
@@ -496,6 +583,14 @@ def score(results: dict, obs_table: pd.DataFrame, cfg: dict) -> ObjectiveResult:
         # then we average ACROSS variables -> a clean 'mean per-variable misfit'.
         per = [float(wts.get(uv, 1.0)) * _group_loss(g, cfg)
                for uv, g in resid.groupby("user_var")]
+        sc = float(np.mean(per)) if per else float("inf")
+    elif weighting == "site_variable":
+        # Every experiment-variable combination receives one vote, regardless
+        # of how densely that environment was sampled.
+        per = [
+            float(wts.get(uv, 1.0)) * _group_loss(g, cfg)
+            for (_exp, uv), g in resid.groupby(["exp_id", "user_var"])
+        ]
         sc = float(np.mean(per)) if per else float("inf")
     else:  # "unified" (default) and "agmip_wls"
         # SUM of per-variable mean normalised squared errors x weights. Count- and

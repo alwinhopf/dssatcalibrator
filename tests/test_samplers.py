@@ -41,3 +41,9 @@ def test_to_theta(space):
     df = sample(space, n=4, engine="lhs")
     theta = space.to_theta(df.iloc[1].to_numpy())
     assert set(theta) == set(space.names)
+
+
+def test_sampler_can_emit_only_the_configured_start(space):
+    df = sample(space, n=0, engine="lhs", seed=1, include_start=True)
+    assert len(df) == 1
+    np.testing.assert_allclose(df.iloc[0].to_numpy(), space.start, rtol=1e-6)

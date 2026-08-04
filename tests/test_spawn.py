@@ -1,12 +1,16 @@
 """End-to-end spawn tests: a real DSSAT hemp run driven by the framework."""
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from dssatcalibrator.config import load_config, crop_for, active_parameters, resolve_exe
 from dssatcalibrator.spawn import (
     _filex_overrides_for,
+    _genotype_gate_allows,
+    _missing_requested_treatments,
     _partition_theta,
+    _run_identity,
     parse_cultivars,
     parse_treatments,
     spawn_and_run,
@@ -84,6 +88,34 @@ def test_theta_hash_supports_filex_code_values():
     assert value != theta_hash({"irrig_code": "IR004", "x": 1.0000001})
     assert theta_hash({"x": 1, "irrig_code": "IR004"}) == "06a431c288780c62"
     assert theta_hash({"irrig_code": "IR005", "x": 1.0}) != "31684502a7"
+
+
+def test_genotype_gate_semantics():
+    cfg = {"gating": {"cultivar": "free", "ecotype": "gated", "species": "gated"}}
+    assert _genotype_gate_allows(cfg, "cultivar")
+    assert _genotype_gate_allows(cfg, "ecotype")
+    assert not _genotype_gate_allows(cfg, "species")
+    cfg["gating"]["ecotype"] = "blocked"
+    assert not _genotype_gate_allows(cfg, "ecotype")
+
+
+def test_missing_requested_treatments_detects_partial_output():
+    pg = pd.DataFrame({"treatment": [1, 1, 3, 3]})
+    assert _missing_requested_treatments(pg, [1, 2, 3]) == [2]
+    assert _missing_requested_treatments(pd.DataFrame(), [1, 3]) == [1, 3]
+
+
+def test_run_identity_prevents_irrelevant_parameter_collisions_with_or_without_cache():
+    effective = {"CSDL__IB0007": 15.0}
+    first = {"CSDL__IB0007": 15.0, "CSDL__IB0008": 12.0}
+    second = {"CSDL__IB0007": 15.0, "CSDL__IB0008": 13.0}
+
+    for cache_spawns in (False, True):
+        assert theta_hash(
+            _run_identity(first, effective, cache_spawns)
+        ) != theta_hash(
+            _run_identity(second, effective, cache_spawns)
+        )
 
 
 def test_filex_overrides_for_experiment():

@@ -7,7 +7,7 @@ import pytest
 from dssatcalibrator import config as cfgmod
 from dssatcalibrator.runner import resolve_cores
 from dssatcalibrator.samplers import sample
-from dssatcalibrator.spaces import ParameterSpace
+from dssatcalibrator.spaces import ParameterSpace, expand_parameter_specs
 
 REPO = Path(__file__).resolve().parents[1]
 HEMP_CFG = REPO / "config_hemp.yaml"
@@ -54,6 +54,35 @@ def test_validate_config_collects_all_problems():
 def test_validate_config_requires_an_active_parameter():
     cfg = {"parameters": {"g": {"A": {"active": False, "min": 0, "max": 1}}}}
     with pytest.raises(ValueError, match="No active parameters"):
+        cfgmod.validate_config(cfg)
+
+
+@pytest.mark.parametrize(
+    ("group", "level", "gate"),
+    [
+        ("genetic_cultivar", "cultivar", "blocked"),
+        ("genetic_ecotype", "ecotype", "blocked"),
+        ("genetic_species", "species", "blocked"),
+        ("genetic_species", "species", "gated"),
+    ],
+)
+def test_validate_config_rejects_active_parameters_behind_closed_gates(
+    group, level, gate
+):
+    cfg = {
+        "gating": {level: gate},
+        "parameters": {
+            group: {
+                "P": {
+                    "active": True,
+                    "min": 0.0,
+                    "max": 1.0,
+                    "start": 0.5,
+                }
+            }
+        },
+    }
+    with pytest.raises(ValueError, match=rf"gating\.{level}"):
         cfgmod.validate_config(cfg)
 
 
@@ -138,6 +167,97 @@ def test_cultivar_scoped_parameters_use_per_cultivar_starts():
 
     assert space.names == ["EM-FL__IB0002", "EM-FL__IB0008"]
     assert list(space.start) == [60.0, 85.0]
+
+
+def test_active_cultivar_subset_can_keep_other_cultivars_fixed():
+    cfg = deepcopy(cfgmod.load_config(HEMP_CFG))
+    cfg["crops"][0]["calibration_cultivars"] = ["IB0002", "IB0008"]
+    for group, params in cfg["parameters"].items():
+        for spec in params.values():
+            if isinstance(spec, dict):
+                spec["active"] = False
+                spec["fixed"] = False
+    cfg["parameters"]["genetic_cultivar"]["EM-FL"].update({
+        "active": True,
+        "fixed": True,
+        "scope": "cultivar",
+        "cultivars": ["IB0008"],
+        "fixed_cultivars": ["IB0002"],
+        "start_by_cultivar": {"IB0002": 60.0, "IB0008": 85.0},
+    })
+
+    active = ParameterSpace.from_config(cfg)
+    fixed = expand_parameter_specs(cfg, cfgmod.fixed_parameters(cfg))
+
+    assert active.names == ["EM-FL__IB0008"]
+    assert [spec["name"] for spec in fixed] == ["EM-FL__IB0002"]
+    assert fixed[0]["start"] == 60.0
+    assert fixed[0]["fixed"] is True
+
+
+def test_validate_config_rejects_scoped_bounds_outside_declared_bounds():
+    cfg = {
+        "parameters": {
+            "genetic_cultivar": {
+                "P": {
+                    "active": True,
+                    "min": 0.0,
+                    "max": 1.0,
+                    "start": 0.5,
+                    "scope": "cultivar",
+                    "min_by_cultivar": {"C1": -0.1},
+                    "max_by_cultivar": {"C1": 1.2},
+                    "start_by_cultivar": {"C1": 0.6},
+                }
+            }
+        },
+        "crops": [{"calibration_cultivars": ["C1"]}],
+    }
+
+    with pytest.raises(ValueError, match="must stay within declared bounds"):
+        cfgmod.validate_config(cfg)
+
+
+def test_parameter_space_reports_values_at_declared_writer_step():
+    cfg = {
+        "parameters": {
+            "genetic_species": {
+                "TB": {
+                    "active": True,
+                    "min": 1.47,
+                    "max": 1.56,
+                    "start": 1.514,
+                    "step": 0.1,
+                }
+            }
+        },
+        "gating": {"species": "free"},
+    }
+
+    space = ParameterSpace.from_config(cfg)
+
+    assert space.start.tolist() == pytest.approx([1.5])
+    assert space.to_theta([1.556])["TB"] == pytest.approx(1.5)
+
+
+def test_parameter_space_rejects_range_without_writer_grid_value():
+    cfg = {
+        "parameters": {
+            "genetic_species": {
+                "TB": {
+                    "active": True,
+                    "min": 1.51,
+                    "max": 1.59,
+                    "start": 1.55,
+                    "step": 0.1,
+                }
+            }
+        },
+        "gating": {"species": "free"},
+    }
+
+    with pytest.raises(ValueError, match="contains no value"):
+        ParameterSpace.from_config(cfg)
 
 
 def test_grid_sampler_can_skip_start_row_for_exact_factorial_size():

@@ -92,7 +92,27 @@ def test_filea_phenology_date_maps_to_dap_output():
     assert anthesis["sim"] == 75.0
 
 
+<<<<<<< Updated upstream
 def test_late_timeseries_obs_is_penalized_after_simulation_termination():
+=======
+def test_central_observation_overrides_stale_evaluate_measurement():
+    corrected_date = DATES[0] + pd.Timedelta(days=5)
+    obs = pd.DataFrame([
+        ("E1", 1, "ADAT", "phenology", corrected_date, 21265.0, np.nan, 1.0),
+    ], columns=SCHEMA)
+
+    resid = obj.build_residuals(
+        {"E1": _result(75.0, 1000.0, [5000.0, 8000.0])}, obs, CFG
+    )
+
+    anthesis = resid[resid["user_var"] == "anthesis"]
+    assert len(anthesis) == 1
+    assert anthesis.iloc[0]["obs"] == 80.0
+    assert anthesis.iloc[0]["sim"] == 75.0
+
+
+def test_late_timeseries_obs_uses_last_simulated_value():
+>>>>>>> Stashed changes
     ev = pd.DataFrame({
         "treatment": [1, 1], "variable": ["ADAP", "HWAM"],
         "sim": [75.0, 1000.0], "meas": [75.0, 1000.0],
@@ -109,6 +129,28 @@ def test_late_timeseries_obs_is_penalized_after_simulation_termination():
     assert biomass.iloc[-1]["date"] == DATES[1]
     assert biomass.iloc[-1]["sim"] == biomass.iloc[-1]["obs"] + 1000.0
     assert biomass.iloc[-1]["obs"] == 8000.0
+
+
+def test_late_timeseries_obs_can_be_rejected_as_missing():
+    result = SimpleNamespace(
+        evaluate=pd.DataFrame(),
+        plantgro=pd.DataFrame({
+            "treatment": [1], "date": [DATES[0]], "DAP": [75], "CWAD": [5000.0],
+        }),
+    )
+    cfg = {
+        **CFG,
+        "objective": {
+            **CFG["objective"],
+            "timeseries_after_simulation_policy": "missing",
+            "missing_simulation_policy": "reject",
+        },
+    }
+
+    scored = obj.score({"E1": result}, _obs(), cfg)
+
+    assert np.isinf(scored.score)
+    assert bool(scored.residuals["missing_simulation"].any())
 
 
 def test_configured_zero_observations_are_ignored():
@@ -171,7 +213,7 @@ def test_biased_fit_scores_worse():
 
 def test_weighting_modes_run():
     results = {"E1": _result(80.0, 900.0, [4000.0, 7000.0])}
-    for mode in ("unified", "sigma", "count_scale", "user"):
+    for mode in ("unified", "sigma", "count_scale", "site_variable", "user"):
         cfg = {**CFG, "objective": {**CFG["objective"], "weighting": mode}}
         r = obj.score(results, _obs(), cfg)
         assert np.isfinite(r.score) and r.score > 0
@@ -212,3 +254,34 @@ def test_missing_outputs_are_penalized_and_retained():
     assert len(resid) == 1
     assert resid.iloc[0]["user_var"] == "biomass"
     assert resid.iloc[0]["sim"] - resid.iloc[0]["obs"] == 1000.0
+    assert bool(resid.iloc[0]["missing_simulation"])
+
+
+def test_missing_relative_output_cannot_score_better_than_bad_valid_output():
+    obs = pd.DataFrame([
+        ("E1", 1, "CWAD", "timeseries", DATES[0], 10000.0, np.nan, 1.0),
+    ], columns=SCHEMA)
+    missing = SimpleNamespace(evaluate=pd.DataFrame(), plantgro=pd.DataFrame())
+    valid = SimpleNamespace(
+        evaluate=pd.DataFrame(),
+        plantgro=pd.DataFrame({
+            "treatment": [1], "date": [DATES[0]], "CWAD": [7000.0],
+        }),
+    )
+
+    missing_score = obj.score({"E1": missing}, obs, CFG).score
+    valid_score = obj.score({"E1": valid}, obs, CFG).score
+
+    assert missing_score > valid_score
+
+
+def test_failed_spawn_is_rejected_even_when_residual_rows_can_be_built():
+    failed = SimpleNamespace(
+        status="error",
+        evaluate=pd.DataFrame(),
+        plantgro=pd.DataFrame(),
+    )
+
+    scored = obj.score({"E1": failed}, _obs(), CFG)
+
+    assert np.isinf(scored.score)

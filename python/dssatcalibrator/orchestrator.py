@@ -89,9 +89,21 @@ def _setup(cfg: dict):
         else:
             obs = Observations.from_csv(src)
             
-    experiments = [e for e in cfg.get("experiments", []) if e in set(obs.experiments())]
+    configured_experiments = [str(e) for e in cfg.get("experiments", [])]
+    observed_experiments = set(map(str, obs.experiments()))
+    missing_experiments = [
+        experiment for experiment in configured_experiments
+        if experiment not in observed_experiments
+    ]
+    if missing_experiments:
+        raise ValueError(
+            "Configured calibration experiment(s) have no ingested observations: "
+            + ", ".join(missing_experiments)
+        )
+    experiments = configured_experiments
     treatments = {e: parse_treatments(hemp_dir / f"{e}.{crop['filex_ext']}") for e in experiments}
     treatments = _selected_treatments(cfg, experiments, treatments)
+    _validate_target_coverage(obs.table, experiments, treatments)
 
     # Optional: take planting dates from ingested farm-management rows and set them
     # as a FileX PDATE override (an input, not a calibrated parameter). Opt-in via
@@ -101,6 +113,34 @@ def _setup(cfg: dict):
         cfg["_planting_dates"] = obs.planting_dates()
 
     return space, crop, exe, specs, run_root, obs, experiments, treatments
+
+
+def _validate_target_coverage(
+    obs_table: pd.DataFrame,
+    experiments: list[str],
+    treatments: dict[str, list[int]],
+) -> None:
+    """Require at least one observation for every selected experiment-treatment."""
+    if obs_table is None or obs_table.empty:
+        raise ValueError("No observations were ingested for the configured calibration targets.")
+    if not {"exp_id", "treatment"}.issubset(obs_table.columns):
+        raise ValueError("Observation table must contain exp_id and treatment columns.")
+    observed_units = {
+        (str(exp), int(trt))
+        for exp, trt in zip(obs_table["exp_id"], obs_table["treatment"])
+        if pd.notna(exp) and pd.notna(trt)
+    }
+    requested_units = {
+        (str(exp), int(trt))
+        for exp in experiments
+        for trt in treatments.get(exp, [])
+    }
+    missing_units = sorted(requested_units - observed_units)
+    if missing_units:
+        labels = ", ".join(f"{exp}:T{trt}" for exp, trt in missing_units)
+        raise ValueError(
+            "Selected calibration target(s) have no ingested observations: " + labels
+        )
 
 
 def _selected_treatments(cfg: dict, experiments: list[str], available: dict[str, list[int]]) -> dict[str, list[int]]:
@@ -204,7 +244,7 @@ def evaluate_thetas(cfg: dict, thetas: list[dict], *, setup=None, n_workers=None
     out: list[obj.ObjectiveResult | None] = [None] * len(thetas)
     miss_by_key: dict[str, dict] = {}
     for ti, theta in enumerate(thetas):
-        key = cache.key(theta, experiments) if cache.enabled else f"no-cache-{ti}"
+        key = cache.key(theta, experiments) if cache.enabled else f"theta-{theta_hash(theta)}"
         cached = cache.get(key) if cache.enabled else None
         if cached is not None:
             out[ti] = cached
@@ -297,7 +337,7 @@ def evaluate_design(cfg: dict, samples: pd.DataFrame, *, progress=True):
         for sid in batch_ids:
             row = samples.loc[sid]
             theta = space.to_theta(row.to_numpy())
-            key = cache.key(theta, experiments) if cache.enabled else f"no-cache-{sid}"
+            key = cache.key(theta, experiments) if cache.enabled else f"theta-{theta_hash(theta)}"
             cached = cache.get(key) if cache.enabled else None
             if cached is not None:
                 _record_objective(sid, theta, cached)
@@ -306,10 +346,13 @@ def evaluate_design(cfg: dict, samples: pd.DataFrame, *, progress=True):
                         "sample_id": sid,
                         "exp_id": exp,
                         "theta_hash": theta_hash(theta),
+                        "full_theta_hash": theta_hash(theta),
+                        "effective_theta_hash": "",
                         "status": "evaluation_cached",
                         "message": key,
                         "run_dir": "",
                         "theta_json": json.dumps({k: (v.item() if hasattr(v, "item") else v) for k, v in theta.items()}, sort_keys=True),
+                        "effective_theta_json": "",
                         **{f"theta_{k}": v for k, v in theta.items()},
                     })
                 continue
@@ -332,16 +375,26 @@ def evaluate_design(cfg: dict, samples: pd.DataFrame, *, progress=True):
         for (mi, exp), res, job in zip(idx, results, jobs):
             per_miss.setdefault(mi, {})[exp] = res
             theta = dict(getattr(res, "theta", {}) or job["theta"])
+            effective_theta = dict(getattr(res, "effective_theta", {}) or {})
             theta_jsonable = {k: (v.item() if hasattr(v, "item") else v) for k, v in theta.items()}
+            effective_jsonable = {
+                k: (v.item() if hasattr(v, "item") else v)
+                for k, v in effective_theta.items()
+            }
             for sid in miss_by_key[miss_keys[mi]]["sample_ids"]:
                 spawn_manifest_rows.append({
                     "sample_id": sid,
                     "exp_id": exp,
                     "theta_hash": theta_hash(theta) if theta else "",
+                    "full_theta_hash": theta_hash(theta) if theta else "",
+                    "effective_theta_hash": (
+                        theta_hash(effective_theta) if effective_theta else ""
+                    ),
                     "status": getattr(res, "status", ""),
                     "message": getattr(res, "message", ""),
                     "run_dir": str(getattr(res, "run_dir", "")),
                     "theta_json": json.dumps(theta_jsonable, sort_keys=True),
+                    "effective_theta_json": json.dumps(effective_jsonable, sort_keys=True),
                     **{f"theta_{k}": v for k, v in theta.items()},
                 })
 

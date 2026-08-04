@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pandas as pd
 
 from dssatcalibrator import orchestrator
+from dssatcalibrator.eval_cache import _cfg_fingerprint
 from dssatcalibrator.spaces import ParameterSpace
 from dssatcalibrator.spawn import SpawnResult
 
@@ -118,3 +119,18 @@ def test_evaluation_cache_salt_invalidates_persisted_result(tmp_path, monkeypatc
     setup2 = _setup(cfg2, tmp_path)
     orchestrator.evaluate_thetas(cfg2, [{"P1": 1.0}], setup=setup2, n_workers=1)
     assert calls["jobs"] == 2
+
+
+def test_cache_fingerprint_includes_filex_overrides_and_target_treatments(tmp_path):
+    cfg = _cfg(tmp_path)
+    baseline = _cfg_fingerprint(cfg)
+
+    changed = _cfg(tmp_path)
+    changed["filex_overrides"] = {
+        "E1": [{"section": "IRRIGATION", "field": "IR001", "value": "A"}]
+    }
+    assert _cfg_fingerprint(changed) != baseline
+
+    changed = _cfg(tmp_path)
+    changed["calibration_treatments_by_experiment"] = {"E1": [2]}
+    assert _cfg_fingerprint(changed) != baseline

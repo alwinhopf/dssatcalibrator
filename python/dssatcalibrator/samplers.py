@@ -54,14 +54,7 @@ def sample(space: ParameterSpace, n: int, engine: str = "lhs",
     else:
         raise ValueError(f"unknown sampler engine: {engine}")
 
-<<<<<<< Updated upstream
     scaled = space.low + unit * (space.high - space.low)
-=======
-    if len(unit):
-        scaled = qmc.scale(unit, space.low, space.high)
-    else:
-        scaled = np.empty((0, d), dtype=float)
->>>>>>> Stashed changes
     df = pd.DataFrame(scaled, columns=space.names)
 
     if include_start:

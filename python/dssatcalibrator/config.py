@@ -44,7 +44,7 @@ DEFAULTS: dict[str, Any] = {
                   "model_discrepancy": {},
                   "ignore_zero_observations": [],
                   "missing_simulation_policy": "penalize",
-                  "timeseries_after_simulation_policy": "carry_forward"},
+                  "timeseries_after_simulation_policy": "missing"},
     "parameters": {},
     "crops": [],
     "experiments": [],
@@ -220,7 +220,7 @@ def validate_config(cfg: dict) -> dict:
         )
     late_series_policy = str(
         (cfg.get("objective", {}) or {}).get(
-            "timeseries_after_simulation_policy", "carry_forward"
+            "timeseries_after_simulation_policy", "missing"
         )
     ).lower()
     if late_series_policy not in {"carry_forward", "missing"}:
@@ -323,7 +323,6 @@ def validate_config(cfg: dict) -> dict:
                 errors.append(f"{tag}: scope '{scope}' requires at least one configured experiment.")
             if spec.get("active", False):
                 n_active += 1
-<<<<<<< Updated upstream
                 gate_by_group = {
                     "genetic_cultivar": "cultivar",
                     "genetic_ecotype": "ecotype",
@@ -331,18 +330,6 @@ def validate_config(cfg: dict) -> dict:
                 }
                 base_group = str(group).replace("_by_cultivar", "")
                 gate_name = gate_by_group.get(base_group)
-                gate_value = str((cfg.get("gating") or {}).get(gate_name, "free")).lower() if gate_name else "free"
-                if gate_name and gate_value == "blocked":
-                    errors.append(
-                        f"{tag}: active parameter is blocked by gating.{gate_name}; "
-                        "set that gate to 'gated'/'free' or deactivate the parameter."
-                    )
-=======
-                gate_name = {
-                    "genetic_cultivar": "cultivar",
-                    "genetic_ecotype": "ecotype",
-                    "genetic_species": "species",
-                }.get(group)
                 if gate_name:
                     gate = str((cfg.get("gating", {}) or {}).get(gate_name, "free")).lower()
                     if gate == "blocked" or (gate_name == "species" and gate != "free"):
@@ -351,7 +338,6 @@ def validate_config(cfg: dict) -> dict:
                             f"{tag}: active {gate_name} parameter conflicts with "
                             f"gating.{gate_name}='{gate}'; use {required}."
                         )
->>>>>>> Stashed changes
 
     if n_active == 0:
         errors.append("No active parameters: at least one parameter must have "

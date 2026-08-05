@@ -231,29 +231,6 @@ class EvaluationCache:
                 "filea": _file_fingerprint(hemp_dir / f"{exp}.{code}A"),
                 "filet": _file_fingerprint(hemp_dir / f"{exp}.{code}T"),
             }
-<<<<<<< Updated upstream
-            for exp in experiments
-        }
-        try:
-            from .writers import parse_fields
-            dssat_paths = resolve_dssat_paths(cfg)
-            for exp in experiments:
-                filex = hemp_dir / f"{exp}.{filex_ext}"
-                fields = parse_fields(filex)
-                wsta = fields.get("wsta")
-                input_files["experiments"][exp]["weather"] = (
-                    _file_fingerprint(dssat_paths["weather"] / f"{wsta}.WTH") if wsta else None
-                )
-            input_files["soil_library"] = _file_fingerprint(dssat_paths["soil"] / "SOIL.SOL")
-            input_files["dssat_profile"] = next(
-                (_file_fingerprint(dssat_paths["root"] / name)
-                 for name in ("DSSATPRO.V48", "DSSATPRO.L48", "DSCSM048.CTR")
-                 if (dssat_paths["root"] / name).exists()), None)
-        except Exception as exc:
-            input_files["support_error"] = str(exc)
-        input_files["parser"] = _file_fingerprint(Path(__file__).with_name("dssat_io.py"))
-        input_files["objective"] = _file_fingerprint(Path(__file__).with_name("objective.py"))
-=======
             try:
                 from .writers import parse_fields
 
@@ -267,7 +244,23 @@ class EvaluationCache:
                 rec["field_parse_error"] = str(exc)
             experiment_inputs[exp] = rec
         input_files["experiments"] = experiment_inputs
->>>>>>> Stashed changes
+        try:
+            dssat_paths = resolve_dssat_paths(cfg)
+            input_files["soil_library"] = _file_fingerprint(
+                dssat_paths["soil"] / "SOIL.SOL"
+            )
+            input_files["dssat_profile"] = next(
+                (
+                    _file_fingerprint(dssat_paths["root"] / name)
+                    for name in ("DSSATPRO.V48", "DSSATPRO.L48", "DSCSM048.CTR")
+                    if (dssat_paths["root"] / name).exists()
+                ),
+                None,
+            )
+        except Exception as exc:
+            input_files["support_error"] = str(exc)
+        input_files["parser"] = _file_fingerprint(Path(__file__).with_name("dssat_io.py"))
+        input_files["objective"] = _file_fingerprint(Path(__file__).with_name("objective.py"))
 
         context = {
             "schema": CACHE_SCHEMA_VERSION,

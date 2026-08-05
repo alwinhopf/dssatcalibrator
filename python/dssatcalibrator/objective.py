@@ -235,7 +235,7 @@ def _timeseries_sim_value(
     date,
     col: str,
     *,
-    after_simulation_policy: str = "carry_forward",
+    after_simulation_policy: str = "missing",
 ):
     sub = pg[pd.to_numeric(pg["treatment"], errors="coerce") == int(treatment)].copy()
     if sub.empty or col not in sub.columns:
@@ -246,10 +246,9 @@ def _timeseries_sim_value(
     if not exact.empty:
         return exact.iloc[0][col]
     ok = dates.notna()
-<<<<<<< Updated upstream
-    # Observations after model termination are unmatched, not equal to the last
-    # simulated state. Carry-forward biases late observations toward agreement.
-=======
+    # Missing is the safe default: silently carrying the final model state
+    # forward can bias late observations toward agreement. It remains available
+    # as an explicit policy for workflows that intentionally need it.
     if (
         after_simulation_policy == "carry_forward"
         and ok.any()
@@ -257,7 +256,6 @@ def _timeseries_sim_value(
     ):
         tail = sub.loc[ok].assign(_date=dates[ok]).sort_values("_date").iloc[-1]
         return tail[col]
->>>>>>> Stashed changes
     return np.nan
 
 
@@ -382,7 +380,7 @@ def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.Dat
         ts_obs = obs_table[obs_table["kind"] == "timeseries"]
         late_series_policy = str(
             (cfg.get("objective", {}) or {}).get(
-                "timeseries_after_simulation_policy", "carry_forward"
+                "timeseries_after_simulation_policy", "missing"
             )
         ).lower()
         for exp, res in results.items():

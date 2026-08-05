@@ -455,21 +455,16 @@ def spawn_and_run(
     run_dir = run_root / exp_id
     if treatment_key:
         run_dir = run_dir / treatment_key
-<<<<<<< Updated upstream
-    # Isolate runs when any template, forcing, executable, parser, gate, or
-    # configuration input changes, even if the coefficient vector is identical.
-    run_dir = run_dir / f"s_{theta_hash(effective_theta)}_{provenance_hash}"
-=======
     # Always use the full candidate. Effective-theta hashes remain in the
     # manifest for traceability, but are unsafe as writable directory identities
-    # when multiple candidates are evaluated concurrently.
+    # when multiple candidates are evaluated concurrently. The provenance hash
+    # also isolates runs when an input, parser, executable, or gate changes.
     run_identity = _run_identity(
         theta,
         effective_theta,
         bool(cfg["calibrator"].get("cache_spawns", True)),
     )
-    run_dir = run_dir / f"s_{theta_hash(run_identity)}"
->>>>>>> Stashed changes
+    run_dir = run_dir / f"s_{theta_hash(run_identity)}_{provenance_hash}"
     pg_path = run_dir / "PlantGro.OUT"
     manifest_path = run_dir / "spawn_manifest.json"
 
@@ -482,31 +477,26 @@ def spawn_and_run(
             and recorded == provenance and pg_path.exists() and pg_path.stat().st_size > 0):
         outputs = dssat_io.collect_run_outputs(run_dir)
         outputs = _stamp_single_treatment(outputs, treatments)
-<<<<<<< Updated upstream
         pg_cached = outputs.get("plantgro", dssat_io.parse_plantgro(pg_path))
         if pg_cached is None or pg_cached.empty:
             recorded = None
-        else:
-            if treatments and "treatment" in pg_cached.columns:
-                found = set(pd.to_numeric(pg_cached["treatment"], errors="coerce").dropna().astype(int))
-                if not found.issubset(set(map(int, treatments))):
-                    recorded = None
+        elif treatments:
+            requested = set(map(int, treatments))
+            found = set(
+                pd.to_numeric(pg_cached["treatment"], errors="coerce")
+                .dropna()
+                .astype(int)
+            ) if "treatment" in pg_cached.columns else set()
+            if _missing_requested_treatments(pg_cached, treatments) or found - requested:
+                recorded = None
         if recorded == provenance:
             return SpawnResult(
                 status="cached", run_dir=run_dir, theta=theta,
                 plantgro=pg_cached,
                 evaluate=outputs.get("evaluate", dssat_io.parse_evaluate(run_dir / "Evaluate.OUT")),
                 outputs=outputs,
+                effective_theta=effective_theta,
             )
-=======
-        return SpawnResult(
-            status="cached", run_dir=run_dir, theta=theta,
-            plantgro=outputs.get("plantgro", dssat_io.parse_plantgro(pg_path)),
-            evaluate=outputs.get("evaluate", dssat_io.parse_evaluate(run_dir / "Evaluate.OUT")),
-            outputs=outputs,
-            effective_theta=effective_theta,
-        )
->>>>>>> Stashed changes
 
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -543,36 +533,15 @@ def spawn_and_run(
     cul_updates = {}
     for g in GENETIC_GROUPS:
         cul_updates.update(groups.get(g, {}))
-<<<<<<< Updated upstream
-    if cul_updates and str(cfg.get("gating", {}).get("cultivar", "free")).lower() != "blocked":
-        anchors = crop.get("cultivar_anchors") or [crop["cultivar_anchor"]]
-        for anchor in anchors:
-            edit_cultivar(run_dir / f"{stem}.CUL", anchor, cul_updates)
-    if str(cfg.get("gating", {}).get("cultivar", "free")).lower() != "blocked":
-=======
     if cul_updates and _genotype_gate_allows(cfg, "cultivar"):
         anchors = crop.get("cultivar_anchors") or [crop["cultivar_anchor"]]
         for anchor in anchors:
             edit_cultivar(run_dir / f"{stem}.CUL", anchor, cul_updates)
     if _genotype_gate_allows(cfg, "cultivar"):
->>>>>>> Stashed changes
         for anchor, updates in groups.get("genetic_cultivar_by_cultivar", {}).items():
             edit_cultivar(run_dir / f"{stem}.CUL", anchor, updates)
 
     eco_updates = groups.get("genetic_ecotype", {})
-<<<<<<< Updated upstream
-    if eco_updates and str(cfg.get("gating", {}).get("ecotype", "free")).lower() != "blocked":
-        edit_ecotype(run_dir / f"{stem}.ECO", crop["ecotype"], eco_updates)
-    cultivar_ecotypes = _cultivar_ecotype_map(crop)
-    for anchor, updates in (groups.get("genetic_ecotype_by_cultivar", {}).items()
-                            if str(cfg.get("gating", {}).get("ecotype", "free")).lower() != "blocked" else []):
-        eco_anchor = cultivar_ecotypes.get(anchor)
-        if eco_anchor is None:
-            raise ValueError(
-                f"No ecotype mapping for cultivar '{anchor}'. Add crops[].cultivar_ecotypes."
-            )
-        edit_ecotype(run_dir / f"{stem}.ECO", eco_anchor, updates)
-=======
     if eco_updates and _genotype_gate_allows(cfg, "ecotype"):
         edit_ecotype(run_dir / f"{stem}.ECO", crop["ecotype"], eco_updates)
     cultivar_ecotypes = _cultivar_ecotype_map(crop)
@@ -584,16 +553,11 @@ def spawn_and_run(
                     f"No ecotype mapping for cultivar '{anchor}'. Add crops[].cultivar_ecotypes."
                 )
             edit_ecotype(run_dir / f"{stem}.ECO", eco_anchor, updates)
->>>>>>> Stashed changes
 
     # species (.SPE) coefficients — gated: only written when gating.species == "free"
     # (physiology-defining; for new-species adaptation from an analog template).
     spe_updates = groups.get("genetic_species", {})
-<<<<<<< Updated upstream
-    if spe_updates and str(cfg.get("gating", {}).get("species", "blocked")).lower() != "blocked":
-=======
     if spe_updates and _genotype_gate_allows(cfg, "species"):
->>>>>>> Stashed changes
         from .writers import edit_species
         spe_file = run_dir / f"{stem}.SPE"
         if spe_file.exists():

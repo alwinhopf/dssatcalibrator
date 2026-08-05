@@ -92,9 +92,6 @@ def test_filea_phenology_date_maps_to_dap_output():
     assert anthesis["sim"] == 75.0
 
 
-<<<<<<< Updated upstream
-def test_late_timeseries_obs_is_penalized_after_simulation_termination():
-=======
 def test_central_observation_overrides_stale_evaluate_measurement():
     corrected_date = DATES[0] + pd.Timedelta(days=5)
     obs = pd.DataFrame([
@@ -111,8 +108,7 @@ def test_central_observation_overrides_stale_evaluate_measurement():
     assert anthesis.iloc[0]["sim"] == 75.0
 
 
-def test_late_timeseries_obs_uses_last_simulated_value():
->>>>>>> Stashed changes
+def test_late_timeseries_obs_is_penalized_after_simulation_termination():
     ev = pd.DataFrame({
         "treatment": [1, 1], "variable": ["ADAP", "HWAM"],
         "sim": [75.0, 1000.0], "meas": [75.0, 1000.0],
@@ -129,6 +125,28 @@ def test_late_timeseries_obs_uses_last_simulated_value():
     assert biomass.iloc[-1]["date"] == DATES[1]
     assert biomass.iloc[-1]["sim"] == biomass.iloc[-1]["obs"] + 1000.0
     assert biomass.iloc[-1]["obs"] == 8000.0
+
+
+def test_late_timeseries_obs_can_carry_forward_last_simulated_value():
+    result = SimpleNamespace(
+        evaluate=pd.DataFrame(),
+        plantgro=pd.DataFrame({
+            "treatment": [1], "date": [DATES[0]], "DAP": [75], "CWAD": [5000.0],
+        }),
+    )
+    cfg = {
+        **CFG,
+        "objective": {
+            **CFG["objective"],
+            "timeseries_after_simulation_policy": "carry_forward",
+        },
+    }
+
+    resid = obj.build_residuals({"E1": result}, _obs(), cfg)
+
+    biomass = resid[resid["user_var"] == "biomass"].sort_values("date")
+    assert biomass.iloc[-1]["sim"] == 5000.0
+    assert not bool(biomass.iloc[-1]["missing_simulation"])
 
 
 def test_late_timeseries_obs_can_be_rejected_as_missing():

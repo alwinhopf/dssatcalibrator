@@ -20,7 +20,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
 shared = [
-  "dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@9f5bbde0def31dd74c5f881bf6b3be30f787c6a0",
+  "dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@2280b11977ad373b9ae19d2d4497e8f276f7b133",
 ]
 acquire = [
     "dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@e9c859fa1d915623df23e2eb13084cb085dbfe3e",

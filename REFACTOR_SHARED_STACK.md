@@ -121,7 +121,7 @@ The per-spawn (“Level B”) flow keeps the calibrator's perturbation + parsing
   sim-vs-meas readers become shared too. If declined, the calibrator keeps `dssat_io.py`
   (documented divergence — the engine's CSV-summary contract genuinely doesn't cover it).
 - **`dssatcalibrator/pyproject.toml`:** add pinned, **optional** extras
-  `[shared]` → `dssatengine @ git+…@84b6e508...`; `[acquire]` → `dssatutils @ …@v0.4.0` (+ geopandas).
+  `[shared]` → `dssatengine @ git+…@2280b119...`; `[acquire]` → `dssatutils @ …@e9c859fa...` (+ geopandas).
   Never `@main`/editable in a committed manifest (principle 3).
 
 ### Phase 1 — formalise the `DSSAT48` layer (low risk, no upstream dep)
@@ -191,7 +191,7 @@ Recommend **A** now, leaving **B** as a later consolidation if the engine grows 
 
 ## 7. Dependency, parity & governance impact
 
-- **Pins:** keep `dssatutils@v0.4.0` / the verified `dssatengine` 0.4.0 release commit as
+- **Pins:** keep `dssatutils@e9c859fa1d915623df23e2eb13084cb085dbfe3e` / `dssatengine@2280b11977ad373b9ae19d2d4497e8f276f7b133` as
   **optional extras**; refresh any lockfile; update `DEPENDENCIES.md` (calibrator row: *"does not use"* →
   *"consumes `dssatengine` for execution; `dssatutils` for acquisition (optional extra)"*).
 - **R/Python parity (principle 5):** the calibrator now has mirrored R and Python

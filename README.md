@@ -35,8 +35,8 @@ Requires Python 3.10+.
 ```bash
 pip install -e .          # core (numpy/scipy/pandas/matplotlib/pymoo) — enough for
                           # sampling, GLUE, SMC-PF, MCMC, optimisers, Morris screening
-pip install -e .[shared]  # + pinned dssatengine 0.4.0 release commit
-pip install -e .[acquire] # + pinned dssatutils@v0.4.0 weather/soil acquisition
+pip install -e .[shared]  # + immutable dssatengine workspace baseline
+pip install -e .[acquire] # + immutable dssatutils workspace baseline
 pip install -e .[full]    # + SALib (Sobol sensitivity) and scikit-learn (surrogate)
 pip install -e .[dev]     # + pytest
 ```
@@ -206,5 +206,5 @@ R packages: `yaml` (core); plus, per engine, `lhs` + `randtoolbox` (sampling),
 helpers), `mco` (NSGA-II), `DiceKriging`/`ranger` (surrogate), `ggplot2` (figures),
 `digest` (theta hashing), `jsonlite` (state/IO), and the workspace packages
 `dssatengine` (execution backend) and `dssatutils` (weather/soil acquisition).
-Pins follow the workspace `DEPENDENCIES.md`: `dssatutils@v0.4.0`; `dssatengine`
-is pinned to the verified 0.4.0 release commit until the matching Git tag is pushed.
+Pins follow the immutable commit baselines recorded in the workspace
+`dssatengine/DEPENDENCIES.md`.

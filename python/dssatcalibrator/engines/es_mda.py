@@ -52,7 +52,10 @@ def _obs_vectors(results, names_key="user_var"):
         for _, row in rd.iterrows():
             key = (row["exp_id"], int(row["treatment"]), row["dssat"],
                    str(row["date"]) if not pd.isna(row["date"]) else "NA")
-            weight = max(float(row.get("weight", 1.0)), 1e-12)
+            weight = float(row.get("weight", 1.0))
+            if not np.isfinite(weight):
+                weight = 1.0
+            weight = max(weight, 1e-12)
             # ES-MDA uses an observation-error covariance; objective weights are
             # equivalent to shrinking sigma by sqrt(weight).
             m[key] = (float(row["sim"]), float(row["obs"]),

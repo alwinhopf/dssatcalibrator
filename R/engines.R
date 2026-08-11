@@ -701,8 +701,12 @@ run_es_mda <- function(cfg, score_results, space, progress = TRUE) {
       if (is.null(rd) || nrow(rd) == 0) return(list())
       keys <- paste(rd$exp_id, rd$treatment, rd$dssat,
                     ifelse(is.na(rd$date), "NA", as.character(rd$date)), sep = "|")
-      setNames(lapply(seq_len(nrow(rd)), function(i)
-        c(sim = rd$sim[i], obs = rd$obs[i], sigma = rd$sigma[i])), keys)
+      setNames(lapply(seq_len(nrow(rd)), function(i) {
+        weight <- if ("weight" %in% names(rd)) suppressWarnings(as.numeric(rd$weight[i])) else 1
+        if (!is.finite(weight)) weight <- 1
+        weight <- max(weight, 1e-12)
+        c(sim = rd$sim[i], obs = rd$obs[i], sigma = rd$sigma[i] / sqrt(weight))
+      }), keys)
     })
     common <- NULL
     for (m in per) if (length(m)) common <- if (is.null(common)) names(m) else intersect(common, names(m))
@@ -722,7 +726,10 @@ run_es_mda <- function(cfg, score_results, space, progress = TRUE) {
     if (is.null(ov)) break
     d_obs <- ov$d_obs; sigma <- ov$sigma; d_sim <- ov$d_sim; nd <- length(d_obs)
     bad <- !is.finite(d_sim)
-    if (any(bad)) d_sim[bad] <- d_obs[col(d_sim)[bad]]
+    if (any(bad)) {
+      penalty <- d_obs + 10 * pmax(sigma, 1e-6)
+      d_sim[bad] <- penalty[col(d_sim)[bad]]
+    }
     theta_mean <- colMeans(ens); d_mean <- colMeans(d_sim)
     Ta <- sweep(ens, 2, theta_mean); Da <- sweep(d_sim, 2, d_mean)
     C_td <- (t(Ta) %*% Da) / (ne - 1)

@@ -53,3 +53,10 @@ pytest tests/test_new_features.py tests/test_impact_atlas.py
 # R tests
 Rscript -e "testthat::test_dir('tests/testthat')"
 ```
+
+## 5. CI and clean-checkout guardrails
+
+Run the offline Python and R suites before live/model runs. Check package
+discovery from a clean checkout so new adapters and initializers are tracked.
+When importing a sibling utility, update immutable dependency pins everywhere.
+Do not commit generated DSSAT runs, caches, or output files.

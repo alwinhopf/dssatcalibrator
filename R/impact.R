@@ -156,6 +156,22 @@ run_impact_atlas <- function(config, output_dir = NULL,
   }
   if (is.null(output_dir)) output_dir <- .impact_default_outdir(cfg_obj)
   script <- .impact_script_path(script, config_path)
+  if (!is.null(dssat_exe) && nzchar(as.character(dssat_exe))) {
+    which_dssat <- Sys.which(as.character(dssat_exe))
+    if (nzchar(which_dssat)) {
+      dssat_exe <- unname(normalizePath(which_dssat, mustWork = FALSE))
+    } else {
+      dssat_exe <- normalizePath(as.character(dssat_exe), mustWork = FALSE)
+    }
+  }
+  python_cmd <- as.character(python)
+  which_py <- Sys.which(python_cmd)
+  if (nzchar(which_py)) {
+    python_cmd <- unname(normalizePath(which_py, mustWork = FALSE))
+  } else {
+    python_cmd <- normalizePath(python_cmd, mustWork = FALSE)
+  }
+
   args <- .impact_atlas_args(
     script, config_path, output_dir = output_dir, experiments = experiments,
     groups = groups, levels = levels, active_only = active_only,
@@ -173,7 +189,7 @@ run_impact_atlas <- function(config, output_dir = NULL,
     progress = progress
   )
 
-  out <- system2(python, args = args,
+  out <- system2(python_cmd, args = args,
                  stdout = if (isTRUE(progress)) "" else TRUE,
                  stderr = if (isTRUE(progress)) "" else TRUE)
   status <- if (is.character(out)) attr(out, "status") %||% 0L else as.integer(out)

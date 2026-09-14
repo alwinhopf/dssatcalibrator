@@ -206,10 +206,12 @@ def _write_batch(run_dir: Path, filex_name: str, treatments: list[int], backend:
     return write_dssbatch(run_dir, filex_name, treatments)
 
 
-def _run_native_dssat(run_dir: Path, exe: Path, model: str, timeout: int) -> str:
+def _run_native_dssat(run_dir: Path, exe: Path | str, model: str, timeout: int) -> str:
+    exe_str = str(exe)
+    resolved_exe = shutil.which(exe_str) or str(Path(exe).resolve())
     try:
         result = subprocess.run(
-            [str(exe), model, "B", BATCH_FILE],
+            [resolved_exe, model, "B", BATCH_FILE],
             cwd=str(run_dir),
             timeout=timeout,
             capture_output=True,
@@ -231,13 +233,15 @@ def _run_native_dssat(run_dir: Path, exe: Path, model: str, timeout: int) -> str
     return ""
 
 
-def _run_backend_dssat(run_dir: Path, exe: Path, crop: dict,
+def _run_backend_dssat(run_dir: Path, exe: Path | str, crop: dict,
                        backend: str, timeout: int) -> str:
+    exe_str = str(exe)
+    resolved_exe = shutil.which(exe_str) or str(Path(exe).resolve())
     if backend == "native":
-        return _run_native_dssat(run_dir, exe, crop["model"], timeout)
+        return _run_native_dssat(run_dir, Path(resolved_exe), crop["model"], timeout)
     try:
         _, run_dssat, _ = _dssatengine_api()
-        run_dssat(str(run_dir), str(exe), "B", model=crop.get("model"), timeout=timeout)
+        run_dssat(str(run_dir), resolved_exe, "B", model=crop.get("model"), timeout=timeout)
     except subprocess.TimeoutExpired:
         return "timeout"
     except Exception as exc:
@@ -429,12 +433,14 @@ def spawn_and_run(
     param_specs: list[dict],
     run_root: Path,
     treatments: list[int] | None = None,
-    exe: Path,
+    exe: Path | str | None = None,
     timeout: int = 600,
 ) -> SpawnResult:
     """Materialize and run one spawn; return parsed PlantGro + Evaluate tables."""
     backend = _execution_backend(cfg)
     dssat_paths = resolve_dssat_paths(cfg)
+    exe_target = exe if exe is not None else dssat_paths["exe"]
+    exe_resolved = Path(shutil.which(str(exe_target)) or Path(exe_target).resolve())
     hemp_dir = Path(cfg["source"]["hemp_dir"])
     geno_dir = dssat_paths["genotype"]
     stem = crop["genotype_stem"]
@@ -446,7 +452,7 @@ def spawn_and_run(
 
     effective_theta = _effective_theta(theta, param_specs, exp_id, exp_cultivars)
     provenance = _spawn_provenance(
-        cfg, crop, param_specs, source_filex, geno_dir, dssat_paths, exe,
+        cfg, crop, param_specs, source_filex, geno_dir, dssat_paths, exe_resolved,
         treatments, effective_theta,
     )
     treatment_key = _treatment_run_key(treatments)
@@ -758,7 +764,7 @@ def spawn_and_run(
                            message=f"batch setup failed: {exc}",
                            effective_theta=effective_theta)
 
-    run_error = _run_backend_dssat(run_dir, exe, crop, backend, timeout)
+    run_error = _run_backend_dssat(run_dir, exe_resolved, crop, backend, timeout)
     if run_error:
         return SpawnResult(status="error", run_dir=run_dir, theta=theta,
                            message=run_error, effective_theta=effective_theta)

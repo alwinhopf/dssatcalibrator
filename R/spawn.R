@@ -253,9 +253,16 @@ normalize_treatments <- function(treatments, backend = "native") {
 
 # Native DSSAT subprocess. Returns "" on success, else an error/timeout message.
 .run_native_dssat <- function(run_dir, exe, model, timeout) {
+  exe_str <- as.character(exe)
+  exe_path <- Sys.which(exe_str)
+  if (!nzchar(exe_path)) {
+    exe_path <- normalizePath(exe_str, mustWork = FALSE)
+  } else {
+    exe_path <- unname(normalizePath(exe_path, mustWork = FALSE))
+  }
   old <- setwd(run_dir); on.exit(setwd(old), add = TRUE)
   out <- tryCatch(
-    system2(exe, args = c(model, "B", BATCH_FILE), stdout = TRUE, stderr = TRUE,
+    system2(exe_path, args = c(model, "B", BATCH_FILE), stdout = TRUE, stderr = TRUE,
             timeout = timeout),
     error = function(e) structure(character(0), status = 1L, msg = conditionMessage(e)))
   status <- attr(out, "status")
@@ -284,9 +291,17 @@ spawn_result <- function(status, run_dir, theta, plantgro = data.frame(),
 #' file-staging and parsing logic mirror the Python path.)
 #' @export
 spawn_and_run <- function(theta, exp_id, cfg, crop, param_specs, run_root,
-                          treatments = NULL, exe, timeout = 600) {
+                          treatments = NULL, exe = NULL, timeout = 600) {
   backend <- .execution_backend(cfg)
   dssat_paths <- resolve_dssat_paths(cfg)
+  if (missing(exe) || is.null(exe)) exe <- dssat_paths$exe
+  exe_str <- as.character(exe)
+  exe_path <- Sys.which(exe_str)
+  if (!nzchar(exe_path)) {
+    exe_path <- normalizePath(exe_str, mustWork = FALSE)
+  } else {
+    exe_path <- unname(normalizePath(exe_path, mustWork = FALSE))
+  }
   hemp_dir <- cfg$source$hemp_dir
   geno_dir <- dssat_paths$genotype
   stem <- crop$genotype_stem
@@ -500,7 +515,7 @@ spawn_and_run <- function(theta, exp_id, cfg, crop, param_specs, run_root,
   treatments <- normalize_treatments(treatments, backend)
   write_dssbatch(run_dir, filex_name, treatments)
 
-  run_error <- .run_native_dssat(run_dir, exe, crop$model, timeout)
+  run_error <- .run_native_dssat(run_dir, exe_path, crop$model, timeout)
   if (nzchar(run_error)) return(spawn_result("error", run_dir, theta, message = run_error))
 
   if (!file.exists(pg_path) || file.info(pg_path)$size == 0) {

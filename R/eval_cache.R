@@ -4,7 +4,7 @@
 # scored objective for a whole theta across the requested experiments, above the
 # existing per-spawn DSSAT-output cache.
 
-.EVAL_CACHE_SCHEMA_VERSION <- 1L
+.EVAL_CACHE_SCHEMA_VERSION <- 2L
 
 .eval_norm <- function(x) {
   if (is.null(x)) return(NULL)
@@ -59,6 +59,9 @@
     management_options = .cfg_get(cfg, "management_options", list()),
     weather = .cfg_get(cfg, "weather", list()),
     soil = .cfg_get(cfg, "soil", list()),
+    filex_overrides = .cfg_get(cfg, "filex_overrides", list()),
+    calibration_treatments = .cfg_get(cfg, "calibration_treatments", list()),
+    calibration_treatments_by_experiment = .cfg_get(cfg, "calibration_treatments_by_experiment", list()),
     observation_sources = .cfg_get(cfg, "observation_sources", list()),
     fusion = .cfg_get(cfg, "fusion", list()),
     experiments = .cfg_get(cfg, "experiments", list()),
@@ -109,6 +112,22 @@
       filet = .eval_file_fingerprint(file.path(hemp_dir, sprintf("%s.%sT", exp, code)))
     )
   }), experiments)
+
+  tryCatch({
+    dssat_paths <- resolve_dssat_paths(cfg)
+    pro_files <- c("DSSATPRO.L48", "DSSATPRO.V48", "DSSATPRO.v48", "DSCSM048.CTR")
+    input_files$profiles <- setNames(lapply(pro_files, function(pf) {
+      .eval_file_fingerprint(file.path(dssat_paths$root, pf))
+    }), pro_files)
+    if (dir.exists(dssat_paths$soil)) {
+      sol_files <- list.files(dssat_paths$soil, pattern = "\\.SOL$", full.names = TRUE, ignore.case = TRUE)
+      input_files$soils <- setNames(lapply(sol_files, .eval_file_fingerprint), basename(sol_files))
+    }
+    if (dir.exists(dssat_paths$weather)) {
+      wth_files <- list.files(dssat_paths$weather, pattern = "\\.WTH$", full.names = TRUE, ignore.case = TRUE)
+      input_files$weather <- setNames(lapply(wth_files, .eval_file_fingerprint), basename(wth_files))
+    }
+  }, error = function(e) NULL)
 
   context <- list(
     schema = .EVAL_CACHE_SCHEMA_VERSION,

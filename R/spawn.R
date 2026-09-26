@@ -286,6 +286,59 @@ spawn_result <- function(status, run_dir, theta, plantgro = data.frame(),
             class = "spawn_result")
 }
 
+.spawn_provenance <- function(cfg, crop, param_specs, source_filex, geno_dir,
+                              dssat_paths, exe, treatments, effective_theta) {
+  fingerprint <- function(path) {
+    if (is.null(path) || is.na(path) || !file.exists(path) || dir.exists(path)) return(NULL)
+    digest::digest(file = path, algo = "sha256", serialize = FALSE)
+  }
+  directory_hashes <- function(path, pattern) {
+    if (is.null(path) || !dir.exists(path)) return(list())
+    clean_path <- sub("[/\\]+$", "", path)
+    files <- sort(list.files(clean_path, pattern = pattern, full.names = TRUE,
+                             ignore.case = TRUE, recursive = TRUE))
+    if (!length(files)) return(list())
+    rel <- substring(files, nchar(clean_path) + 2L)
+    rel <- chartr("\\", "/", rel)
+    setNames(lapply(files, fingerprint), rel)
+  }
+  profiles <- c("DSSATPRO.L48", "DSSATPRO.V48", "DSSATPRO.v48", "DSCSM048.CTR")
+  profile_digests <- list()
+  if (!is.null(dssat_paths$root) && dir.exists(dssat_paths$root)) {
+    for (pro in profiles) {
+      src <- file.path(dssat_paths$root, pro)
+      if (file.exists(src) && !dir.exists(src)) profile_digests[[pro]] <- fingerprint(src)
+    }
+  }
+  obs_ext <- paste0(crop$code, c("A", "T"))
+  exp_stem <- tools::file_path_sans_ext(basename(source_filex))
+  obs_digests <- list()
+  for (ext in obs_ext) {
+    src <- file.path(dirname(source_filex), paste0(exp_stem, ".", ext))
+    if (file.exists(src) && !dir.exists(src)) obs_digests[[ext]] <- fingerprint(src)
+  }
+  list(
+    schema = 4L, theta = effective_theta, crop = crop, specs = param_specs,
+    treatments = treatments, filex_sha256 = fingerprint(source_filex),
+    genotype_sha256 = setNames(lapply(c("CUL", "ECO", "SPE"), function(ext) {
+      fingerprint(file.path(geno_dir, paste0(crop$genotype_stem, ".", ext)))
+    }), c("CUL", "ECO", "SPE")),
+    weather_sha256 = directory_hashes(dssat_paths$weather, "[.]WTH$"),
+    soil_sha256 = directory_hashes(dssat_paths$soil, "[.]SOL$"),
+    profile_sha256 = profile_digests,
+    obs_sha256 = obs_digests,
+    exe_sha256 = fingerprint(exe),
+    execution = cfg$execution %||% list(), gating = cfg$gating %||% list(),
+    weather = cfg$weather %||% list(), soil = cfg$soil %||% list(),
+    filex_overrides = cfg$filex_overrides %||% list(), planting_dates = cfg[["_planting_dates"]] %||% list()
+  )
+}
+
+.spawn_outputs_complete <- function(pg, treatments) {
+  is.data.frame(pg) && nrow(pg) > 0L && "treatment" %in% names(pg) &&
+    setequal(as.integer(treatments), unique(stats::na.omit(as.integer(pg$treatment))))
+}
+
 #' Materialize and run one spawn; return parsed PlantGro + Evaluate tables.
 #' Mirrors spawn.py:spawn_and_run. (DSSAT execution requires the binary; the
 #' file-staging and parsing logic mirror the Python path.)
@@ -311,23 +364,42 @@ spawn_and_run <- function(theta, exp_id, cfg, crop, param_specs, run_root,
   source_filex <- file.path(hemp_dir, filex_name)
   exp_cultivars <- parse_cultivars(source_filex)
 
-  effective_theta <- .effective_theta(theta, param_specs, exp_id, exp_cultivars)
+  run_identity <- theta
+  prov_list <- .spawn_provenance(
+    cfg, crop, param_specs, source_filex, geno_dir, dssat_paths, exe_path,
+    treatments, .effective_theta(theta, param_specs, exp_id, exp_cultivars)
+  )
+  prov_hash <- substr(digest::digest(prov_list, algo = "sha1"), 1, 12)
+
   treatment_key <- .treatment_run_key(treatments)
   run_dir <- file.path(run_root, exp_id)
   if (!is.null(treatment_key)) run_dir <- file.path(run_dir, treatment_key)
-  run_dir <- file.path(run_dir, paste0("s_", theta_hash(effective_theta)))
+  run_dir <- file.path(run_dir, paste0("s_", theta_hash(run_identity), "_", prov_hash))
   pg_path <- file.path(run_dir, "PlantGro.OUT")
+  manifest_path <- file.path(run_dir, "spawn_manifest.rds")
+  recorded <- if (file.exists(manifest_path)) {
+    tryCatch(suppressWarnings(readRDS(manifest_path)), error = function(e) NULL)
+  } else NULL
+  expected_treatments <- if (is.null(treatments)) parse_treatments(source_filex) else treatments
 
   if (isTRUE(.cfg_get(cfg$calibrator, "cache_spawns", TRUE)) &&
-      file.exists(pg_path) && file.info(pg_path)$size > 0) {
+      identical(recorded, prov_list) && file.exists(pg_path) && file.info(pg_path)$size > 0) {
     outputs <- .collect_core_outputs(run_dir, treatments)
-    return(spawn_result("cached", run_dir, theta,
-                        plantgro = outputs$plantgro,
-                        evaluate = outputs$evaluate,
-                        outputs = outputs))
+    pg <- outputs$plantgro
+    if (.spawn_outputs_complete(pg, expected_treatments)) {
+      return(spawn_result("cached", run_dir, theta,
+                          plantgro = outputs$plantgro,
+                          evaluate = outputs$evaluate,
+                          outputs = outputs))
+    }
   }
 
   dir.create(run_dir, recursive = TRUE, showWarnings = FALSE)
+  # A failed forced rerun must not leave a reusable success marker or old outputs.
+  for (name in c("spawn_manifest.rds", "PlantGro.OUT", "Evaluate.OUT", "Summary.OUT")) {
+    path <- file.path(run_dir, name)
+    if (file.exists(path) && !file.remove(path)) stop("Could not remove stale output: ", path)
+  }
 
   for (profile_name in c("DSSATPRO.L48", "DSSATPRO.V48", "DSSATPRO.v48", "DSCSM048.CTR")) {
     src <- file.path(dssat_paths$root, profile_name)
@@ -522,6 +594,14 @@ spawn_and_run <- function(theta, exp_id, cfg, crop, param_specs, run_root,
     return(spawn_result("error", run_dir, theta, message = "no PlantGro.OUT produced"))
   }
   outputs <- .collect_core_outputs(run_dir, treatments)
+  if (!.spawn_outputs_complete(outputs$plantgro, treatments)) {
+    return(spawn_result("error", run_dir, theta,
+                        message = "PlantGro.OUT does not contain all requested treatments"))
+  }
+  staged <- tempfile(pattern = ".spawn-manifest-", tmpdir = run_dir)
+  on.exit(unlink(staged), add = TRUE)
+  saveRDS(prov_list, staged)
+  if (!file.rename(staged, manifest_path)) stop("Could not publish spawn manifest")
   spawn_result("success", run_dir, theta, plantgro = outputs$plantgro,
                evaluate = outputs$evaluate, outputs = outputs)
 }

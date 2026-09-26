@@ -62,8 +62,13 @@ sample_one <- function(spec, n, rng = NULL) {
   if (dist == "lognormal") {
     center <- max(.prior_center(spec), 1e-9)
     sigma <- if (!is.null(prior$sd)) as.numeric(prior$sd) else 0.5
-    draws <- rlnorm(n, meanlog = log(center), sdlog = sigma)
-    return(pmin(pmax(draws, lo), hi))
+    plo <- stats::plnorm(max(lo, .Machine$double.xmin), meanlog = log(center), sdlog = sigma)
+    phi <- stats::plnorm(hi, meanlog = log(center), sdlog = sigma)
+    if (phi > plo) {
+      u <- stats::runif(n, plo, phi)
+      return(stats::qlnorm(u, meanlog = log(center), sdlog = sigma))
+    }
+    return(rep(lo, n))
   }
   if (dist == "triangular") {
     mode <- min(max(.prior_center(spec), lo), hi)
@@ -78,7 +83,7 @@ sample_one <- function(spec, n, rng = NULL) {
 #' @export
 log_prior_one <- function(spec, value) {
   b <- .prior_bounds(spec); lo <- b[1]; hi <- b[2]
-  if (!(lo <= value && value <= hi)) return(-Inf)
+  if (is.na(value) || is.nan(value) || value < lo || value > hi) return(-Inf)
   dist <- .prior_dist_name(spec)
   prior <- spec$prior; if (is.null(prior)) prior <- list()
 

@@ -187,3 +187,40 @@ def test_apply_active_subset():
     out = _apply_active_subset(cfg, ["a"])
     assert out["parameters"]["g"]["a"]["active"] is True
     assert out["parameters"]["g"]["b"]["active"] is False
+
+
+def test_prior_lognormal_inverse_cdf_no_clipping():
+    spec = {"name": "x", "min": 1.0, "max": 4.0, "start": 2.0,
+            "prior": {"dist": "lognormal", "sd": 1.0}}
+    rng = np.random.default_rng(42)
+    draws = priors.sample_one(spec, 5000, rng)
+    assert np.all(draws >= 1.0) and np.all(draws <= 4.0)
+    assert np.sum(draws == 1.0) == 0
+    assert np.sum(draws == 4.0) == 0
+    assert np.isfinite(priors.log_prior_one(spec, 2.0))
+    assert priors.log_prior_one(spec, 0.5) == float("-inf")
+    assert priors.log_prior_one(spec, 4.5) == float("-inf")
+
+
+def test_mcmc_out_of_bounds_auto_rejects():
+    space = make_space()
+    scored_thetas = []
+
+    def score_results(thetas):
+        for t in thetas:
+            scored_thetas.append(t)
+            assert 0.0 <= t["a"] <= 10.0
+            assert 0.0 <= t["b"] <= 10.0
+        return [ObjectiveResult(score=float(t["a"]**2 + t["b"]**2),
+                                loglik=float(-0.5 * (t["a"]**2 + t["b"]**2)),
+                                residuals=pd.DataFrame({"resid": np.zeros(5)}))
+                for t in thetas]
+
+    cfg = {"calibrator": {"seed": 1},
+           "method": {"bayesian": {"n_walkers": 8, "n_steps": 50, "burn_in": 10,
+                                   "proposal_scale": 1.5}}}
+    mc = run_mcmc(cfg, score_results, space, progress=False)
+    assert len(scored_thetas) > 0
+    assert mc.chain is not None
+    assert np.isfinite(mc.ess)
+    assert np.isfinite(mc.rhat)

@@ -353,6 +353,12 @@ thetas = {
 # write_dssbatch output (read the file it writes)
 tmpd = Path(tempfile.mkdtemp())
 batch = spawn.write_dssbatch(tmpd, "EXP0001.HMX", [1, 2, 10])
+crop_prov = {"code": "HM", "filex_ext": "HMX", "genotype_stem": "sample", "model": "WHCER048"}
+paths_prov = {"root": OUT, "soil": OUT, "weather": OUT, "genotype": OUT}
+source_prov = OUT / "sample.CUL"
+exe_prov = OUT / "PlantGro.OUT"
+prov_golden = spawn._spawn_provenance({}, crop_prov, [], source_prov, OUT, paths_prov, exe_prov, [1], {"P1": 1.0})
+
 dump("spawn_helpers.json", {
     "theta_hash": {k: spawn.theta_hash(v) for k, v in thetas.items()},
     "thetas": thetas,
@@ -361,6 +367,7 @@ dump("spawn_helpers.json", {
         "dedup_order": spawn._normalize_treatments([3, 1, 1, 10, 3], "native"),
         "single": spawn._normalize_treatments([5], "native"),
     },
+    "provenance": prov_golden,
 })
 
 

@@ -72,12 +72,44 @@ def chain_diagnostics(chain: pd.DataFrame, names: list[str], burn: int = 0) -> t
         if n < 3:
             continue
         series = [x[:n] for x in series]
+
+        # Split chains: each chain split in half to detect within-chain non-stationarity
+        split_series = []
+        if n >= 6:
+            half = n // 2
+            for x in series:
+                split_series.append(x[:half])
+                split_series.append(x[half:2 * half])
+            n_eff = half
+        else:
+            split_series = series
+            n_eff = n
+
+        m = len(split_series)
+        variances = [float(np.var(x, ddof=1)) if len(x) > 1 else 0.0 for x in split_series]
+        within = float(np.mean(variances))
+        means = np.array([float(np.mean(x)) for x in split_series])
+        between = float(n_eff * np.var(means, ddof=1)) if m > 1 else 0.0
+
+        if within <= 0.0 or not np.isfinite(within):
+            if between > 1e-12:
+                rhat_values.append(float("inf"))
+            else:
+                rhat_values.append(float("nan"))
+            ess_values.append(0.0)
+            continue
+
+        var_hat = ((n_eff - 1) / n_eff) * within + between / n_eff
+        rhat = np.sqrt(max(0.0, var_hat / within))
+        rhat_values.append(float(rhat))
+
+        # Autocorrelation-aware ESS
         taus = []
         for x in series:
             centered = x - x.mean()
             var = np.dot(centered, centered) / n
-            if var <= 0:
-                taus.append(1.0)
+            if var <= 0.0 or not np.isfinite(var):
+                taus.append(float("inf"))
                 continue
             rho_sum = 0.0
             for lag in range(1, n):
@@ -86,15 +118,11 @@ def chain_diagnostics(chain: pd.DataFrame, names: list[str], burn: int = 0) -> t
                     break
                 rho_sum += rho
             taus.append(max(1.0, 1.0 + 2.0 * rho_sum))
-        ess_values.append(sum(n / tau for tau in taus))
-        if len(series) >= 2:
-            means = np.array([x.mean() for x in series])
-            within = np.mean([np.var(x, ddof=1) for x in series])
-            between = n * np.var(means, ddof=1)
-            var_hat = ((n - 1) / n) * within + between / n
-            rhat_values.append(np.sqrt(var_hat / within) if within > 0 else 1.0)
+        ess = sum(n / tau for tau in taus if np.isfinite(tau) and tau > 0)
+        ess_values.append(float(ess))
     return (float(min(ess_values)) if ess_values else float("nan"),
             float(max(rhat_values)) if rhat_values else float("nan"))
+
 
 
 def run_mcmc(cfg: dict, score_results, space, *, progress: bool = True) -> McmcResult:
@@ -138,8 +166,13 @@ def run_mcmc(cfg: dict, score_results, space, *, progress: bool = True) -> McmcR
 
     for step in range(n_steps):
         sd = scale * ranges
-        prop = [space.to_theta(vec(cur_theta[w]) + rng.normal(0.0, sd)) for w in range(n_walkers)]
-        lp_prop = np.array([priors.log_prior_vec(space, t) for t in prop])
+        raw_props = [vec(cur_theta[w]) + rng.normal(0.0, sd) for w in range(n_walkers)]
+        in_bounds = [bool(np.all((r >= space.low) & (r <= space.high))) for r in raw_props]
+        prop = [space.to_theta(r) for r in raw_props]
+        lp_prop = np.array([
+            priors.log_prior_vec(space, t) if ib else -np.inf
+            for t, ib in zip(prop, in_bounds)
+        ])
 
         # Only run DSSAT for in-bounds proposals; out-of-bounds auto-reject.
         idx_in = [w for w in range(n_walkers) if np.isfinite(lp_prop[w])]

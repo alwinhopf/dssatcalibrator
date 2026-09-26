@@ -63,3 +63,18 @@ test_that("write_dssbatch and normalize_treatments match Python", {
   expect_equal(normalize_treatments(c(3, 1, 1, 10, 3)), as.integer(unlist(gold$normalize$dedup_order)))
   expect_equal(normalize_treatments(c(5)), as.integer(unlist(gold$normalize$single)))
 })
+
+test_that("spawn provenance calculation matches Python", {
+  skip_if_not_installed("digest")
+  gold <- read_fix("spawn_helpers.json")$provenance
+  crop <- list(code = "HM", filex_ext = "HMX", genotype_stem = "sample", model = "WHCER048")
+  paths <- list(root = fixture_dir, soil = fixture_dir, weather = fixture_dir, genotype = fixture_dir)
+  source_filex <- file.path(fixture_dir, "sample.CUL")
+  exe <- file.path(fixture_dir, "PlantGro.OUT")
+  prov <- .spawn_provenance(list(), crop, list(), source_filex, fixture_dir, paths, exe, 1L, list(P1 = 1.0))
+  expect_equal(prov$schema, as.integer(gold$schema))
+  expect_equal(prov$filex_sha256, gold$filex_sha256)
+  expect_equal(prov$exe_sha256, gold$exe_sha256)
+  expect_equal(prov$genotype_sha256$CUL, gold$genotype_sha256$CUL)
+  expect_equal(prov$genotype_sha256$ECO, gold$genotype_sha256$ECO)
+})

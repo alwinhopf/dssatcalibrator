@@ -30,5 +30,38 @@
     "single": [
       5
     ]
+  },
+  "provenance": {
+    "crop": {
+      "code": "HM",
+      "filex_ext": "HMX",
+      "genotype_stem": "sample",
+      "model": "WHCER048"
+    },
+    "exe_sha256": "c605f59885899dd5aefd43b571370b645b0cc792b0b5d80c489f7a2c25c769ce",
+    "execution": {},
+    "filex_overrides": {},
+    "filex_sha256": "7bf6984c0168de96dc1d59d77284bb01a2d2a672ee4fd6498f038258f79e8820",
+    "gating": {},
+    "genotype_sha256": {
+      "CUL": "7bf6984c0168de96dc1d59d77284bb01a2d2a672ee4fd6498f038258f79e8820",
+      "ECO": "3a07b537fc730b5f2cf717f92c9a5cf004ef386f56d758dcef6a2cb707d2502a",
+      "SPE": null
+    },
+    "obs_sha256": {},
+    "planting_dates": {},
+    "profile_sha256": {},
+    "schema": 4,
+    "soil": {},
+    "soil_sha256": {},
+    "specs": [],
+    "theta": {
+      "P1": 1.0
+    },
+    "treatments": [
+      1
+    ],
+    "weather": {},
+    "weather_sha256": {}
   }
 }

@@ -257,6 +257,17 @@ class EvaluationCache:
                 ),
                 None,
             )
+            input_files["profiles"] = {
+                name: _file_fingerprint(dssat_paths["root"] / name)
+                for name in ("DSSATPRO.V48", "DSSATPRO.L48", "DSSATPRO.v48", "DSCSM048.CTR")
+                if (dssat_paths["root"] / name).exists()
+            }
+            if dssat_paths.get("weather") and Path(dssat_paths["weather"]).is_dir():
+                input_files["weather"] = {
+                    path.name: _file_fingerprint(path)
+                    for path in sorted(Path(dssat_paths["weather"]).glob("*"))
+                    if path.is_file() and path.suffix.lower() == ".wth"
+                }
         except Exception as exc:
             input_files["support_error"] = str(exc)
         input_files["parser"] = _file_fingerprint(Path(__file__).with_name("dssat_io.py"))

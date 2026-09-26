@@ -83,9 +83,9 @@ run_many <- function(jobs, n_workers, on_done = NULL, warmup = 0) {
 
       pkg_name <- environmentName(pkg_env)
       if (nzchar(pkg_name) && pkg_name %in% loadedNamespaces()) {
-        parallel::clusterEvalQ(cl, suppressPackageStartupMessages(
-          require(pkg_name, character.only = TRUE)
-        ))
+        parallel::clusterCall(cl, function(p) {
+          suppressPackageStartupMessages(require(p, character.only = TRUE))
+        }, pkg_name)
       }
 
       run_one_psock <- function(job) {

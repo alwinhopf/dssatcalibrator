@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -55,14 +56,39 @@ def _file_digest(path: Path) -> str | None:
 
 def _spawn_provenance(cfg, crop, param_specs, source_filex, geno_dir,
                       dssat_paths, exe, treatments, effective_theta) -> dict:
-    try:
-        from .writers import parse_fields
-        fields = parse_fields(source_filex)
-    except Exception:
-        fields = {}
-    wsta = fields.get("wsta")
+    # Hash all *.SOL files in Soil directory to detect changes to custom soils (e.g. CUSTOM.SOL)
+    soil_dir = dssat_paths.get("soil")
+    soil_digests = {}
+    if soil_dir and Path(soil_dir).is_dir():
+        for sp in sorted(Path(soil_dir).rglob("*")):
+            if sp.is_file() and sp.suffix.lower() == ".sol":
+                soil_digests[sp.relative_to(soil_dir).as_posix()] = _file_digest(sp)
+    if not soil_digests and soil_dir:
+        soil_sol = Path(soil_dir) / "SOIL.SOL"
+        if soil_sol.is_file():
+            soil_digests["SOIL.SOL"] = _file_digest(soil_sol)
+
+    # Hash profile files in dssat root (DSSATPRO.V48, DSCSM048.CTR, etc.)
+    profile_digests = {}
+    dssat_root = dssat_paths.get("root")
+    if dssat_root and Path(dssat_root).is_dir():
+        for pro in ("DSSATPRO.L48", "DSSATPRO.V48", "DSSATPRO.v48", "DSCSM048.CTR"):
+            src = Path(dssat_root) / pro
+            if src.is_file():
+                profile_digests[pro] = _file_digest(src)
+
+    # Hash FileA and FileT if present
+    obs_digests = {}
+    hemp_dir = Path(source_filex).parent
+    exp_stem = Path(source_filex).stem
+    code = crop.get("code", "")
+    for obs_ext in (f"{code}A", f"{code}T"):
+        obs_file = hemp_dir / f"{exp_stem}.{obs_ext}"
+        if obs_file.is_file():
+            obs_digests[obs_ext] = _file_digest(obs_file)
+
     payload = {
-        "schema": 2,
+        "schema": 4,
         "theta": {k: v for k, v in sorted(effective_theta.items())},
         "crop": crop,
         "specs": param_specs,
@@ -70,14 +96,22 @@ def _spawn_provenance(cfg, crop, param_specs, source_filex, geno_dir,
         "filex_sha256": _file_digest(source_filex),
         "genotype_sha256": {ext: _file_digest(geno_dir / f"{crop['genotype_stem']}.{ext}")
                              for ext in ("CUL", "ECO", "SPE")},
-        "weather_sha256": _file_digest(dssat_paths["weather"] / f"{wsta}.WTH") if wsta else None,
-        "soil_sha256": _file_digest(dssat_paths["soil"] / "SOIL.SOL"),
+        # Include all stations: FileX may contain multiple fields or overrides.
+        "weather_sha256": {
+            p.relative_to(dssat_paths["weather"]).as_posix(): _file_digest(p)
+            for p in sorted(Path(dssat_paths["weather"]).rglob("*"))
+            if p.is_file() and p.suffix.lower() == ".wth"
+        } if dssat_paths.get("weather") and Path(dssat_paths["weather"]).is_dir() else {},
+        "soil_sha256": soil_digests,
+        "profile_sha256": profile_digests,
+        "obs_sha256": obs_digests,
         "exe_sha256": _file_digest(Path(exe)),
         "execution": cfg.get("execution", {}),
         "gating": cfg.get("gating", {}),
         "weather": cfg.get("weather", {}),
         "soil": cfg.get("soil", {}),
         "filex_overrides": cfg.get("filex_overrides", {}),
+        "planting_dates": cfg.get("_planting_dates", {}),
     }
     return json.loads(json.dumps(payload, sort_keys=True, default=str))
 
@@ -391,6 +425,17 @@ def _genotype_gate_allows(cfg: dict, level: str) -> bool:
     return gate != "blocked"
 
 
+def _spawn_outputs_complete(pg: pd.DataFrame | None, treatments: list[int] | None) -> bool:
+    """Return True if PlantGro output is valid and contains all requested treatments."""
+    if pg is None or not isinstance(pg, pd.DataFrame) or pg.empty or "treatment" not in pg.columns:
+        return False
+    present = {
+        int(value) for value in pd.to_numeric(pg["treatment"], errors="coerce").dropna()
+    }
+    requested = {int(t) for t in (treatments or [])}
+    return bool(requested) and present == requested
+
+
 def _missing_requested_treatments(pg: pd.DataFrame, treatments: list[int]) -> list[int]:
     """Identify requested treatments absent from a parsed PlantGro output."""
     if pg is None or pg.empty or "treatment" not in pg:
@@ -474,6 +519,9 @@ def spawn_and_run(
     pg_path = run_dir / "PlantGro.OUT"
     manifest_path = run_dir / "spawn_manifest.json"
 
+    expected_treatments = treatments if treatments is not None else parse_treatments(source_filex)
+    expected_treatments = _normalize_treatments(expected_treatments, backend)
+
     recorded = None
     try:
         recorded = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -482,20 +530,9 @@ def spawn_and_run(
     if (cfg["calibrator"].get("cache_spawns", True)
             and recorded == provenance and pg_path.exists() and pg_path.stat().st_size > 0):
         outputs = dssat_io.collect_run_outputs(run_dir)
-        outputs = _stamp_single_treatment(outputs, treatments)
+        outputs = _stamp_single_treatment(outputs, expected_treatments)
         pg_cached = outputs.get("plantgro", dssat_io.parse_plantgro(pg_path))
-        if pg_cached is None or pg_cached.empty:
-            recorded = None
-        elif treatments:
-            requested = set(map(int, treatments))
-            found = set(
-                pd.to_numeric(pg_cached["treatment"], errors="coerce")
-                .dropna()
-                .astype(int)
-            ) if "treatment" in pg_cached.columns else set()
-            if _missing_requested_treatments(pg_cached, treatments) or found - requested:
-                recorded = None
-        if recorded == provenance:
+        if _spawn_outputs_complete(pg_cached, expected_treatments):
             return SpawnResult(
                 status="cached", run_dir=run_dir, theta=theta,
                 plantgro=pg_cached,
@@ -505,6 +542,8 @@ def spawn_and_run(
             )
 
     run_dir.mkdir(parents=True, exist_ok=True)
+    for stale in (manifest_path, pg_path, run_dir / "Evaluate.OUT", run_dir / "Summary.OUT"):
+        stale.unlink(missing_ok=True)
 
     # DSSAT profile (DSSATPRO) — CSM reads it from the current directory first,
     # then its compiled default path. Copying it from the install root into the
@@ -774,22 +813,29 @@ def spawn_and_run(
                            message="no PlantGro.OUT produced",
                            effective_theta=effective_theta)
 
-    pg = dssat_io.parse_plantgro(pg_path)
-    missing_treatments = _missing_requested_treatments(pg, treatments)
-    if missing_treatments:
+    outputs = dssat_io.collect_run_outputs(run_dir)
+    outputs = _stamp_single_treatment(outputs, treatments)
+    pg = outputs.get("plantgro", dssat_io.parse_plantgro(pg_path))
+    if not _spawn_outputs_complete(pg, treatments):
+        missing = _missing_requested_treatments(pg, treatments)
         return SpawnResult(
             status="error",
             run_dir=run_dir,
             theta=theta,
             plantgro=pg,
-            message=f"PlantGro.OUT is missing requested treatment(s): {missing_treatments}",
+            message=f"PlantGro.OUT does not contain all requested treatments: missing {missing}",
             effective_theta=effective_theta,
         )
-    ev = dssat_io.parse_evaluate(run_dir / "Evaluate.OUT")
-    outputs = dssat_io.collect_run_outputs(run_dir)
-    outputs = _stamp_single_treatment(outputs, treatments)
-    manifest_path.write_text(json.dumps(provenance, indent=2, sort_keys=True, default=str) + "\n",
-                             encoding="utf-8")
+    ev = outputs.get("evaluate", dssat_io.parse_evaluate(run_dir / "Evaluate.OUT"))
+    manifest_tmp = manifest_path.with_name(f".spawn-manifest-{os.getpid()}.tmp")
+    try:
+        manifest_tmp.write_text(
+            json.dumps(provenance, indent=2, sort_keys=True, default=str) + "\n",
+            encoding="utf-8",
+        )
+        manifest_tmp.replace(manifest_path)
+    finally:
+        manifest_tmp.unlink(missing_ok=True)
 
     if not cfg["calibrator"].get("keep_run_dirs", False):
         if not cfg["calibrator"].get("cache_spawns", True):

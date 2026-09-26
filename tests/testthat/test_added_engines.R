@@ -160,3 +160,43 @@ test_that("DiceKriging Bayesian optimisation executes", {
   expect_true(is.finite(res$best$score))
   expect_equal(nrow(res$design), 12)
 })
+
+test_that("MCMC (R) auto-rejects out-of-bounds proposals without scoring", {
+  sp <- list(names = c("a", "b"), low = c(0, 0), high = c(10, 10), start = c(5, 5),
+             specs = list(list(name = "a", min = 0, max = 10, start = 5, prior = list(dist = "uniform")),
+                          list(name = "b", min = 0, max = 10, start = 5, prior = list(dist = "uniform"))))
+  scored <- list()
+  scorer <- function(thetas) {
+    for (t in thetas) {
+      scored[[length(scored) + 1L]] <<- t
+      expect_gte(as.numeric(t$a), 0)
+      expect_lte(as.numeric(t$a), 10)
+      expect_gte(as.numeric(t$b), 0)
+      expect_lte(as.numeric(t$b), 10)
+    }
+    lapply(thetas, function(t) {
+      s <- as.numeric(t$a)^2 + as.numeric(t$b)^2
+      list(score = s, loglik = -0.5 * s, residuals = data.frame(resid = rep(0, 5)), per_var = list())
+    })
+  }
+  cfg <- list(calibrator = list(seed = 1),
+              method = list(bayesian = list(n_walkers = 8L, n_steps = 50L, burn_in = 10L,
+                                            proposal_scale = 1.5)))
+  mc <- run_mcmc(cfg, scorer, sp, progress = FALSE)
+  expect_gt(length(scored), 0)
+  expect_true(!is.null(mc$chain))
+  expect_true(is.finite(mc$ess))
+  expect_true(is.finite(mc$rhat))
+})
+
+test_that("truncated lognormal sampling has no boundary clipping spikes (R)", {
+  spec <- list(name = "x", min = 1, max = 4, start = 2, prior = list(dist = "lognormal", sd = 1.0))
+  set.seed(42)
+  draws <- sample_one(spec, 5000)
+  expect_true(all(draws >= 1 & draws <= 4))
+  expect_equal(sum(draws == 1), 0)
+  expect_equal(sum(draws == 4), 0)
+  expect_true(is.finite(log_prior_one(spec, 2)))
+  expect_true(is.infinite(log_prior_one(spec, 0.5)) && log_prior_one(spec, 0.5) < 0)
+  expect_true(is.infinite(log_prior_one(spec, 4.5)) && log_prior_one(spec, 4.5) < 0)
+})

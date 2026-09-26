@@ -464,6 +464,77 @@ run_surrogate <- function(cfg, space, score_results, progress = TRUE) {
 
 # ---- MCMC (adaptive random-walk Metropolis) -------------------------------
 
+#' Compute conservative minimum bulk ESS and maximum split-chain R-hat.
+#' Mirrors python/dssatcalibrator/engines/mcmc.py:chain_diagnostics.
+#' @export
+chain_diagnostics <- function(chain, names, burn = 0L) {
+  kept <- if ("step" %in% names(chain)) chain[chain$step >= burn, , drop = FALSE] else chain
+  walkers <- if ("walker" %in% names(chain)) sort(unique(kept$walker)) else 0L
+  ess_values <- numeric(); rhat_values <- numeric()
+  for (nm in names) {
+    series <- lapply(walkers, function(w) {
+      sub <- kept[kept$walker == w, , drop = FALSE]
+      as.numeric(sub[[nm]][order(sub$step)])
+    })
+    n <- if (length(series)) min(vapply(series, length, integer(1))) else 0L
+    if (n < 3L) next
+    series <- lapply(series, function(x) x[seq_len(n)])
+
+    if (n >= 6L) {
+      half <- n %/% 2L
+      split_series <- list()
+      for (x in series) {
+        split_series[[length(split_series) + 1L]] <- x[seq_len(half)]
+        split_series[[length(split_series) + 1L]] <- x[(half + 1L):(2L * half)]
+      }
+      n_eff <- half
+    } else {
+      split_series <- series
+      n_eff <- n
+    }
+    m <- length(split_series)
+    variances <- vapply(split_series, function(x) if (length(x) > 1L) stats::var(x) else 0, numeric(1))
+    within <- mean(variances)
+    means <- vapply(split_series, mean, numeric(1))
+    between <- if (m > 1L) n_eff * stats::var(means) else 0
+
+    if (within <= 0 || !is.finite(within)) {
+      if (between > 1e-12) {
+        rhat_values <- c(rhat_values, Inf)
+      } else {
+        rhat_values <- c(rhat_values, NaN)
+      }
+      ess_values <- c(ess_values, 0)
+      next
+    }
+    var_hat <- ((n_eff - 1) / n_eff) * within + between / n_eff
+    rhat_values <- c(rhat_values, sqrt(max(0, var_hat / within)))
+
+    taus <- numeric()
+    for (x in series) {
+      centered <- x - mean(x)
+      v <- sum(centered^2) / n
+      if (v <= 0 || !is.finite(v)) {
+        taus <- c(taus, Inf)
+        next
+      }
+      rho_sum <- 0
+      for (lag in seq_len(n - 1L)) {
+        rho <- sum(centered[1:(n - lag)] * centered[(lag + 1L):n]) / ((n - lag) * v)
+        if (!is.finite(rho) || rho <= 0) break
+        rho_sum <- rho_sum + rho
+      }
+      taus <- c(taus, max(1, 1 + 2 * rho_sum))
+    }
+    ess <- sum(vapply(taus, function(tau) if (is.finite(tau) && tau > 0) n / tau else 0, numeric(1)))
+    ess_values <- c(ess_values, ess)
+  }
+  list(
+    ess = if (length(ess_values)) min(ess_values) else NaN,
+    rhat = if (length(rhat_values)) max(rhat_values) else NaN
+  )
+}
+
 #' Adaptive random-walk Metropolis posterior. Mirrors engines/mcmc.py:run_mcmc.
 #' @export
 run_mcmc <- function(cfg, score_results, space, progress = TRUE) {
@@ -490,8 +561,12 @@ run_mcmc <- function(cfg, score_results, space, progress = TRUE) {
   chain_rows <- list(); samples <- list(); accepts <- 0L; proposals <- 0L
   for (step in seq_len(n_steps) - 1L) {
     sd <- scale * ranges
-    prop <- lapply(seq_len(n_walkers), function(w) ps_to_theta(space, vec(cur_theta[[w]]) + rnorm(ps_ndim(space), 0, sd)))
-    lp_prop <- vapply(prop, function(t) log_prior_vec(space, t), numeric(1))
+    raw_props <- lapply(seq_len(n_walkers), function(w) vec(cur_theta[[w]]) + rnorm(ps_ndim(space), 0, sd))
+    in_bounds <- vapply(raw_props, function(r) all(is.finite(r) & r >= space$low & r <= space$high), logical(1))
+    prop <- lapply(raw_props, function(r) ps_to_theta(space, r))
+    lp_prop <- vapply(seq_len(n_walkers), function(w) {
+      if (in_bounds[w]) log_prior_vec(space, prop[[w]]) else -Inf
+    }, numeric(1))
     idx_in <- which(is.finite(lp_prop))
     res_in <- if (length(idx_in)) score_results(prop[idx_in]) else list()
     logpost_prop <- rep(-Inf, n_walkers); res_prop <- vector("list", n_walkers)
@@ -527,10 +602,13 @@ run_mcmc <- function(cfg, score_results, space, progress = TRUE) {
   valid <- design$score[is.finite(design$score)]
   threshold <- if (length(valid)) as.numeric(quantile(valid, q, names = FALSE, type = 7)) else Inf
   behavioural <- design[is.finite(design$score) & design$score <= threshold, , drop = FALSE]
+  chain_df <- do.call(rbind, lapply(chain_rows, function(r) as.data.frame(r, stringsAsFactors = FALSE)))
+  diag <- chain_diagnostics(chain_df, names_, burn = burn)
   structure(list(design = design, behavioural = behavioural, best_theta = best_theta,
-                 best_sample_id = best_sample_id, threshold = threshold, ess = nrow(design),
+                 best_sample_id = best_sample_id, threshold = threshold, ess = diag$ess,
+                 rhat = diag$rhat,
                  obj_results = obj_results, best = best, acceptance = accepts / max(proposals, 1L),
-                 chain = do.call(rbind, lapply(chain_rows, function(r) as.data.frame(r, stringsAsFactors = FALSE))),
+                 chain = chain_df,
                  initial_design = initial_design), class = "mcmc_result")
 }
 

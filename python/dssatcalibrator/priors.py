@@ -80,11 +80,16 @@ def sample_one(spec: dict, n: int, rng: np.random.Generator) -> np.ndarray:
         return stats.truncnorm.rvs(a, b, loc=mu, scale=sd, size=n, random_state=rng)
 
     if dist == "lognormal":
-        # prior.sd is the sd of log(x); centre is the median (exp of log-mean).
+        # Truncated lognormal via inverse CDF on [lo, hi].
         center = max(_center(spec), 1e-9)
         sigma = float(prior.get("sd", 0.5))
-        draws = rng.lognormal(mean=np.log(center), sigma=sigma, size=n)
-        return np.clip(draws, lo, hi)
+        lo_eff = max(lo, 1e-300)
+        plo = float(stats.lognorm.cdf(lo_eff, s=sigma, scale=center))
+        phi = float(stats.lognorm.cdf(hi, s=sigma, scale=center))
+        if phi > plo:
+            u = rng.uniform(plo, phi, size=n)
+            return stats.lognorm.ppf(u, s=sigma, scale=center)
+        return np.full(n, float(lo))
 
     if dist == "triangular":
         mode = _center(spec)

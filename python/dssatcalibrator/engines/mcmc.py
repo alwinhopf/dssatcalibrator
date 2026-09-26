@@ -61,67 +61,35 @@ class McmcResult:
 
 
 def chain_diagnostics(chain: pd.DataFrame, names: list[str], burn: int = 0) -> tuple[float, float]:
-    """Return conservative minimum bulk ESS and maximum split-chain R-hat."""
-    kept = chain[chain["step"] >= burn] if "step" in chain.columns else chain
-    walkers = sorted(kept["walker"].unique()) if "walker" in kept.columns else [0]
+    """Minimum rank-normalized bulk ESS and maximum rank/folded split R-hat.
+
+    ArviZ implements the validated estimators shared with R's posterior package.
+    A constant or non-finite chain is never interpreted as evidence of mixing.
+    """
+    import arviz as az
+
+    kept = chain[chain["step"] >= burn]
+    walkers = sorted(kept["walker"].unique())
     ess_values, rhat_values = [], []
     for name in names:
         series = [kept[kept["walker"] == w].sort_values("step")[name].to_numpy(float)
                   for w in walkers]
         n = min((len(x) for x in series), default=0)
-        if n < 3:
-            continue
-        series = [x[:n] for x in series]
-
-        # Split chains: each chain split in half to detect within-chain non-stationarity
-        split_series = []
-        if n >= 6:
-            half = n // 2
-            for x in series:
-                split_series.append(x[:half])
-                split_series.append(x[half:2 * half])
-            n_eff = half
-        else:
-            split_series = series
-            n_eff = n
-
-        m = len(split_series)
-        variances = [float(np.var(x, ddof=1)) if len(x) > 1 else 0.0 for x in split_series]
-        within = float(np.mean(variances))
-        means = np.array([float(np.mean(x)) for x in split_series])
-        between = float(n_eff * np.var(means, ddof=1)) if m > 1 else 0.0
-
-        if within <= 0.0 or not np.isfinite(within):
-            if between > 1e-12:
-                rhat_values.append(float("inf"))
-            else:
-                rhat_values.append(float("nan"))
+        if n < 4 or len(series) < 2:
+            return float("nan"), float("nan")
+        values = np.asarray([x[:n] for x in series])
+        if not np.isfinite(values).all():
+            return float("nan"), float("nan")
+        if np.any(np.var(values, axis=1) == 0):
             ess_values.append(0.0)
-            continue
-
-        var_hat = ((n_eff - 1) / n_eff) * within + between / n_eff
-        rhat = np.sqrt(max(0.0, var_hat / within))
-        rhat_values.append(float(rhat))
-
-        # Autocorrelation-aware ESS
-        taus = []
-        for x in series:
-            centered = x - x.mean()
-            var = np.dot(centered, centered) / n
-            if var <= 0.0 or not np.isfinite(var):
-                taus.append(float("inf"))
-                continue
-            rho_sum = 0.0
-            for lag in range(1, n):
-                rho = np.dot(centered[:-lag], centered[lag:]) / ((n - lag) * var)
-                if not np.isfinite(rho) or rho <= 0:
-                    break
-                rho_sum += rho
-            taus.append(max(1.0, 1.0 + 2.0 * rho_sum))
-        ess = sum(n / tau for tau in taus if np.isfinite(tau) and tau > 0)
-        ess_values.append(float(ess))
-    return (float(min(ess_values)) if ess_values else float("nan"),
-            float(max(rhat_values)) if rhat_values else float("nan"))
+            rhat_values.append(float("inf") if np.ptp(values) > 0 else float("nan"))
+        else:
+            ess_values.append(float(az.ess(values, method="bulk")))
+            rhat_values.append(float(az.rhat(values, method="rank")))
+    if not ess_values:
+        return float("nan"), float("nan")
+    # Do not silently hide an undefined parameter diagnostic behind another one.
+    return float(np.min(ess_values)), float(np.max(rhat_values))
 
 
 

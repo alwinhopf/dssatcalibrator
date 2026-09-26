@@ -9,6 +9,7 @@ workspace foundation package `dssatutils`.
 from __future__ import annotations
 
 import logging
+import math
 import shutil
 from pathlib import Path
 
@@ -24,7 +25,7 @@ def _valid_coordinate(lat: float | int | str | None,
         lon_f = float(lon)
     except (TypeError, ValueError) as exc:
         raise ValueError("Weather/soil acquisition needs numeric latitude and longitude.") from exc
-    if abs(lat_f) > 90 or abs(lon_f) > 180 or lat_f <= -98 or lon_f <= -998:
+    if not (math.isfinite(lat_f) and math.isfinite(lon_f)) or abs(lat_f) > 90 or abs(lon_f) > 180 or lat_f <= -98 or lon_f <= -998:
         raise ValueError(f"Invalid or missing site coordinates: lat={lat!r}, lon={lon!r}")
     return lat_f, lon_f
 
@@ -51,7 +52,7 @@ def _copy_mapped_soil(sol_dir: Path, map_csv: Path, site_id: str, out_path: Path
     src = direct if direct.exists() else None
 
     if src is None and map_csv.exists():
-        mapping = pd.read_csv(map_csv)
+        mapping = pd.read_csv(map_csv, dtype=str)
         if "ID" in mapping.columns:
             row = mapping[mapping["ID"].astype(str) == str(site_id)]
             if not row.empty:
@@ -131,13 +132,14 @@ def acquire_soil_profile(cfg: dict, *, site_id: str, lat: float, lon: float,
         soilgrids = __import__("dssatutils.soil_soilgrids_online",
                                fromlist=["process_soils_soilgrids_online"])
         mode = str(scfg.get("soilgrids_mode", "REST")).upper()
-        if hasattr(soilgrids, "USE_REST_API"):
-            soilgrids.USE_REST_API = mode != "VRT"
+        if mode not in {"REST", "VRT"}:
+            raise ValueError("soilgrids_mode must be REST or VRT")
         soilgrids.process_soils_soilgrids_online(
             gdf,
             soilfile_csv_path=str(map_csv),
             output_sol_dir=str(sol_dir),
             id_col="ID",
+            use_rest_api=mode == "REST",
         )
     else:
         raise ValueError(

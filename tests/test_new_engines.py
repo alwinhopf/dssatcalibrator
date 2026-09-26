@@ -223,4 +223,8 @@ def test_mcmc_out_of_bounds_auto_rejects():
     assert len(scored_thetas) > 0
     assert mc.chain is not None
     assert np.isfinite(mc.ess)
-    assert np.isfinite(mc.rhat)
+    kept = mc.chain[mc.chain.step >= 10]
+    # This deliberately huge proposal produces stuck walkers; do not require a
+    # finite convergence diagnostic for a chain that demonstrably did not mix.
+    assert (kept.groupby("walker")[["a", "b"]].nunique() == 1).any().any()
+    assert mc.ess == 0 and np.isinf(mc.rhat)

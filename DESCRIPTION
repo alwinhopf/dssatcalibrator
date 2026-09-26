@@ -16,6 +16,8 @@ Encoding: UTF-8
 Imports:
     yaml,
     digest,
+    posterior,
+    filelock,
     stats,
     utils
 Suggests:
@@ -34,7 +36,7 @@ Suggests:
     testthat (>= 3.0.0),
     jsonlite
 Remotes:
-    alwinhopf/dssatengine@2280b11977ad373b9ae19d2d4497e8f276f7b133,
-    alwinhopf/dssatutils@e9c859fa1d915623df23e2eb13084cb085dbfe3e
+    alwinhopf/dssatengine@2f20fd8c4afcf5f116fa5c6ed8aea086069bfa57,
+    alwinhopf/dssatutils@a4202fbc6377a62b391340c317c92c96d157e031
 Config/testthat/edition: 3
 RoxygenNote: 7.3.1

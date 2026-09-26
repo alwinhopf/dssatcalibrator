@@ -468,71 +468,28 @@ run_surrogate <- function(cfg, space, score_results, progress = TRUE) {
 #' Mirrors python/dssatcalibrator/engines/mcmc.py:chain_diagnostics.
 #' @export
 chain_diagnostics <- function(chain, names, burn = 0L) {
-  kept <- if ("step" %in% names(chain)) chain[chain$step >= burn, , drop = FALSE] else chain
-  walkers <- if ("walker" %in% names(chain)) sort(unique(kept$walker)) else 0L
+  kept <- chain[chain$step >= burn, , drop = FALSE]
+  walkers <- sort(unique(kept$walker))
   ess_values <- numeric(); rhat_values <- numeric()
   for (nm in names) {
     series <- lapply(walkers, function(w) {
-      sub <- kept[kept$walker == w, , drop = FALSE]
-      as.numeric(sub[[nm]][order(sub$step)])
+      x <- kept[kept$walker == w, , drop = FALSE]
+      as.numeric(x[[nm]][order(x$step)])
     })
-    n <- if (length(series)) min(vapply(series, length, integer(1))) else 0L
-    if (n < 3L) next
-    series <- lapply(series, function(x) x[seq_len(n)])
-
-    if (n >= 6L) {
-      half <- n %/% 2L
-      split_series <- list()
-      for (x in series) {
-        split_series[[length(split_series) + 1L]] <- x[seq_len(half)]
-        split_series[[length(split_series) + 1L]] <- x[(half + 1L):(2L * half)]
-      }
-      n_eff <- half
-    } else {
-      split_series <- series
-      n_eff <- n
-    }
-    m <- length(split_series)
-    variances <- vapply(split_series, function(x) if (length(x) > 1L) stats::var(x) else 0, numeric(1))
-    within <- mean(variances)
-    means <- vapply(split_series, mean, numeric(1))
-    between <- if (m > 1L) n_eff * stats::var(means) else 0
-
-    if (within <= 0 || !is.finite(within)) {
-      if (between > 1e-12) {
-        rhat_values <- c(rhat_values, Inf)
-      } else {
-        rhat_values <- c(rhat_values, NaN)
-      }
+    n <- if (length(series)) min(lengths(series)) else 0L
+    if (n < 4L || length(series) < 2L) return(list(ess = NaN, rhat = NaN))
+    values <- vapply(series, function(x) x[seq_len(n)], numeric(n))
+    if (any(!is.finite(values))) return(list(ess = NaN, rhat = NaN))
+    if (any(apply(values, 2, stats::var) == 0)) {
       ess_values <- c(ess_values, 0)
-      next
+      rhat_values <- c(rhat_values, if (diff(range(values)) > 0) Inf else NaN)
+    } else {
+      ess_values <- c(ess_values, posterior::ess_bulk(values))
+      rhat_values <- c(rhat_values, posterior::rhat(values))
     }
-    var_hat <- ((n_eff - 1) / n_eff) * within + between / n_eff
-    rhat_values <- c(rhat_values, sqrt(max(0, var_hat / within)))
-
-    taus <- numeric()
-    for (x in series) {
-      centered <- x - mean(x)
-      v <- sum(centered^2) / n
-      if (v <= 0 || !is.finite(v)) {
-        taus <- c(taus, Inf)
-        next
-      }
-      rho_sum <- 0
-      for (lag in seq_len(n - 1L)) {
-        rho <- sum(centered[1:(n - lag)] * centered[(lag + 1L):n]) / ((n - lag) * v)
-        if (!is.finite(rho) || rho <= 0) break
-        rho_sum <- rho_sum + rho
-      }
-      taus <- c(taus, max(1, 1 + 2 * rho_sum))
-    }
-    ess <- sum(vapply(taus, function(tau) if (is.finite(tau) && tau > 0) n / tau else 0, numeric(1)))
-    ess_values <- c(ess_values, ess)
   }
-  list(
-    ess = if (length(ess_values)) min(ess_values) else NaN,
-    rhat = if (length(rhat_values)) max(rhat_values) else NaN
-  )
+  list(ess = if (length(ess_values)) min(ess_values) else NaN,
+       rhat = if (length(rhat_values)) max(rhat_values) else NaN)
 }
 
 #' Adaptive random-walk Metropolis posterior. Mirrors engines/mcmc.py:run_mcmc.

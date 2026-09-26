@@ -20,7 +20,7 @@ import pandas as pd
 from . import objective as obj
 from .config import resolve_dssat_paths
 
-CACHE_SCHEMA_VERSION = 2
+CACHE_SCHEMA_VERSION = 3
 
 
 def _normalise(value: Any) -> Any:
@@ -208,6 +208,8 @@ class EvaluationCache:
         input_files: dict[str, Any] = {"exe": _file_fingerprint(exe)}
         try:
             dssat_paths = resolve_dssat_paths(cfg)
+            from .cache_inputs import simulation_inputs
+            input_files["resolved_inputs"] = simulation_inputs(cfg, dssat_paths)
             geno_dir = dssat_paths["genotype"]
             stem = crop.get("genotype_stem", "")
             input_files["genotype"] = {

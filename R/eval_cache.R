@@ -4,7 +4,7 @@
 # scored objective for a whole theta across the requested experiments, above the
 # existing per-spawn DSSAT-output cache.
 
-.EVAL_CACHE_SCHEMA_VERSION <- 2L
+.EVAL_CACHE_SCHEMA_VERSION <- 3L
 
 .eval_norm <- function(x) {
   if (is.null(x)) return(NULL)
@@ -96,6 +96,7 @@
   input_files <- list(exe = .eval_file_fingerprint(exe))
   input_files$genotype <- tryCatch({
     dssat_paths <- resolve_dssat_paths(cfg)
+    input_files$resolved_inputs <- .simulation_inputs(cfg, dssat_paths)
     geno_dir <- dssat_paths$genotype
     stem <- .cfg_get(crop, "genotype_stem", "")
     setNames(lapply(c("CUL", "ECO", "SPE"), function(ext) {

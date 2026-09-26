@@ -24,6 +24,7 @@ from pathlib import Path
 import pandas as pd
 
 from . import dssat_io
+from .cache_inputs import simulation_inputs
 from .config import resolve_dssat_paths
 from .writers import edit_cultivar, edit_ecotype
 
@@ -88,7 +89,8 @@ def _spawn_provenance(cfg, crop, param_specs, source_filex, geno_dir,
             obs_digests[obs_ext] = _file_digest(obs_file)
 
     payload = {
-        "schema": 4,
+        "schema": 5,
+        "resolved_inputs": simulation_inputs(cfg, dssat_paths),
         "theta": {k: v for k, v in sorted(effective_theta.items())},
         "crop": crop,
         "specs": param_specs,
@@ -516,337 +518,340 @@ def spawn_and_run(
         bool(cfg["calibrator"].get("cache_spawns", True)),
     )
     run_dir = run_dir / f"s_{theta_hash(run_identity)}_{provenance_hash}"
-    pg_path = run_dir / "PlantGro.OUT"
-    manifest_path = run_dir / "spawn_manifest.json"
+    from filelock import FileLock
+    run_dir.parent.mkdir(parents=True, exist_ok=True)
+    with FileLock(str(run_dir) + ".lock", timeout=timeout or 600):
+        pg_path = run_dir / "PlantGro.OUT"
+        manifest_path = run_dir / "spawn_manifest.json"
 
-    expected_treatments = treatments if treatments is not None else parse_treatments(source_filex)
-    expected_treatments = _normalize_treatments(expected_treatments, backend)
+        expected_treatments = treatments if treatments is not None else parse_treatments(source_filex)
+        expected_treatments = _normalize_treatments(expected_treatments, backend)
 
-    recorded = None
-    try:
-        recorded = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        pass
-    if (cfg["calibrator"].get("cache_spawns", True)
-            and recorded == provenance and pg_path.exists() and pg_path.stat().st_size > 0):
-        outputs = dssat_io.collect_run_outputs(run_dir)
-        outputs = _stamp_single_treatment(outputs, expected_treatments)
-        pg_cached = outputs.get("plantgro", dssat_io.parse_plantgro(pg_path))
-        if _spawn_outputs_complete(pg_cached, expected_treatments):
-            return SpawnResult(
-                status="cached", run_dir=run_dir, theta=theta,
-                plantgro=pg_cached,
-                evaluate=outputs.get("evaluate", dssat_io.parse_evaluate(run_dir / "Evaluate.OUT")),
-                outputs=outputs,
-                effective_theta=effective_theta,
-            )
-
-    run_dir.mkdir(parents=True, exist_ok=True)
-    for stale in (manifest_path, pg_path, run_dir / "Evaluate.OUT", run_dir / "Summary.OUT"):
-        stale.unlink(missing_ok=True)
-
-    # DSSAT profile (DSSATPRO) — CSM reads it from the current directory first,
-    # then its compiled default path. Copying it from the install root into the
-    # run dir lets a non-standard install (one whose root differs from the
-    # binary's compiled default, e.g. a relocated or per-user DSSAT48) resolve
-    # its Genotype/Weather/Soil paths. Harmless when CSM would find it anyway.
-    for pro in ("DSSATPRO.L48", "DSSATPRO.V48", "DSSATPRO.v48", "DSCSM048.CTR"):
-        src = dssat_paths["root"] / pro
-        if src.exists():
-            shutil.copy(src, run_dir / pro)
-    _rewrite_dssat_profile_paths(run_dir, dssat_paths["root"])
-
-    # genotype files (edit a local copy)
-    for e in ("CUL", "ECO", "SPE"):
-        src = geno_dir / f"{stem}.{e}"
-        if src.exists():
-            shutil.copy(src, run_dir / f"{stem}.{e}")
-
-    # base FileX + observed files (FileA/FileT for Evaluate.OUT)
-    shutil.copy(source_filex, run_dir / filex_name)
-    filex_overrides = _filex_overrides_for(cfg, exp_id)
-    if filex_overrides:
-        from .writers import edit_filex
-        edit_filex(run_dir / filex_name, {}, {}, section_updates=filex_overrides)
-    for obs_ext in (f"{code}A", f"{code}T"):   # observed files use the crop CODE (e.g. .HMA/.HMT)
-        src = hemp_dir / f"{exp_id}.{obs_ext}"
-        if src.exists():
-            shutil.copy(src, run_dir / f"{exp_id}.{obs_ext}")
-
-    # apply parameter perturbations
-    groups = _partition_theta(theta, param_specs, exp_id, exp_cultivars)
-    cul_updates = {}
-    for g in GENETIC_GROUPS:
-        cul_updates.update(groups.get(g, {}))
-    if cul_updates and _genotype_gate_allows(cfg, "cultivar"):
-        anchors = crop.get("cultivar_anchors") or [crop["cultivar_anchor"]]
-        for anchor in anchors:
-            edit_cultivar(run_dir / f"{stem}.CUL", anchor, cul_updates)
-    if _genotype_gate_allows(cfg, "cultivar"):
-        for anchor, updates in groups.get("genetic_cultivar_by_cultivar", {}).items():
-            edit_cultivar(run_dir / f"{stem}.CUL", anchor, updates)
-
-    eco_updates = groups.get("genetic_ecotype", {})
-    if eco_updates and _genotype_gate_allows(cfg, "ecotype"):
-        edit_ecotype(run_dir / f"{stem}.ECO", crop["ecotype"], eco_updates)
-    cultivar_ecotypes = _cultivar_ecotype_map(crop)
-    if _genotype_gate_allows(cfg, "ecotype"):
-        for anchor, updates in groups.get("genetic_ecotype_by_cultivar", {}).items():
-            eco_anchor = cultivar_ecotypes.get(anchor)
-            if eco_anchor is None:
-                raise ValueError(
-                    f"No ecotype mapping for cultivar '{anchor}'. Add crops[].cultivar_ecotypes."
+        recorded = None
+        try:
+            recorded = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
+        if (cfg["calibrator"].get("cache_spawns", True)
+                and recorded == provenance and pg_path.exists() and pg_path.stat().st_size > 0):
+            outputs = dssat_io.collect_run_outputs(run_dir)
+            outputs = _stamp_single_treatment(outputs, expected_treatments)
+            pg_cached = outputs.get("plantgro", dssat_io.parse_plantgro(pg_path))
+            if _spawn_outputs_complete(pg_cached, expected_treatments):
+                return SpawnResult(
+                    status="cached", run_dir=run_dir, theta=theta,
+                    plantgro=pg_cached,
+                    evaluate=outputs.get("evaluate", dssat_io.parse_evaluate(run_dir / "Evaluate.OUT")),
+                    outputs=outputs,
+                    effective_theta=effective_theta,
                 )
-            edit_ecotype(run_dir / f"{stem}.ECO", eco_anchor, updates)
 
-    # species (.SPE) coefficients — gated: only written when gating.species == "free"
-    # (physiology-defining; for new-species adaptation from an analog template).
-    spe_updates = groups.get("genetic_species", {})
-    if spe_updates and _genotype_gate_allows(cfg, "species"):
-        from .writers import edit_species
-        spe_file = run_dir / f"{stem}.SPE"
-        if spe_file.exists():
-            for name, val in spe_updates.items():
-                spec = next((s for s in param_specs if s.get("base_name", s["name"]) == name), None)
-                key = (spec or {}).get("spe_key", name)
-                if spec and ("spe_index" in spec or "token_index" in spec):
-                    update = {
-                        "value": val,
-                        "index": int(spec.get("spe_index", spec.get("token_index", 0))),
-                    }
-                else:
-                    update = val
-                # Apply one species edit at a time so several calibrated
-                # parameters can target different numeric tokens on the same
-                # .SPE line via the same spe_key.
-                edit_species(spe_file, {key: update})
+        run_dir.mkdir(parents=True, exist_ok=True)
+        for stale in (manifest_path, pg_path, run_dir / "Evaluate.OUT", run_dir / "Summary.OUT"):
+            stale.unlink(missing_ok=True)
 
-    # edit management and initial conditions in FileX
-    mgt_updates = groups.get("management", {})
-    init_updates = groups.get("initial_conditions", {})
-    def filex_update_from_spec(name, val, spec, default_section):
-        if spec is None:
-            return val
-        section = spec.get("section", spec.get("filex_section"))
-        field = spec.get("field", spec.get("filex_field", spec.get("dssat")))
-        is_soil_water_mult = default_section == "INITIAL CONDITIONS" and name == "initial_soil_water_mult"
-        if is_soil_water_mult and not field:
-            field = "SH2O"
-        generic_keys = {
-            "header_prefix", "row", "treatment", "trt", "trtno",
-            "clip_01", "required", "type", "format",
-        }
-        if not section and field:
-            uses_generic = bool(generic_keys.intersection(spec)) or str(spec.get("op", "set")).lower() != "set"
-            if default_section == "PLANTING DETAILS" and not uses_generic:
+        # DSSAT profile (DSSATPRO) — CSM reads it from the current directory first,
+        # then its compiled default path. Copying it from the install root into the
+        # run dir lets a non-standard install (one whose root differs from the
+        # binary's compiled default, e.g. a relocated or per-user DSSAT48) resolve
+        # its Genotype/Weather/Soil paths. Harmless when CSM would find it anyway.
+        for pro in ("DSSATPRO.L48", "DSSATPRO.V48", "DSSATPRO.v48", "DSCSM048.CTR"):
+            src = dssat_paths["root"] / pro
+            if src.exists():
+                shutil.copy(src, run_dir / pro)
+        _rewrite_dssat_profile_paths(run_dir, dssat_paths["root"])
+
+        # genotype files (edit a local copy)
+        for e in ("CUL", "ECO", "SPE"):
+            src = geno_dir / f"{stem}.{e}"
+            if src.exists():
+                shutil.copy(src, run_dir / f"{stem}.{e}")
+
+        # base FileX + observed files (FileA/FileT for Evaluate.OUT)
+        shutil.copy(source_filex, run_dir / filex_name)
+        filex_overrides = _filex_overrides_for(cfg, exp_id)
+        if filex_overrides:
+            from .writers import edit_filex
+            edit_filex(run_dir / filex_name, {}, {}, section_updates=filex_overrides)
+        for obs_ext in (f"{code}A", f"{code}T"):   # observed files use the crop CODE (e.g. .HMA/.HMT)
+            src = hemp_dir / f"{exp_id}.{obs_ext}"
+            if src.exists():
+                shutil.copy(src, run_dir / f"{exp_id}.{obs_ext}")
+
+        # apply parameter perturbations
+        groups = _partition_theta(theta, param_specs, exp_id, exp_cultivars)
+        cul_updates = {}
+        for g in GENETIC_GROUPS:
+            cul_updates.update(groups.get(g, {}))
+        if cul_updates and _genotype_gate_allows(cfg, "cultivar"):
+            anchors = crop.get("cultivar_anchors") or [crop["cultivar_anchor"]]
+            for anchor in anchors:
+                edit_cultivar(run_dir / f"{stem}.CUL", anchor, cul_updates)
+        if _genotype_gate_allows(cfg, "cultivar"):
+            for anchor, updates in groups.get("genetic_cultivar_by_cultivar", {}).items():
+                edit_cultivar(run_dir / f"{stem}.CUL", anchor, updates)
+
+        eco_updates = groups.get("genetic_ecotype", {})
+        if eco_updates and _genotype_gate_allows(cfg, "ecotype"):
+            edit_ecotype(run_dir / f"{stem}.ECO", crop["ecotype"], eco_updates)
+        cultivar_ecotypes = _cultivar_ecotype_map(crop)
+        if _genotype_gate_allows(cfg, "ecotype"):
+            for anchor, updates in groups.get("genetic_ecotype_by_cultivar", {}).items():
+                eco_anchor = cultivar_ecotypes.get(anchor)
+                if eco_anchor is None:
+                    raise ValueError(
+                        f"No ecotype mapping for cultivar '{anchor}'. Add crops[].cultivar_ecotypes."
+                    )
+                edit_ecotype(run_dir / f"{stem}.ECO", eco_anchor, updates)
+
+        # species (.SPE) coefficients — gated: only written when gating.species == "free"
+        # (physiology-defining; for new-species adaptation from an analog template).
+        spe_updates = groups.get("genetic_species", {})
+        if spe_updates and _genotype_gate_allows(cfg, "species"):
+            from .writers import edit_species
+            spe_file = run_dir / f"{stem}.SPE"
+            if spe_file.exists():
+                for name, val in spe_updates.items():
+                    spec = next((s for s in param_specs if s.get("base_name", s["name"]) == name), None)
+                    key = (spec or {}).get("spe_key", name)
+                    if spec and ("spe_index" in spec or "token_index" in spec):
+                        update = {
+                            "value": val,
+                            "index": int(spec.get("spe_index", spec.get("token_index", 0))),
+                        }
+                    else:
+                        update = val
+                    # Apply one species edit at a time so several calibrated
+                    # parameters can target different numeric tokens on the same
+                    # .SPE line via the same spe_key.
+                    edit_species(spe_file, {key: update})
+
+        # edit management and initial conditions in FileX
+        mgt_updates = groups.get("management", {})
+        init_updates = groups.get("initial_conditions", {})
+        def filex_update_from_spec(name, val, spec, default_section):
+            if spec is None:
                 return val
+            section = spec.get("section", spec.get("filex_section"))
+            field = spec.get("field", spec.get("filex_field", spec.get("dssat")))
+            is_soil_water_mult = default_section == "INITIAL CONDITIONS" and name == "initial_soil_water_mult"
+            if is_soil_water_mult and not field:
+                field = "SH2O"
+            generic_keys = {
+                "header_prefix", "row", "treatment", "trt", "trtno",
+                "clip_01", "required", "type", "format",
+            }
+            if not section and field:
+                uses_generic = bool(generic_keys.intersection(spec)) or str(spec.get("op", "set")).lower() != "set"
+                if default_section == "PLANTING DETAILS" and not uses_generic:
+                    return val
+                out = {
+                    "section": default_section,
+                    "field": field,
+                    "value": val,
+                    "op": spec.get("op", "mult" if is_soil_water_mult else "set"),
+                }
+                if is_soil_water_mult and "clip_01" not in spec:
+                    out["clip_01"] = True
+                for key in generic_keys:
+                    if key in spec:
+                        out[key] = spec[key]
+                return out
             out = {
-                "section": default_section,
-                "field": field,
+                "section": section or default_section,
+                "field": field or name,
                 "value": val,
                 "op": spec.get("op", "mult" if is_soil_water_mult else "set"),
             }
             if is_soil_water_mult and "clip_01" not in spec:
                 out["clip_01"] = True
-            for key in generic_keys:
+            for key in ("header_prefix", "row", "treatment", "trt", "trtno", "clip_01", "required", "type", "format"):
                 if key in spec:
                     out[key] = spec[key]
             return out
-        out = {
-            "section": section or default_section,
-            "field": field or name,
-            "value": val,
-            "op": spec.get("op", "mult" if is_soil_water_mult else "set"),
-        }
-        if is_soil_water_mult and "clip_01" not in spec:
-            out["clip_01"] = True
-        for key in ("header_prefix", "row", "treatment", "trt", "trtno", "clip_01", "required", "type", "format"):
-            if key in spec:
-                out[key] = spec[key]
-        return out
 
-    mgt_fields = {}
-    for name, val in mgt_updates.items():
-        spec = next((s for s in param_specs if s.get("base_name", s["name"]) == name), None)
-        if spec:
-            key = spec.get("dssat", spec.get("field", spec.get("filex_field", name)))
-            mgt_fields[key] = filex_update_from_spec(name, val, spec, "PLANTING DETAILS")
-    # per-experiment planting date override (e.g. from farm-management software):
-    # set PDATE directly rather than calibrating it. cfg["_planting_dates"] maps
-    # exp_id -> a date; written as the DSSAT YYDDD code.
-    pdate = (cfg.get("_planting_dates") or {}).get(exp_id)
-    if pdate is not None:
-        ts = pd.Timestamp(pdate)
-        mgt_fields["PDATE"] = int(f"{ts.year % 100:02d}{ts.dayofyear:03d}")
-    if mgt_fields or init_updates:
-        from .writers import edit_filex
-        init_fields = {}
-        for name, val in init_updates.items():
+        mgt_fields = {}
+        for name, val in mgt_updates.items():
             spec = next((s for s in param_specs if s.get("base_name", s["name"]) == name), None)
             if spec:
                 key = spec.get("dssat", spec.get("field", spec.get("filex_field", name)))
-                init_fields[key] = filex_update_from_spec(name, val, spec, "INITIAL CONDITIONS")
-            else:
-                init_fields[name] = val
-        edit_filex(run_dir / filex_name, mgt_fields, init_fields)
-
-    soil_updates = groups.get("soil", {})
-    weather_updates = groups.get("weather", {})
-    soil_provider = str(cfg.get("soil", {}).get("provider", "file")).lower()
-    weather_provider = str(cfg.get("weather", {}).get("provider", "file")).lower()
-    needs_fields = (
-        soil_updates or weather_updates
-        or soil_provider not in ("", "file", "none")
-        or weather_provider not in ("", "file", "none")
-    )
-    fields = {}
-    if needs_fields:
-        from .writers import parse_fields
-        fields = parse_fields(run_dir / filex_name)
-
-    if soil_provider not in ("", "file", "none"):
-        try:
-            from .acquisition import acquire_soil_profile
-
-            site_id = fields.get("id_soil") or fields.get("id_field") or exp_id
-            lat = fields.get("lat", cfg.get("soil", {}).get("lat"))
-            lon = fields.get("lon", cfg.get("soil", {}).get("lon"))
-            acquire_soil_profile(
-                cfg,
-                site_id=str(site_id),
-                lat=lat,
-                lon=lon,
-                out_path=run_dir / "SOIL.SOL",
-            )
-        except Exception as exc:
-            return SpawnResult(status="error", run_dir=run_dir, theta=theta,
-                               message=f"soil acquisition failed: {exc}",
-                               effective_theta=effective_theta)
-
-    if weather_provider not in ("", "file", "none"):
-        try:
-            from .weather import acquire_wth
-
-            station = fields.get("wsta") or exp_id
-            lat = fields.get("lat", cfg.get("weather", {}).get("lat"))
-            lon = fields.get("lon", cfg.get("weather", {}).get("lon"))
-            start, end = _weather_window(cfg)
-            acquire_wth(
-                cfg,
-                station=str(station),
-                lat=lat,
-                lon=lon,
-                start=start,
-                end=end,
-                out_path=run_dir / f"{station}.WTH",
-            )
-        except Exception as exc:
-            return SpawnResult(status="error", run_dir=run_dir, theta=theta,
-                               message=f"weather acquisition failed: {exc}",
-                               effective_theta=effective_theta)
-
-    # edit soil (.SOL) and/or weather (.WTH) — DSSAT reads the run dir first, so a
-    # local single-profile SOIL.SOL / station .WTH overrides the central copy.
-    if soil_updates or weather_updates:
-        if soil_updates and fields.get("id_soil"):
-            from .writers import extract_soil_profile, edit_soil
-            local_sol = run_dir / "SOIL.SOL"
-            pid = fields["id_soil"]
-            candidates = []
-            if local_sol.exists():
-                candidates.append(local_sol)
-            candidates.append(dssat_paths["soil"] / "SOIL.SOL")
-            candidates.extend(sorted(dssat_paths["soil"].glob("*.SOL")))
-            profile_text = None
-            for src_sol in candidates:
-                if not src_sol.exists():
-                    continue
-                try:
-                    profile_text = extract_soil_profile(src_sol, pid)
-                    break
-                except ValueError:
-                    continue
-            if profile_text is None:
-                raise ValueError(f"Soil profile '{pid}' not found in DSSAT soil directory {dssat_paths['soil']}")
-            layer_mults, profile_sets = {}, {}
-            for name, val in soil_updates.items():
+                mgt_fields[key] = filex_update_from_spec(name, val, spec, "PLANTING DETAILS")
+        # per-experiment planting date override (e.g. from farm-management software):
+        # set PDATE directly rather than calibrating it. cfg["_planting_dates"] maps
+        # exp_id -> a date; written as the DSSAT YYDDD code.
+        pdate = (cfg.get("_planting_dates") or {}).get(exp_id)
+        if pdate is not None:
+            ts = pd.Timestamp(pdate)
+            mgt_fields["PDATE"] = int(f"{ts.year % 100:02d}{ts.dayofyear:03d}")
+        if mgt_fields or init_updates:
+            from .writers import edit_filex
+            init_fields = {}
+            for name, val in init_updates.items():
                 spec = next((s for s in param_specs if s.get("base_name", s["name"]) == name), None)
-                if not spec or "dssat" not in spec:
-                    continue
-                (profile_sets if spec.get("op") == "set" else layer_mults)[spec["dssat"]] = val
-            local_sol.write_text(profile_text, encoding="utf-8")
-            edit_soil(local_sol, pid, layer_mults=layer_mults, profile_sets=profile_sets)
+                if spec:
+                    key = spec.get("dssat", spec.get("field", spec.get("filex_field", name)))
+                    init_fields[key] = filex_update_from_spec(name, val, spec, "INITIAL CONDITIONS")
+                else:
+                    init_fields[name] = val
+            edit_filex(run_dir / filex_name, mgt_fields, init_fields)
 
-        if weather_updates and fields.get("wsta"):
-            from .writers import edit_weather
-            wsta = fields["wsta"]
-            local_wth = run_dir / f"{wsta}.WTH"
-            src_wth = local_wth if local_wth.exists() else dssat_paths["weather"] / f"{wsta}.WTH"
-            if src_wth.exists():
-                ops = {}
-                for name, val in weather_updates.items():
+        soil_updates = groups.get("soil", {})
+        weather_updates = groups.get("weather", {})
+        soil_provider = str(cfg.get("soil", {}).get("provider", "file")).lower()
+        weather_provider = str(cfg.get("weather", {}).get("provider", "file")).lower()
+        needs_fields = (
+            soil_updates or weather_updates
+            or soil_provider not in ("", "file", "none")
+            or weather_provider not in ("", "file", "none")
+        )
+        fields = {}
+        if needs_fields:
+            from .writers import parse_fields
+            fields = parse_fields(run_dir / filex_name)
+
+        if soil_provider not in ("", "file", "none"):
+            try:
+                from .acquisition import acquire_soil_profile
+
+                site_id = fields.get("id_soil") or fields.get("id_field") or exp_id
+                lat = fields.get("lat", cfg.get("soil", {}).get("lat"))
+                lon = fields.get("lon", cfg.get("soil", {}).get("lon"))
+                acquire_soil_profile(
+                    cfg,
+                    site_id=str(site_id),
+                    lat=lat,
+                    lon=lon,
+                    out_path=run_dir / "SOIL.SOL",
+                )
+            except Exception as exc:
+                return SpawnResult(status="error", run_dir=run_dir, theta=theta,
+                                   message=f"soil acquisition failed: {exc}",
+                                   effective_theta=effective_theta)
+
+        if weather_provider not in ("", "file", "none"):
+            try:
+                from .weather import acquire_wth
+
+                station = fields.get("wsta") or exp_id
+                lat = fields.get("lat", cfg.get("weather", {}).get("lat"))
+                lon = fields.get("lon", cfg.get("weather", {}).get("lon"))
+                start, end = _weather_window(cfg)
+                acquire_wth(
+                    cfg,
+                    station=str(station),
+                    lat=lat,
+                    lon=lon,
+                    start=start,
+                    end=end,
+                    out_path=run_dir / f"{station}.WTH",
+                )
+            except Exception as exc:
+                return SpawnResult(status="error", run_dir=run_dir, theta=theta,
+                                   message=f"weather acquisition failed: {exc}",
+                                   effective_theta=effective_theta)
+
+        # edit soil (.SOL) and/or weather (.WTH) — DSSAT reads the run dir first, so a
+        # local single-profile SOIL.SOL / station .WTH overrides the central copy.
+        if soil_updates or weather_updates:
+            if soil_updates and fields.get("id_soil"):
+                from .writers import extract_soil_profile, edit_soil
+                local_sol = run_dir / "SOIL.SOL"
+                pid = fields["id_soil"]
+                candidates = []
+                if local_sol.exists():
+                    candidates.append(local_sol)
+                candidates.append(dssat_paths["soil"] / "SOIL.SOL")
+                candidates.extend(sorted(dssat_paths["soil"].glob("*.SOL")))
+                profile_text = None
+                for src_sol in candidates:
+                    if not src_sol.exists():
+                        continue
+                    try:
+                        profile_text = extract_soil_profile(src_sol, pid)
+                        break
+                    except ValueError:
+                        continue
+                if profile_text is None:
+                    raise ValueError(f"Soil profile '{pid}' not found in DSSAT soil directory {dssat_paths['soil']}")
+                layer_mults, profile_sets = {}, {}
+                for name, val in soil_updates.items():
                     spec = next((s for s in param_specs if s.get("base_name", s["name"]) == name), None)
                     if not spec or "dssat" not in spec:
                         continue
-                    ops[spec["dssat"]] = (spec.get("op", "mult"), val)
-                if src_wth != local_wth:
-                    shutil.copy(src_wth, local_wth)
-                edit_weather(local_wth, ops)
+                    (profile_sets if spec.get("op") == "set" else layer_mults)[spec["dssat"]] = val
+                local_sol.write_text(profile_text, encoding="utf-8")
+                edit_soil(local_sol, pid, layer_mults=layer_mults, profile_sets=profile_sets)
 
-    if treatments is None:
-        treatments = parse_treatments(run_dir / filex_name)
-    try:
-        treatments = _normalize_treatments(treatments, backend)
-        _write_batch(run_dir, filex_name, treatments, backend)
-    except Exception as exc:
-        return SpawnResult(status="error", run_dir=run_dir, theta=theta,
-                           message=f"batch setup failed: {exc}",
-                           effective_theta=effective_theta)
+            if weather_updates and fields.get("wsta"):
+                from .writers import edit_weather
+                wsta = fields["wsta"]
+                local_wth = run_dir / f"{wsta}.WTH"
+                src_wth = local_wth if local_wth.exists() else dssat_paths["weather"] / f"{wsta}.WTH"
+                if src_wth.exists():
+                    ops = {}
+                    for name, val in weather_updates.items():
+                        spec = next((s for s in param_specs if s.get("base_name", s["name"]) == name), None)
+                        if not spec or "dssat" not in spec:
+                            continue
+                        ops[spec["dssat"]] = (spec.get("op", "mult"), val)
+                    if src_wth != local_wth:
+                        shutil.copy(src_wth, local_wth)
+                    edit_weather(local_wth, ops)
 
-    run_error = _run_backend_dssat(run_dir, exe_resolved, crop, backend, timeout)
-    if run_error:
-        return SpawnResult(status="error", run_dir=run_dir, theta=theta,
-                           message=run_error, effective_theta=effective_theta)
+        if treatments is None:
+            treatments = parse_treatments(run_dir / filex_name)
+        try:
+            treatments = _normalize_treatments(treatments, backend)
+            _write_batch(run_dir, filex_name, treatments, backend)
+        except Exception as exc:
+            return SpawnResult(status="error", run_dir=run_dir, theta=theta,
+                               message=f"batch setup failed: {exc}",
+                               effective_theta=effective_theta)
 
-    if not pg_path.exists() or pg_path.stat().st_size == 0:
-        return SpawnResult(status="error", run_dir=run_dir, theta=theta,
-                           message="no PlantGro.OUT produced",
-                           effective_theta=effective_theta)
+        run_error = _run_backend_dssat(run_dir, exe_resolved, crop, backend, timeout)
+        if run_error:
+            return SpawnResult(status="error", run_dir=run_dir, theta=theta,
+                               message=run_error, effective_theta=effective_theta)
 
-    outputs = dssat_io.collect_run_outputs(run_dir)
-    outputs = _stamp_single_treatment(outputs, treatments)
-    pg = outputs.get("plantgro", dssat_io.parse_plantgro(pg_path))
-    if not _spawn_outputs_complete(pg, treatments):
-        missing = _missing_requested_treatments(pg, treatments)
+        if not pg_path.exists() or pg_path.stat().st_size == 0:
+            return SpawnResult(status="error", run_dir=run_dir, theta=theta,
+                               message="no PlantGro.OUT produced",
+                               effective_theta=effective_theta)
+
+        outputs = dssat_io.collect_run_outputs(run_dir)
+        outputs = _stamp_single_treatment(outputs, treatments)
+        pg = outputs.get("plantgro", dssat_io.parse_plantgro(pg_path))
+        if not _spawn_outputs_complete(pg, treatments):
+            missing = _missing_requested_treatments(pg, treatments)
+            return SpawnResult(
+                status="error",
+                run_dir=run_dir,
+                theta=theta,
+                plantgro=pg,
+                message=f"PlantGro.OUT does not contain all requested treatments: missing {missing}",
+                effective_theta=effective_theta,
+            )
+        ev = outputs.get("evaluate", dssat_io.parse_evaluate(run_dir / "Evaluate.OUT"))
+        manifest_tmp = manifest_path.with_name(f".spawn-manifest-{os.getpid()}.tmp")
+        try:
+            manifest_tmp.write_text(
+                json.dumps(provenance, indent=2, sort_keys=True, default=str) + "\n",
+                encoding="utf-8",
+            )
+            manifest_tmp.replace(manifest_path)
+        finally:
+            manifest_tmp.unlink(missing_ok=True)
+
+        if not cfg["calibrator"].get("keep_run_dirs", False):
+            if not cfg["calibrator"].get("cache_spawns", True):
+                shutil.rmtree(run_dir, ignore_errors=True)
+            else:
+                # keep the parsed outputs only; drop the bulky per-run artifacts
+                for f in run_dir.glob("*.OUT"):
+                    if f.name not in ("PlantGro.OUT", "Evaluate.OUT", "Summary.OUT"):
+                        f.unlink(missing_ok=True)
+
         return SpawnResult(
-            status="error",
-            run_dir=run_dir,
-            theta=theta,
-            plantgro=pg,
-            message=f"PlantGro.OUT does not contain all requested treatments: missing {missing}",
-            effective_theta=effective_theta,
+            status="success", run_dir=run_dir, theta=theta, plantgro=pg,
+            evaluate=ev, outputs=outputs, effective_theta=effective_theta,
         )
-    ev = outputs.get("evaluate", dssat_io.parse_evaluate(run_dir / "Evaluate.OUT"))
-    manifest_tmp = manifest_path.with_name(f".spawn-manifest-{os.getpid()}.tmp")
-    try:
-        manifest_tmp.write_text(
-            json.dumps(provenance, indent=2, sort_keys=True, default=str) + "\n",
-            encoding="utf-8",
-        )
-        manifest_tmp.replace(manifest_path)
-    finally:
-        manifest_tmp.unlink(missing_ok=True)
-
-    if not cfg["calibrator"].get("keep_run_dirs", False):
-        if not cfg["calibrator"].get("cache_spawns", True):
-            shutil.rmtree(run_dir, ignore_errors=True)
-        else:
-            # keep the parsed outputs only; drop the bulky per-run artifacts
-            for f in run_dir.glob("*.OUT"):
-                if f.name not in ("PlantGro.OUT", "Evaluate.OUT", "Summary.OUT"):
-                    f.unlink(missing_ok=True)
-
-    return SpawnResult(
-        status="success", run_dir=run_dir, theta=theta, plantgro=pg,
-        evaluate=ev, outputs=outputs, effective_theta=effective_theta,
-    )

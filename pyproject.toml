@@ -10,6 +10,8 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.24",
+    "arviz>=0.18",
+    "filelock>=3.13",
     "pandas>=2.0",
     "scipy>=1.10",
     "matplotlib>=3.7",
@@ -20,10 +22,10 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
 shared = [
-  "dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@2280b11977ad373b9ae19d2d4497e8f276f7b133",
+  "dssatengine @ git+https://github.com/alwinhopf/dssatengine.git@2f20fd8c4afcf5f116fa5c6ed8aea086069bfa57",
 ]
 acquire = [
-    "dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@e9c859fa1d915623df23e2eb13084cb085dbfe3e",
+    "dssatutils @ git+https://github.com/alwinhopf/dssatutils.git@a4202fbc6377a62b391340c317c92c96d157e031",
     "geopandas>=0.14",
     "shapely>=2.0",
 ]

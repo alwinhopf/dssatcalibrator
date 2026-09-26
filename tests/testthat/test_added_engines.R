@@ -186,7 +186,16 @@ test_that("MCMC (R) auto-rejects out-of-bounds proposals without scoring", {
   expect_gt(length(scored), 0)
   expect_true(!is.null(mc$chain))
   expect_true(is.finite(mc$ess))
-  expect_true(is.finite(mc$rhat))
+  kept <- mc$chain[mc$chain$step >= 10, , drop = FALSE]
+  stuck <- any(vapply(split(kept, kept$walker), function(d) {
+    length(unique(d$a)) == 1L || length(unique(d$b)) == 1L
+  }, logical(1)))
+  if (stuck) {
+    expect_equal(mc$ess, 0)
+    expect_true(is.infinite(mc$rhat))
+  } else {
+    expect_true(is.finite(mc$rhat))
+  }
 })
 
 test_that("truncated lognormal sampling has no boundary clipping spikes (R)", {

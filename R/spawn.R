@@ -286,6 +286,44 @@ spawn_result <- function(status, run_dir, theta, plantgro = data.frame(),
             class = "spawn_result")
 }
 
+.simulation_inputs <- function(cfg, paths) {
+  roots <- paths[c("soil", "weather", "genotype")]
+  if (!is.null(paths$root)) roots$standard_data <- file.path(paths$root, "StandardData")
+  for (key in c("soil", "weather")) {
+    section <- cfg[[key]]
+    if (!is.null(section$provider) && !section$provider %in% c("file", "none", "")) {
+      roots[[paste0(key, "_acquired")]] <- section$cache_dir %||% paste0(key, "_cache")
+    }
+  }
+  hash_tree <- function(root) {
+    if (is.null(root) || !dir.exists(root)) return(list())
+    files <- sort(list.files(root, pattern = "[.](SOL|WTH|CUL|ECO|SPE|SDA|WDA|CDE|CO2)$",
+                             recursive = TRUE, full.names = TRUE, ignore.case = TRUE))
+    setNames(lapply(files, function(p) digest::digest(file = p, algo = "sha256", serialize = FALSE)),
+             substring(files, nchar(sub("/+$", "", root)) + 2L))
+  }
+  result <- lapply(roots, hash_tree)
+  # Function bodies work in installed packages as well as sourced checkouts.
+  env <- environment(.spawn_provenance)
+  nms <- sort(ls(env, all.names = TRUE))
+  nms <- nms[vapply(nms, function(n) is.function(get(n, env, inherits = FALSE)), logical(1))]
+  result$implementation <- setNames(lapply(nms, function(n) {
+    fn <- get(n, env, inherits = FALSE)
+    digest::digest(list(formals(fn), body(fn)), algo = "sha256")
+  }), nms)
+  result$external_soils <- lapply(cfg$soil[c("source_sol_file", "external_soil_file")], function(p) {
+    if (is.null(p) || !file.exists(p)) return(NULL)
+    digest::digest(file = p, algo = "sha256", serialize = FALSE)
+  })
+  if (identical(cfg$execution$backend, "dssatengine")) {
+    ns <- asNamespace("dssatengine")
+    result$engine <- lapply(sort(ls(ns, all.names = TRUE)), function(n) {
+      x <- get(n, ns); if (is.function(x)) list(formals(x), body(x)) else NULL
+    })
+  }
+  result
+}
+
 .spawn_provenance <- function(cfg, crop, param_specs, source_filex, geno_dir,
                               dssat_paths, exe, treatments, effective_theta) {
   fingerprint <- function(path) {
@@ -318,7 +356,7 @@ spawn_result <- function(status, run_dir, theta, plantgro = data.frame(),
     if (file.exists(src) && !dir.exists(src)) obs_digests[[ext]] <- fingerprint(src)
   }
   list(
-    schema = 4L, theta = effective_theta, crop = crop, specs = param_specs,
+    schema = 5L, resolved_inputs = .simulation_inputs(cfg, dssat_paths), theta = effective_theta, crop = crop, specs = param_specs,
     treatments = treatments, filex_sha256 = fingerprint(source_filex),
     genotype_sha256 = setNames(lapply(c("CUL", "ECO", "SPE"), function(ext) {
       fingerprint(file.path(geno_dir, paste0(crop$genotype_stem, ".", ext)))
@@ -375,6 +413,10 @@ spawn_and_run <- function(theta, exp_id, cfg, crop, param_specs, run_root,
   run_dir <- file.path(run_root, exp_id)
   if (!is.null(treatment_key)) run_dir <- file.path(run_dir, treatment_key)
   run_dir <- file.path(run_dir, paste0("s_", theta_hash(run_identity), "_", prov_hash))
+  dir.create(dirname(run_dir), recursive = TRUE, showWarnings = FALSE)
+  run_lock <- filelock::lock(paste0(run_dir, ".lock"), timeout = timeout * 1000)
+  if (is.null(run_lock)) stop("Timed out waiting for spawn directory lock: ", run_dir)
+  on.exit(filelock::unlock(run_lock), add = TRUE)
   pg_path <- file.path(run_dir, "PlantGro.OUT")
   manifest_path <- file.path(run_dir, "spawn_manifest.rds")
   recorded <- if (file.exists(manifest_path)) {

@@ -208,3 +208,21 @@ helpers), `mco` (NSGA-II), `DiceKriging`/`ranger` (surrogate), `ggplot2` (figure
 `dssatengine` (execution backend) and `dssatutils` (weather/soil acquisition).
 Pins follow the immutable commit baselines recorded in the workspace
 `dssatengine/DEPENDENCIES.md`.
+
+## Cache and diagnostic integrity
+
+Simulation and objective caches include recursive weather, soil, genotype,
+StandardData and acquisition-cache contents plus implementation fingerprints.
+Cache schema upgrades invalidate previous entries. Spawn directories use an
+exclusive OS-backed file lock, including identical concurrent candidates; only
+complete successful runs publish a cache manifest. Do not modify base inputs
+while a calibration is running.
+
+MCMC reports rank-normalized bulk ESS and rank/folded split R-hat using ArviZ
+(Python) and posterior (R). Constant chains return zero ESS and an infinite or
+undefined R-hat; undefined parameters are never silently hidden.
+
+R acquisition supports SSURGO, SoilGrids file and SoilGrids online using named
+provider arguments. Weather acquisition requires the requested station's file
+and validates its requested date coverage; other cached stations are never used
+as substitutes. Soil/site IDs retain leading zeros.

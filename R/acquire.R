@@ -15,6 +15,12 @@
   }
 }
 
+.get_utils_provider <- function(name) {
+  ns <- asNamespace("dssatutils")
+  if (!exists(name, envir = ns, inherits = FALSE)) stop("Unknown dssatutils provider: ", name)
+  get(name, envir = ns, inherits = FALSE)
+}
+
 .make_single_point_sf <- function(id, lat, lon) {
   lat_f <- as.numeric(lat); lon_f <- as.numeric(lon)
   if (is.na(lat_f) || is.na(lon_f) || abs(lat_f) > 90 || abs(lon_f) > 180) {
@@ -38,29 +44,36 @@ acquire_soil_profile <- function(cfg, site_id, lat, lon, out_path) {
 
   source <- tolower(as.character(.cfg_get(scfg, "source", "ssurgo")))
   fn_name <- paste0("process_soils_", source)
-  if (!exists(fn_name, where = asNamespace("dssatutils"))) {
-    stop(sprintf("dssatutils has no soil provider '%s'", source))
-  }
 
   pts <- .make_single_point_sf(site_id, lat, lon)
-  cache_dir <- .cfg_get(scfg, "cache_dir", tempfile("soil_cache"))
+  cache_dir <- .cfg_get(scfg, "cache_dir", "soil_cache")
   sol_dir <- file.path(cache_dir, paste0(source, "_individual_SOL"))
   dir.create(sol_dir, recursive = TRUE, showWarnings = FALSE)
   map_csv <- file.path(cache_dir, paste0(source, "_soil_map.csv"))
   n_cores <- as.integer(.cfg_get(scfg, "n_cores", 1L))
 
-  fn <- get(fn_name, envir = asNamespace("dssatutils"))
+  fn <- .get_utils_provider(fn_name)
   if (source == "ssurgo") {
     fn(grid_points = pts, output_dir_csv = map_csv, output_dir_individual = sol_dir,
        n_cores = n_cores, id_col = "ID", lat_col = "LAT", long_col = "LONG")
+  } else if (source == "soilgrids") {
+    source_sol <- scfg$source_sol_file %||% scfg$external_soil_file
+    if (is.null(source_sol) || !nzchar(source_sol)) stop("soil.source: soilgrids requires soil.source_sol_file or soil.external_soil_file")
+    fn(grid_points = pts, source_sol_file = source_sol, output_csv_path = map_csv,
+       output_sol_dir = sol_dir, id_col = "ID")
+  } else if (source == "soilgrids_online") {
+    mode <- toupper(.cfg_get(scfg, "soilgrids_mode", "REST"))
+    if (!mode %in% c("REST", "VRT")) stop("soilgrids_mode must be REST or VRT")
+    fn(gridfile = pts, soilfile_csv_path = map_csv, output_sol_dir = sol_dir,
+       id_col = "ID", use_rest_api = mode == "REST")
   } else {
-    fn(pts, map_csv, sol_dir, n_cores, "ID", "LAT", "LONG")
+    stop("soil.source must be one of: ssurgo, soilgrids, soilgrids_online")
   }
 
   direct <- file.path(sol_dir, paste0(site_id, ".SOL"))
   src <- if (file.exists(direct)) direct else NULL
   if (is.null(src) && file.exists(map_csv)) {
-    mapping <- utils::read.csv(map_csv, stringsAsFactors = FALSE)
+    mapping <- utils::read.csv(map_csv, stringsAsFactors = FALSE, colClasses = "character")
     if ("ID" %in% names(mapping)) {
       sub <- mapping[as.character(mapping$ID) == as.character(site_id), , drop = FALSE]
       if (nrow(sub) > 0) {
@@ -79,7 +92,7 @@ acquire_soil_profile <- function(cfg, site_id, lat, lon, out_path) {
   }
 
   dir.create(dirname(out_path), recursive = TRUE, showWarnings = FALSE)
-  file.copy(src, out_path, overwrite = TRUE)
+  if (!file.copy(src, out_path, overwrite = TRUE)) stop("Could not copy acquired soil to ", out_path)
   out_path
 }
 
@@ -94,39 +107,36 @@ acquire_wth <- function(cfg, station, lat, lon, start, end, out_path) {
   if (provider == "dssatutils") {
     provider <- tolower(as.character(.cfg_get(wcfg, "dssatutils_provider", "nasapower")))
   }
-  if (provider == "nasa_power") provider <- "nasapower"
+  if (provider %in% c("nasa_power", "nasa-power")) provider <- "nasapower"
 
+  .dssatutils_required()
   fn_name <- paste0("process_weather_", provider)
-  if (!exists(fn_name, where = asNamespace("dssatutils"))) {
-    stop(sprintf("dssatutils has no weather provider '%s'", provider))
-  }
   .dssatutils_required()
 
   pts <- .make_single_point_sf(station, lat, lon)
-  cache_dir <- .cfg_get(wcfg, "cache_dir", tempfile("weather_cache"))
+  cache_dir <- .cfg_get(wcfg, "cache_dir", "weather_cache")
   dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
   log_file <- file.path(cache_dir, "dssatutils_weather.log")
   start_year <- as.integer(substr(as.character(start), 1, 4))
   end_year <- as.integer(substr(as.character(end), 1, 4))
   n_cores <- as.integer(.cfg_get(wcfg, "n_cores", 1L))
 
-  fn <- get(fn_name, envir = asNamespace("dssatutils"))
+  fn <- .get_utils_provider(fn_name)
   fn(shapefile = pts, start_year = start_year, end_year = end_year,
      output_dir = cache_dir, id_col = "ID", lat_col = "LAT", lon_col = "LONG",
      n_cores = n_cores, log_file = log_file)
 
   cand <- file.path(cache_dir, paste0(station, ".WTH"))
-  if (!file.exists(cand)) {
-    # Try finding any .WTH in cache_dir
-    found <- list.files(cache_dir, pattern = "\\.WTH$", full.names = TRUE, ignore.case = TRUE)
-    if (length(found)) cand <- found[1]
-  }
 
-  if (!file.exists(cand)) {
+  if (!file.exists(cand) || file.info(cand)$size == 0) {
     stop(sprintf("dssatutils did not produce %s.WTH in %s", station, cache_dir))
   }
 
+  if (!dssatutils::is_wth_valid(cand, required_columns = c("SRAD", "TMAX", "TMIN", "RAIN"),
+                               start_date = as.character(start), end_date = as.character(end))) {
+    stop("Acquired weather is invalid or incomplete for station ", station)
+  }
   dir.create(dirname(out_path), recursive = TRUE, showWarnings = FALSE)
-  file.copy(cand, out_path, overwrite = TRUE)
+  if (!file.copy(cand, out_path, overwrite = TRUE)) stop("Could not copy acquired weather to ", out_path)
   out_path
 }

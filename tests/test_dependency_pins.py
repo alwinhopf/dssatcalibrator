@@ -4,8 +4,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED = {
-    "dssatutils": "a4202fbc6377a62b391340c317c92c96d157e031",
-    "dssatengine": "2f20fd8c4afcf5f116fa5c6ed8aea086069bfa57",
+    "dssatutils": "f728cd810923465360e4730d8893bb566dc0773c",
+    "dssatengine": "14871db233af97a378fd42fb0c9749b5ff9b9453",
 }
 
 

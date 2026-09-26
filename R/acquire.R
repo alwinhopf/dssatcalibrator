@@ -111,7 +111,6 @@ acquire_wth <- function(cfg, station, lat, lon, start, end, out_path) {
 
   .dssatutils_required()
   fn_name <- paste0("process_weather_", provider)
-  .dssatutils_required()
 
   pts <- .make_single_point_sf(station, lat, lon)
   cache_dir <- .cfg_get(wcfg, "cache_dir", "weather_cache")

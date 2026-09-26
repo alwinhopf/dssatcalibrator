@@ -191,7 +191,7 @@ Recommend **A** now, leaving **B** as a later consolidation if the engine grows 
 
 ## 7. Dependency, parity & governance impact
 
-- **Pins:** keep `dssatutils@a4202fbc6377a62b391340c317c92c96d157e031` / `dssatengine@2f20fd8c4afcf5f116fa5c6ed8aea086069bfa57` as
+- **Pins:** keep `dssatutils@f728cd810923465360e4730d8893bb566dc0773c` / `dssatengine@14871db233af97a378fd42fb0c9749b5ff9b9453` as
   **optional extras**; refresh any lockfile; update `DEPENDENCIES.md` (calibrator row: *"does not use"* →
   *"consumes `dssatengine` for execution; `dssatutils` for acquisition (optional extra)"*).
 - **R/Python parity (principle 5):** the calibrator now has mirrored R and Python

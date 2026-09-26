@@ -309,7 +309,7 @@ spawn_result <- function(status, run_dir, theta, plantgro = data.frame(),
   nms <- nms[vapply(nms, function(n) is.function(get(n, env, inherits = FALSE)), logical(1))]
   result$implementation <- setNames(lapply(nms, function(n) {
     fn <- get(n, env, inherits = FALSE)
-    digest::digest(list(formals(fn), body(fn)), algo = "sha256")
+    digest::digest(list(deparse(formals(fn)), deparse(body(fn))), algo = "sha256")
   }), nms)
   result$external_soils <- lapply(cfg$soil[c("source_sol_file", "external_soil_file")], function(p) {
     if (is.null(p) || !file.exists(p)) return(NULL)
@@ -318,7 +318,8 @@ spawn_result <- function(status, run_dir, theta, plantgro = data.frame(),
   if (identical(cfg$execution$backend, "dssatengine")) {
     ns <- asNamespace("dssatengine")
     result$engine <- lapply(sort(ls(ns, all.names = TRUE)), function(n) {
-      x <- get(n, ns); if (is.function(x)) list(formals(x), body(x)) else NULL
+      x <- get(n, ns)
+      if (is.function(x)) digest::digest(list(deparse(formals(x)), deparse(body(x))), algo = "sha256") else NULL
     })
   }
   result

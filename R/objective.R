@@ -233,6 +233,8 @@ metrics <- function(obs, sim) {
 #' data.frames.
 #' @export
 build_residuals <- function(results, obs_table, cfg) {
+  adapter <- .model_adapter(cfg)
+  if (!is.null(adapter)) return(adapter$residuals(results, obs_table, cfg))
   vm <- variable_maps(cfg)
   ts_inv <- vm$ts_inv; sc_inv <- vm$sc_inv; sc_map <- vm$sc
   rows <- list()
@@ -422,6 +424,17 @@ score <- function(results, obs_table, cfg) {
   w <- function(uv) if (!is.null(wts[[uv]])) as.numeric(wts[[uv]]) else 1.0
 
   resid$`_loss` <- .standardized_loss(resid$resid / resid$sigma, cfg)
+  failed <- any(vapply(results, function(r) identical(r$status, "error"), logical(1)))
+  missing <- if ("missing_simulation" %in% names(resid)) resid$missing_simulation else rep(FALSE, nrow(resid))
+  policy <- .cfg_get(.cfg_get(cfg, "objective", list()), "missing_simulation_policy", "penalize")
+  if (failed || (any(missing) && identical(policy, "reject"))) {
+    return(structure(list(score = Inf, loglik = -Inf, residuals = resid,
+                         per_var = list(), per_exp_var = data.frame()), class = "objective_result"))
+  }
+  if (any(missing)) {
+    penalty <- .cfg_get(.cfg_get(cfg, "objective", list()), "missing_simulation_standardized_penalty", 1000)
+    resid$`_loss`[missing] <- pmax(resid$`_loss`[missing], penalty^2)
+  }
   loglik <- -0.5 * sum(resid$`_loss` * resid$weight)
 
   by_var <- split(resid, resid$user_var)
@@ -487,3 +500,6 @@ score <- function(results, obs_table, cfg) {
                  residuals = resid, per_var = per_var, per_exp_var = pev),
             class = "objective_result")
 }
+
+# Stable adapter helper for the shared observation error model.
+adapter_sigma <- function(variable, value, cfg) .obj_sigma(variable, value, cfg)

@@ -279,10 +279,11 @@ normalize_treatments <- function(treatments, backend = "native") {
 #' SpawnResult constructor (S3). Mirrors spawn.py:SpawnResult.
 #' @export
 spawn_result <- function(status, run_dir, theta, plantgro = data.frame(),
-                         evaluate = data.frame(), outputs = list(), message = "") {
+                         evaluate = data.frame(), outputs = list(), message = "",
+                         simulated = data.frame(), effective_theta = list()) {
   structure(list(status = status, run_dir = run_dir, theta = theta,
                  plantgro = plantgro, evaluate = evaluate, outputs = outputs,
-                 message = message),
+                 message = message, simulated = simulated, effective_theta = effective_theta),
             class = "spawn_result")
 }
 
@@ -384,6 +385,9 @@ spawn_result <- function(status, run_dir, theta, plantgro = data.frame(),
 #' @export
 spawn_and_run <- function(theta, exp_id, cfg, crop, param_specs, run_root,
                           treatments = NULL, exe = NULL, timeout = 600) {
+  adapter <- .model_adapter(cfg)
+  if (!is.null(adapter)) return(adapter$run(theta, exp_id, cfg, crop, param_specs,
+                                           run_root, treatments, exe, timeout))
   backend <- .execution_backend(cfg)
   dssat_paths <- resolve_dssat_paths(cfg)
   if (missing(exe) || is.null(exe)) exe <- dssat_paths$exe

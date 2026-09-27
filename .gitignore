@@ -26,3 +26,8 @@ Thumbs.db
 /tmp
 /calibration_europe_hemp/logs
 /calibration_germany_hemp/derived
+
+build/
+dist/
+*.egg-info/
+ci-wheel/

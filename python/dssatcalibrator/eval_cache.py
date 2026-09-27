@@ -20,7 +20,7 @@ import pandas as pd
 from . import objective as obj
 from .config import resolve_dssat_paths
 
-CACHE_SCHEMA_VERSION = 3
+CACHE_SCHEMA_VERSION = 4
 
 
 def _normalise(value: Any) -> Any:
@@ -140,6 +140,8 @@ def _decode_float(value: float | str) -> float:
 
 def _cfg_fingerprint(cfg: dict) -> str:
     keep = {
+        "model": cfg.get("model", {}),
+        "platform": cfg.get("platform", "dssat"),
         "parameters": cfg.get("parameters", {}),
         "crops": cfg.get("crops", []),
         "source": cfg.get("source", {}),
@@ -203,6 +205,17 @@ class EvaluationCache:
             root = run_root / "evaluation_cache"
         if raw_dir and not root.is_absolute():
             root = run_root / root
+
+        from .adapters import model_adapter
+        from .cache_inputs import tree_digest
+        adapter = model_adapter(cfg)
+        if adapter is not None:
+            context = {"schema": CACHE_SCHEMA_VERSION, "cfg": _cfg_fingerprint(cfg),
+                       "specs": specs, "treatments": treatments,
+                       "obs": _frame_digest(obs_table),
+                       "inputs": adapter.fingerprint(cfg, adapter.setup(cfg)),
+                       "implementation": tree_digest(Path(__file__).parent, {".py"})}
+            return cls(root, context)
 
         hemp_dir = Path((cfg.get("source", {}) or {}).get("hemp_dir", ""))
         input_files: dict[str, Any] = {"exe": _file_fingerprint(exe)}

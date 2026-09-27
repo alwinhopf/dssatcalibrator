@@ -261,6 +261,10 @@ def _timeseries_sim_value(
 
 def build_residuals(results: dict, obs_table: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     """Assemble the residual table (one row per matched observation)."""
+    from .adapters import model_adapter
+    adapter = model_adapter(cfg)
+    if adapter is not None:
+        return adapter.residuals(results, obs_table, cfg)
     ts_map, sc_map, ts_inv, sc_inv = variable_maps(cfg)
     rows = []
     seen_scalar = set()

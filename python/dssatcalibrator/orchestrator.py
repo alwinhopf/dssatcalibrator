@@ -64,6 +64,17 @@ class CalibrationResult:
 
 def _setup(cfg: dict):
     space = ParameterSpace.from_config(cfg)
+    from .adapters import model_adapter
+    adapter = model_adapter(cfg)
+    if adapter is not None:
+        setup = adapter.setup(cfg)
+        specs = space.specs + expand_parameter_specs(cfg, fixed_parameters(cfg))
+        run_root = Path(cfg["calibrator"]["workdir"]) / cfg["calibrator"]["name"]
+        run_root.mkdir(parents=True, exist_ok=True)
+        treatments = _selected_treatments(cfg, setup.experiments, setup.units)
+        _validate_target_coverage(setup.observations.table, setup.experiments, treatments)
+        return (space, setup.model, setup.executable, specs, run_root,
+                setup.observations, setup.experiments, treatments)
     crop_codes = {str(c.get("code")) for c in (cfg.get("crops") or []) if c.get("code")}
     if len(crop_codes) > 1:
         raise ValueError(

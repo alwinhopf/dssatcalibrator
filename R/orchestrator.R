@@ -8,6 +8,22 @@
 # Build the experiment/observation/treatment setup shared by every engine.
 .setup <- function(cfg) {
   space <- parameter_space_from_config(cfg)
+  adapter <- .model_adapter(cfg)
+  if (!is.null(adapter)) {
+    setup <- adapter$setup(cfg)
+    specs <- c(space$specs, expand_parameter_specs(cfg, fixed_parameters(cfg)))
+    run_root <- file.path(cfg$calibrator$workdir, cfg$calibrator$name)
+    dir.create(run_root, recursive = TRUE, showWarnings = FALSE)
+    for (exp in setup$experiments) for (unit in setup$units[[exp]]) {
+      rows <- setup$observations$table
+      if (!any(as.character(rows$exp_id) == exp & rows$treatment == unit)) {
+        stop("No observations for configured experiment/treatment: ", exp, "/", unit)
+      }
+    }
+    return(list(space = space, crop = setup$model, exe = setup$executable,
+                specs = specs, run_root = run_root, obs = setup$observations,
+                experiments = setup$experiments, treatments = setup$units, cfg = cfg))
+  }
   crops <- .cfg_get(cfg, "crops", list())
   first_code <- if (length(crops)) (.cfg_get(crops[[1]], "code", "HM")) else "HM"
   crop <- crop_for(cfg, first_code)
@@ -868,4 +884,18 @@ nowcast <- function(cfg, as_of_date, progress = TRUE) {
     }
   }
   list(as_of = as.character(ts), best_theta = result$best_theta, result = result, forecast = forecasts, last_obs = last_obs)
+}
+
+calibrate_fixed_design <- function(cfg, samples, progress = TRUE) {
+  space <- parameter_space_from_config(cfg)
+  missing <- setdiff(space$names, names(samples))
+  if (length(missing)) stop("Fixed design is missing active parameter columns: ", paste(missing, collapse = ", "))
+  if (!nrow(samples)) stop("Fixed design contains no rows to evaluate.")
+  ev <- evaluate_design(cfg, samples, progress = progress)
+  glue <- run_glue(ev$design, space$names, cfg, space = space)
+  best <- ev$obj_results[[as.character(glue$best_sample_id)]]
+  structure(list(cfg = cfg, space = space, obs = ev$obs, experiments = ev$experiments,
+                 design = glue$design, obj_results = ev$obj_results, best_theta = glue$best_theta,
+                 best = best, glue = glue, extras = list(engine = "glue", fixed_design = TRUE)),
+            class = "calibration_result")
 }

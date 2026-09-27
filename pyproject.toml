@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dssatcalibrator"
-version = "0.0.1"
+version = "0.1.0"
 description = "Monte-Carlo and Bayesian calibration framework for DSSAT-CSM (concept implementation)."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -50,3 +50,6 @@ filterwarnings = [
 markers = [
     "slow: end-to-end tests that invoke the DSSAT binary (deselect with -m 'not slow')",
 ]
+
+[project.scripts]
+dssat-calibrate = "dssatcalibrator.cli:main"

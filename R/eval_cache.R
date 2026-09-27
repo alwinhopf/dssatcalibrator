@@ -4,7 +4,7 @@
 # scored objective for a whole theta across the requested experiments, above the
 # existing per-spawn DSSAT-output cache.
 
-.EVAL_CACHE_SCHEMA_VERSION <- 3L
+.EVAL_CACHE_SCHEMA_VERSION <- 4L
 
 .eval_norm <- function(x) {
   if (is.null(x)) return(NULL)
@@ -48,6 +48,8 @@
 
 .eval_cfg_fingerprint <- function(cfg) {
   keep <- list(
+    model = .cfg_get(cfg, "model", list()),
+    platform = model_platform(cfg),
     parameters = .cfg_get(cfg, "parameters", list()),
     crops = .cfg_get(cfg, "crops", list()),
     source = .cfg_get(cfg, "source", list()),
@@ -92,6 +94,14 @@
     return(list(enabled = FALSE, root = NULL, context = NULL))
   }
 
+  adapter <- .model_adapter(cfg)
+  if (!is.null(adapter)) {
+    context <- list(schema = .EVAL_CACHE_SCHEMA_VERSION, cfg = .eval_cfg_fingerprint(cfg),
+                    specs = specs, treatments = treatments, obs = .eval_digest(obs_table),
+                    inputs = adapter$fingerprint(cfg),
+                    implementation = .simulation_inputs(cfg, list())$implementation)
+    return(list(enabled = TRUE, root = .eval_cache_dir(cfg), context = context))
+  }
   hemp_dir <- .cfg_get(.cfg_get(cfg, "source", list()), "hemp_dir", "")
   input_files <- list(exe = .eval_file_fingerprint(exe))
   input_files$genotype <- tryCatch({

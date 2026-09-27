@@ -335,6 +335,7 @@ class SpawnResult:
     outputs: dict[str, pd.DataFrame] = field(default_factory=dict)
     message: str = ""
     effective_theta: dict = field(default_factory=dict)
+    simulated: pd.DataFrame = field(default_factory=pd.DataFrame)
 
 
 def _spec_applies(spec: dict, exp_id: str | None, cultivars: list[str] | None = None) -> bool:
@@ -484,6 +485,12 @@ def spawn_and_run(
     timeout: int = 600,
 ) -> SpawnResult:
     """Materialize and run one spawn; return parsed PlantGro + Evaluate tables."""
+    from .adapters import model_adapter
+    adapter = model_adapter(cfg)
+    if adapter is not None:
+        return adapter.run(theta, exp_id=exp_id, cfg=cfg, crop=crop,
+                           param_specs=param_specs, run_root=run_root,
+                           treatments=treatments, exe=exe, timeout=timeout)
     backend = _execution_backend(cfg)
     dssat_paths = resolve_dssat_paths(cfg)
     exe_target = exe if exe is not None else dssat_paths["exe"]

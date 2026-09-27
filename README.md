@@ -226,3 +226,18 @@ R acquisition supports SSURGO, SoilGrids file and SoilGrids online using named
 provider arguments. Weather acquisition requires the requested station's file
 and validates its requested date coverage; other cached stations are never used
 as substitutes. Soil/site IDs retain leading zeros.
+
+
+## Shared model-adapter core
+
+This repository is the single Python/R implementation of calibration and DSSAT
+execution. Optional model adapters may extend it without installing another copy
+of `dssatcalibrator`. `model.platform: dssat` preserves existing behavior.
+Other platforms require an installed adapter; an unknown or missing adapter
+raises an error before execution. Python discovers adapters through the
+`dssatcalibrator.adapters` entry-point group; R uses `model.adapter_package`.
+The core owns setup validation, parallel scheduling, scoring, and evaluation caches.
+Adapters supply setup, execution, neutral residual rows and input fingerprints.
+
+Both `run_calibration.py` and the installed `dssat-calibrate` command call the
+same CLI implementation. Generated `build/` code is no longer tracked.

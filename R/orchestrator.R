@@ -14,12 +14,23 @@
     specs <- c(space$specs, expand_parameter_specs(cfg, fixed_parameters(cfg)))
     run_root <- file.path(cfg$calibrator$workdir, cfg$calibrator$name)
     dir.create(run_root, recursive = TRUE, showWarnings = FALSE)
+    selected <- cfg$calibration_treatments_by_experiment %||% cfg$calibration_treatments %||%
+                cfg$calibrator$calibration_treatments_by_experiment %||% list()
+    for (exp in setup$experiments) {
+      chosen <- selected[[exp]] %||% setup$units[[exp]]
+      if (length(chosen)) setup$units[[exp]] <- unique(as.integer(unlist(chosen)))
+    }
     for (exp in setup$experiments) for (unit in setup$units[[exp]]) {
       rows <- setup$observations$table
       if (!any(as.character(rows$exp_id) == exp & rows$treatment == unit)) {
         stop("No observations for configured experiment/treatment: ", exp, "/", unit)
       }
     }
+    keep <- vapply(seq_len(nrow(setup$observations$table)), function(i) {
+      row <- setup$observations$table[i,,drop=FALSE]
+      as.character(row$exp_id) %in% setup$experiments && row$treatment %in% setup$units[[as.character(row$exp_id)]]
+    }, logical(1))
+    setup$observations <- observations(setup$observations$table[keep,,drop=FALSE])
     return(list(space = space, crop = setup$model, exe = setup$executable,
                 specs = specs, run_root = run_root, obs = setup$observations,
                 experiments = setup$experiments, treatments = setup$units, cfg = cfg))

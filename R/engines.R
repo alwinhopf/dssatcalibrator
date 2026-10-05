@@ -723,6 +723,8 @@ run_es_mda <- function(cfg, score_results, space, progress = TRUE) {
   d <- ps_ndim(space); names_ <- space$names
   ne <- as.integer(.cfg_get(bcfg, "ensemble_size", max(4L * d, 24L)))
   na <- as.integer(.cfg_get(bcfg, "iterations", 4L))
+  if (is.na(ne) || is.na(na) || ne < 2L || na < 1L)
+    stop("ES-MDA requires ensemble_size >= 2 and iterations >= 1")
   set.seed(as.integer(.cfg_get(cfg$calibrator, "seed", 42L)))
   alpha <- as.numeric(na)
 
@@ -760,6 +762,8 @@ run_es_mda <- function(cfg, score_results, space, progress = TRUE) {
     ov <- obs_vectors(results)
     if (is.null(ov)) break
     d_obs <- ov$d_obs; sigma <- ov$sigma; d_sim <- ov$d_sim; nd <- length(d_obs)
+    if (any(!is.finite(d_obs)) || any(!is.finite(sigma)) || any(sigma <= 0))
+      stop("ES-MDA requires finite observations and positive finite sigma")
     bad <- !is.finite(d_sim)
     if (any(bad)) {
       penalty <- d_obs + 10 * pmax(sigma, 1e-6)

@@ -656,9 +656,11 @@ def run_impact_atlas(
     clean: bool = True,
     progress: bool = True,
 ) -> AtlasResult:
-    """Run a one-at-a-time real-DSSAT parameter impact atlas."""
+    """Run a one-at-a-time parameter impact atlas using the selected adapter."""
     cfg = deepcopy(cfg)
-    groups = groups or list(DEFAULT_GROUPS)
+    from .adapters import model_adapter
+    adapter = model_adapter(cfg)
+    groups = groups or (list(cfg.get("parameters", {})) if adapter else list(DEFAULT_GROUPS))
     levels = list(levels or ["low", "high"])
     grid_points = max(0, int(grid_points or 0))
     for idx in range(1, grid_points + 1):
@@ -681,19 +683,25 @@ def run_impact_atlas(
     output_dir.mkdir(parents=True, exist_ok=True)
     run_root.mkdir(parents=True, exist_ok=True)
 
-    crop = crop_for(cfg, (cfg.get("crops") or [{}])[0].get("code", "HM"))
-    exe = resolve_exe(cfg)
-    hemp_dir = Path(cfg["source"]["hemp_dir"])
-    obs = _load_observations(cfg, cfg.get("experiments", []), crop)
-    obs_exps = set(obs.experiments())
-    exps = [e for e in cfg.get("experiments", []) if not obs_exps or e in obs_exps]
-    if not exps:
-        raise ValueError(
-            "Impact atlas has no experiments to run after observation filtering. "
-            "Check config.experiments and the observation source."
-        )
-    treatments = {e: parse_treatments(hemp_dir / f"{e}.{crop['filex_ext']}") for e in exps}
-
+    if adapter is not None:
+        setup = adapter.setup(cfg)
+        crop, exe, obs = setup.model, setup.executable, setup.observations
+        exps, treatments = setup.experiments, setup.units
+        if any((discover_cultivar, discover_ecotype, discover_species)):
+            raise ValueError("For model adapters, declare bounded parameters with target paths in config.parameters; DSSAT genotype file discovery requires the DSSAT adapter.")
+    else:
+        crop = crop_for(cfg, (cfg.get("crops") or [{}])[0].get("code", "HM"))
+        exe = resolve_exe(cfg)
+        hemp_dir = Path(cfg["source"]["hemp_dir"])
+        obs = _load_observations(cfg, cfg.get("experiments", []), crop)
+        obs_exps = set(obs.experiments())
+        exps = [e for e in cfg.get("experiments", []) if not obs_exps or e in obs_exps]
+        if not exps:
+            raise ValueError(
+                "Impact atlas has no experiments to run after observation filtering. "
+                "Check config.experiments and the observation source."
+            )
+        treatments = {e: parse_treatments(hemp_dir / f"{e}.{crop['filex_ext']}") for e in exps}
     params = _candidate_parameters(cfg, groups, active_only=active_only)
     if discover_cultivar and "genetic_cultivar" in groups:
         params.extend(discover_cultivar_parameters(cfg))
@@ -793,11 +801,12 @@ def run_impact_atlas(
         score = np.inf
         n_obs = 0
         if res.status in {"success", "cached"}:
-            scored = obj.score({m["exp_id"]: res}, obs.table, cfg)
+            scored = obj.score({m["exp_id"]: res}, (obs.table if obs.table.empty else obs.table[obs.table["exp_id"].astype(str) == str(m["exp_id"])]), cfg)
             score = scored.score
             n_obs = len(scored.residuals)
         if res.status in {"success", "cached"}:
-            collected = dssat_io.collect_run_outputs(res.run_dir, output_files=output_files)
+            collected = (adapter.collect_outputs(res, output_files=output_files) if adapter is not None
+                         else dssat_io.collect_run_outputs(res.run_dir, output_files=output_files))
         else:
             collected = {
                 "wide": pd.DataFrame(),

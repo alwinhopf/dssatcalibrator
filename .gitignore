@@ -31,3 +31,6 @@ build/
 dist/
 *.egg-info/
 ci-wheel/
+
+fast-tests.log
+test-results.xml

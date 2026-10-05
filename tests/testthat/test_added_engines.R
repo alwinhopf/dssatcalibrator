@@ -209,3 +209,13 @@ test_that("truncated lognormal sampling has no boundary clipping spikes (R)", {
   expect_true(is.infinite(log_prior_one(spec, 0.5)) && log_prior_one(spec, 0.5) < 0)
   expect_true(is.infinite(log_prior_one(spec, 4.5)) && log_prior_one(spec, 4.5) < 0)
 })
+
+ test_that("ES-MDA rejects invalid ensemble and uncertainty", {
+  for (pair in list(c(0,4),c(1,4),c(4,0),c(4,-1))) {
+    expect_error(run_es_mda(cfg_for("es_mda",ensemble_size=pair[1],iterations=pair[2]), make_scorer(),make_space(),progress=FALSE),"ensemble_size")
+  }
+  for (sigma in c(0,-1,Inf,NaN)) {
+    scorer <- function(thetas) lapply(make_scorer()(thetas),function(r) {r$residuals$sigma <- sigma; r})
+    expect_error(run_es_mda(cfg_for("es_mda",ensemble_size=4,iterations=1),scorer,make_space(),progress=FALSE),"positive finite sigma")
+  }
+})

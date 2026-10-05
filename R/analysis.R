@@ -96,7 +96,7 @@ forecast_lai <- function(cfg, result, last_obs = NULL, variable = "LAID") {
     curves <- list()
     for (th in thetas) {
       spawns <- spawn_results_for(cfg, th, exp)
-      pg <- spawns[[exp]]$plantgro
+      pg <- forecast_curve(spawns[[exp]], cfg, variable)
       if (nrow(pg) > 0) curves[[length(curves) + 1L]] <- pg
     }
     fc <- ensemble_percentiles(curves, variable = variable)
@@ -106,6 +106,23 @@ forecast_lai <- function(cfg, result, last_obs = NULL, variable = "LAID") {
     out[[exp]] <- fc
   }
   out
+}
+
+#' Read native or adapter time series for the shared forecast.
+#' @export
+forecast_curve <- function(result, cfg, variable) {
+  simulated <- result$simulated
+  if (is.data.frame(simulated) && nrow(simulated)) {
+    mapping <- .cfg_get(.cfg_get(cfg, "engine", list()), "timeseries_outputs", list())
+    target <- mapping[[variable]] %||% variable
+    rows <- simulated[simulated$kind == "timeseries" & simulated$variable == target, , drop=FALSE]
+    treatment <- .cfg_get(.cfg_get(cfg, "forecast", list()), "treatment", NULL)
+    if (!is.null(treatment)) rows <- rows[rows$treatment == as.integer(treatment), , drop=FALSE]
+    out <- data.frame(date=as.Date(rows$date), value=suppressWarnings(as.numeric(rows$value)))
+    names(out)[2] <- variable
+    return(out)
+  }
+  result$plantgro
 }
 
 # ---- diagnostics ----------------------------------------------------------

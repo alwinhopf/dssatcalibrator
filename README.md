@@ -241,3 +241,19 @@ Adapters supply setup, execution, neutral residual rows and input fingerprints.
 
 Both `run_calibration.py` and the installed `dssat-calibrate` command call the
 same CLI implementation. Generated `build/` code is no longer tracked.
+
+## Shared model adapter additions
+
+Forecasts accept normalized adapter daily outputs as well as native DSSAT curves.
+Impact atlases use the registered adapter's setup and report collection. APSIM
+uses bounded declared model paths; DSSAT genotype discovery remains format
+specific. The impact CLI is packaged as `python -m dssatcalibrator.impact_cli`,
+which is also the installed R wrapper's fallback. Adapter R treatment selection
+filters observations before calibration, matching the Python contract.
+
+## ES-MDA validation
+
+Python and R reject ensembles smaller than two, nonpositive iteration counts, and
+nonfinite observations or nonpositive/nonfinite observation uncertainty before
+matrix operations. Optional hemp reference tests use `DSSAT_TEST_HEMP_DIR`, falling
+back to `tests/fixtures/hemp`; a general DSSAT installation is not this dataset.

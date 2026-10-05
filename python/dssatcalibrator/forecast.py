@@ -172,7 +172,7 @@ def forecast_lai(cfg: dict, result, *, last_obs: dict | None = None,
         curves = []
         for th in thetas:
             spawns = spawn_results_for(cfg, th, [exp])
-            pg = spawns[exp].plantgro
+            pg = forecast_curve(spawns[exp], cfg, variable)
             if not pg.empty:
                 curves.append(pg)
         fc = ensemble_percentiles(curves, variable=variable)
@@ -181,3 +181,19 @@ def forecast_lai(cfg: dict, result, *, last_obs: dict | None = None,
             fc = anchor_correction(fc, v, d, decay_days=decay)
         out[exp] = fc
     return out
+
+
+def forecast_curve(result, cfg, variable):
+    """Read a native DSSAT curve or the equivalent normalized adapter output."""
+    simulated = getattr(result, 'simulated', None)
+    if isinstance(simulated, pd.DataFrame) and not simulated.empty:
+        mapping = (cfg.get('engine') or {}).get('timeseries_outputs', {}) or {}
+        target = mapping.get(variable, variable)
+        rows = simulated[(simulated['kind'] == 'timeseries') & (simulated['variable'] == target)].copy()
+        treatment = (cfg.get('forecast') or {}).get('treatment')
+        if treatment is not None:
+            rows = rows[rows.treatment == int(treatment)]
+        rows['date'] = pd.to_datetime(rows['date'], errors='coerce')
+        rows[variable] = pd.to_numeric(rows['value'], errors='coerce')
+        return rows[['date', variable]]
+    return result.plantgro

@@ -3,13 +3,14 @@
 Tests that need the local DSSAT install or the smoke-run outputs are skipped
 automatically when those paths are absent, so the suite still runs on CI.
 """
+import os
 from pathlib import Path
 
 import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 SMOKE = REPO / "_smoke"
-HEMP = Path("C:/Users/alwin/Documents/GitHub/DSSAT48Hemp/Hemp")
+HEMP = Path(os.environ["DSSAT_TEST_HEMP_DIR"]).expanduser() if os.environ.get("DSSAT_TEST_HEMP_DIR") else REPO / "tests/fixtures/hemp"
 
 TARGET_EXPERIMENTS = [
     "CNKU2101", "YUFE2101", "YUFE2201", "YUBA2201",
@@ -39,7 +40,7 @@ def smoke_dir():
 @pytest.fixture
 def hemp_dir():
     if not HEMP.exists():
-        pytest.skip("local DSSAT hemp install not present")
+        pytest.skip("Hemp reference dataset absent; set DSSAT_TEST_HEMP_DIR (a generic DSSAT install does not supply these experiments)")
     missing = [name for name in HEMP_REFERENCE_FILES if not (HEMP / name).exists()]
     if missing:
         pytest.skip("local DSSAT hemp reference files not present: " + ", ".join(missing))

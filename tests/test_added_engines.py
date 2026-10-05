@@ -105,6 +105,25 @@ def test_bayesopt_recovers_optimum():
     assert orch._resolve_estimator({"bayesian": {"engine": "bayesopt"}}) == "bayesopt"
 
 
+@pytest.mark.parametrize('ne,na', [(0, 4), (1, 4), (4, 0), (4, -1)])
+def test_es_mda_rejects_degenerate_ensemble(ne, na):
+    from dssatcalibrator.engines.es_mda import run_es_mda
+    with pytest.raises(ValueError, match='ensemble_size'):
+        run_es_mda(_cfg('es_mda', ensemble_size=ne, iterations=na), _scorer(), _space(), progress=False)
+
+
+@pytest.mark.parametrize('sigma', [0, -1, np.inf, np.nan])
+def test_es_mda_rejects_invalid_observation_uncertainty(sigma):
+    from dssatcalibrator.engines.es_mda import run_es_mda
+    def score(thetas):
+        results = _scorer()(thetas)
+        for result in results:
+            result.residuals['sigma'] = sigma
+        return results
+    with pytest.raises(ValueError, match='positive finite sigma'):
+        run_es_mda(_cfg('es_mda', ensemble_size=4, iterations=1), score, _space(), progress=False)
+
+
 def test_history_matching_keeps_nroy_region():
     from dssatcalibrator.engines.history import run_history_matching
     r = run_history_matching(_cfg("history", n=96, waves=2, implausibility_cutoff=4.0),

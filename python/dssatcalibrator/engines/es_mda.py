@@ -91,6 +91,8 @@ def run_es_mda(cfg: dict, score_results, space, *, progress: bool = True) -> Mcm
     bcfg = cfg.get("method", {}).get("bayesian", {})
     ne = int(bcfg.get("ensemble_size", max(4 * space.ndim, 24)))
     na = int(bcfg.get("iterations", 4))
+    if ne < 2 or na < 1:
+        raise ValueError("ES-MDA requires ensemble_size >= 2 and iterations >= 1")
     seed = int(cfg["calibrator"].get("seed", 42))
     rng = np.random.default_rng(seed)
     names = space.names
@@ -112,6 +114,8 @@ def run_es_mda(cfg: dict, score_results, space, *, progress: bool = True) -> Mcm
             if progress:
                 print("  no common observations across members; stopping ES-MDA.", flush=True)
             break
+        if not np.isfinite(d_obs).all() or not np.isfinite(sigma).all() or np.any(sigma <= 0):
+            raise ValueError("ES-MDA requires finite observations and positive finite sigma")
         # Failed members must be penalised, never made identical to observations.
         bad = ~np.isfinite(d_sim)
         if bad.any():

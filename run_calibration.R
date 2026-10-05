@@ -18,7 +18,8 @@
   r_dir <- file.path(.script_dir(), "R")
   if (dir.exists(r_dir)) {
     r_files <- list.files(r_dir, pattern = "[.]R$", full.names = TRUE)
-    invisible(lapply(r_files, function(f) sys.source(f, envir = globalenv())))
+    if (length(r_files)) invisible(lapply(r_files, function(f) sys.source(f, envir = globalenv())))
+    else suppressMessages(library(dssatcalibrator))
   } else {
     suppressMessages(library(dssatcalibrator))
   }

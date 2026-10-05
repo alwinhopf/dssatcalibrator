@@ -25,7 +25,7 @@
   )
   hit <- candidates[file.exists(candidates)]
   if (length(hit) == 0) {
-    stop("Could not find run_impact_atlas.py. Pass script = '<path>/run_impact_atlas.py'.")
+    return(c("-m", "dssatcalibrator.impact_cli"))
   }
   normalizePath(hit[1], mustWork = TRUE)
 }
@@ -137,7 +137,7 @@ run_impact_atlas <- function(config, output_dir = NULL,
                              hemp_dir = NULL, keep_existing = FALSE,
                              write_long = TRUE, compress_long = FALSE,
                              effect_tolerance = NULL,
-                             python = Sys.getenv("DSSATCAL_PYTHON", "python"),
+                             python = getOption("cropmodel.python", Sys.getenv("DSSATCAL_PYTHON", Sys.getenv("CROPMODEL_PYTHON", "python"))),
                              script = NULL, progress = TRUE) {
   cfg_obj <- list()
   if (is.list(config)) {
@@ -167,9 +167,9 @@ run_impact_atlas <- function(config, output_dir = NULL,
   python_cmd <- as.character(python)
   which_py <- Sys.which(python_cmd)
   if (nzchar(which_py)) {
-    python_cmd <- unname(normalizePath(which_py, mustWork = FALSE))
+    python_cmd <- unname(file.path(normalizePath(dirname(which_py), mustWork = TRUE), basename(which_py)))
   } else {
-    python_cmd <- normalizePath(python_cmd, mustWork = FALSE)
+    python_cmd <- file.path(normalizePath(dirname(python_cmd), mustWork = TRUE), basename(python_cmd))
   }
 
   args <- .impact_atlas_args(
@@ -189,7 +189,7 @@ run_impact_atlas <- function(config, output_dir = NULL,
     progress = progress
   )
 
-  out <- system2(python_cmd, args = args,
+  out <- system2(python_cmd, args = vapply(args, shQuote, character(1)),
                  stdout = if (isTRUE(progress)) "" else TRUE,
                  stderr = if (isTRUE(progress)) "" else TRUE)
   status <- if (is.character(out)) attr(out, "status") %||% 0L else as.integer(out)

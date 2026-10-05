@@ -11,18 +11,19 @@ jobs:
     name: Fast unit tests (Python)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.12"
+          python-version: "3.11"
           cache: pip
       - name: Install (core + optional engines + dev)
         run: pip install -e ".[full,dev]"
       - name: Run fast test suite
-        run: pytest -m "not slow" -q --junit-xml=test-results.xml
+        run: bash scripts/pre-push.sh
+        shell: bash
       - name: Upload test results and logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: fast-unit-test-results
           path: |
@@ -34,12 +35,12 @@ jobs:
     name: R parity tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: r-lib/actions/setup-r@v2
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2
         with:
           r-version: "4.3"
           use-public-rspm: true
-      - uses: r-lib/actions/setup-r-dependencies@v2
+      - uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2
         with:
           dependencies: '"hard"'
           extra-packages: any::testthat, any::jsonlite, any::yaml, any::digest, any::sensitivity
@@ -48,7 +49,7 @@ jobs:
         run: Rscript run_r_tests.R
       - name: Upload R logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: r-parity-logs
           path: |
@@ -62,20 +63,21 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, macos-latest]
-        python-version: ["3.10", "3.12"]
+        python-version: ["3.11"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - name: Install (core + optional engines + dev)
         run: pip install -e ".[full,dev]"
       - name: Run fast test suite
-        run: pytest -m "not slow" -q --junit-xml=test-results.xml
+        run: bash scripts/pre-push.sh
+        shell: bash
       - name: Upload test results and logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: platform-compat-${{ matrix.os }}-py${{ matrix.python-version }}
           path: |
@@ -87,10 +89,10 @@ jobs:
     name: Golden fixtures match Python
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.12"
+          python-version: "3.11"
           cache: pip
       - name: Install (core + optional engines)
         run: pip install -e ".[full]"

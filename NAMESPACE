@@ -36,3 +36,5 @@ importFrom(stats, dnorm, dlnorm, pnorm, plnorm, qnorm, runif, rlnorm,
            rnorm, cor, sd, optim, quantile, var, complete.cases,
            aggregate, approx, predict, setNames)
 importFrom(utils, modifyList, read.csv, write.csv, head, tail)
+
+export(forecast_curve)
